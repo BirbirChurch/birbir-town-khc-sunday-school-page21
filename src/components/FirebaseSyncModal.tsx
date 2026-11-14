@@ -5,21 +5,18 @@ import {
   AlertTriangle,
   Download,
   Upload,
-  RefreshCw,
   CheckCircle2,
   Copy,
   Save,
   Server,
   Search,
-  FileCheck2,
-  ExternalLink
+  FileCheck2
 } from 'lucide-react';
 import { AppData } from '../types';
 import {
   KNOWN_PROJECTS,
   getActiveProjectId,
   setActiveProjectId,
-  currentDiagnostic,
   exportBackupJSON,
   importBackupJSON,
   syncAppDataToFirebase,
@@ -43,7 +40,6 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   syncStatus
 }) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>(getActiveProjectId());
-  const [copiedRtdbRules, setCopiedRtdbRules] = useState(false);
   const [copiedFirestoreRules, setCopiedFirestoreRules] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -94,15 +90,8 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
     e.target.value = '';
   };
 
-  const copyRtdbRules = () => {
-    const rulesText = `{\n  "rules": {\n    ".read": true,\n    ".write": true\n  }\n}`;
-    navigator.clipboard.writeText(rulesText);
-    setCopiedRtdbRules(true);
-    setTimeout(() => setCopiedRtdbRules(false), 2500);
-  };
-
   const copyFirestoreRules = () => {
-    const rulesText = `rules_version = '2';\nservice cloud.firestore {\n  match /{document=**} {\n    allow read, write: if true;\n  }\n}`;
+    const rulesText = `rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}`;
     navigator.clipboard.writeText(rulesText);
     setCopiedFirestoreRules(true);
     setTimeout(() => setCopiedFirestoreRules(false), 2500);
@@ -278,14 +267,14 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
             </div>
           </div>
 
-          {/* Action 2: Choose / Switch Firebase Database Project */}
+          {/* Action 2: Active Firebase Database Project */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
             <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
               <Server className="w-4 h-4 text-blue-600" />
-              2. የFirebase ፕሮጀክት መምረጫ (Switch Project)
+              2. የተገናኘው የFirebase ፕሮጀክት (Active Firebase Project)
             </h4>
             <p className="text-slate-500 text-[11px]">
-              ስራዎን በሌላ Firebase ፕሮጀክት ላይ ሰርተው ከነበረ፣ ፕሮጀክቱን እዚህ በመምረጥ መረጃዎን መልሰው ማግኘት ይችላሉ፦
+              አፕሊኬሽኑ በቀጥታ ከሚከተለው Firebase ፕሮጀክት ጋር ተገናኝቷል፦
             </p>
 
             <div className="space-y-2">
@@ -294,37 +283,27 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                 return (
                   <div
                     key={proj.id}
-                    onClick={() => handleSwitchProject(proj.id)}
-                    className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
-                      isSelected
-                        ? 'bg-blue-50/80 border-blue-400 font-bold text-blue-950 shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                    }`}
+                    className="p-3 rounded-xl border bg-blue-50/80 border-blue-400 font-bold text-blue-950 shadow-sm flex items-center justify-between"
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs">{proj.label}</span>
-                        {isSelected && (
-                          <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
-                            አሁን የተመረጠው
-                          </span>
-                        )}
+                        <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
+                          ንቁ (Active)
+                        </span>
                       </div>
-                      <span className="text-[10px] text-slate-400 block font-mono mt-0.5">
-                        {proj.config.databaseURL}
+                      <span className="text-[10px] text-slate-600 block font-mono mt-0.5">
+                        Project ID: {proj.config.projectId} | Auth Domain: {proj.config.authDomain}
                       </span>
                     </div>
 
                     <button
                       type="button"
-                      disabled={switching}
-                      className={`text-xs px-2.5 py-1 rounded-lg ${
-                        isSelected
-                          ? 'bg-blue-600 text-white font-semibold'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                      onClick={() => handleSwitchProject(proj.id)}
+                      disabled={switching || isSelected}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-blue-600 text-white font-semibold"
                     >
-                      {isSelected ? 'ተመርጧል' : 'ቀይር & ጫን'}
+                      ተገናኝቷል
                     </button>
                   </div>
                 );
@@ -336,34 +315,16 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
           <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-3">
             <h4 className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 text-amber-600" />
-              3. የFirebase ዳታቤዝ ፍቃድ ማስተካከያ (Firebase Rules Setup)
+              3. የFirebase Firestore ፍቃድ ማስተካከያ (Firestore Rules Setup)
             </h4>
             <p className="text-slate-600 text-[11px] leading-relaxed">
-              Firebase አዲስ ሲፈጠር በነባሪነት እንዳይጻፍበት ተቆልፎ (Locked Mode) ሊሆን ይችላል። ኦንላይን ዳታቤዝ እንዲገናኝ በFirebase Console ውስጥ የሚከተለውን ደንብ (Rules) ያስገቡ፦
+              Firebase Firestore አዲስ ሲፈጠር በነባሪነት እንዳይጻፍበት ተቆልፎ (Locked Mode) ሊሆን ይችላል። ኦንላይን ዳታቤዝ እንዲገናኝ በFirebase Console &gt; Firestore Database &gt; Rules ውስጥ የሚከተለውን ደንብ (Rules) ያስገቡ፦
             </p>
-
-            {/* RTDB Rules */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-slate-700 text-[11px]">ሀ) ለ Realtime Database፦</span>
-                <button
-                  type="button"
-                  onClick={copyRtdbRules}
-                  className="bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 rounded text-[10px] flex items-center gap-1"
-                >
-                  {copiedRtdbRules ? <CheckCircle2 className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
-                  {copiedRtdbRules ? 'ተቀድቷል!' : 'ኮፒ አድርግ'}
-                </button>
-              </div>
-              <div className="bg-slate-900 text-emerald-300 font-mono text-[10px] p-2.5 rounded-xl overflow-x-auto">
-                <pre>{`{\n  "rules": {\n    ".read": true,\n    ".write": true\n  }\n}`}</pre>
-              </div>
-            </div>
 
             {/* Firestore Rules */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-slate-700 text-[11px]">ለ) ለ Cloud Firestore፦</span>
+                <span className="font-bold text-slate-700 text-[11px]">ለ Cloud Firestore፦</span>
                 <button
                   type="button"
                   onClick={copyFirestoreRules}
@@ -374,7 +335,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                 </button>
               </div>
               <div className="bg-slate-900 text-emerald-300 font-mono text-[10px] p-2.5 rounded-xl overflow-x-auto">
-                <pre>{`rules_version = '2';\nservice cloud.firestore {\n  match /{document=**} {\n    allow read, write: if true;\n  }\n}`}</pre>
+                <pre>{`rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}`}</pre>
               </div>
             </div>
           </div>

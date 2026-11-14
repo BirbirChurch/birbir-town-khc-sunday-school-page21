@@ -1,14 +1,22 @@
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, get, Database } from 'firebase/database';
+import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore, doc, onSnapshot, setDoc, getDoc, Firestore, setLogLevel } from 'firebase/firestore';
 import { AppData } from '../types';
 import { INITIAL_APP_DATA, DEFAULT_CHAPELS } from '../constants/initialData';
 import { sanitizeAndDeduplicateAppData } from '../utils/idGenerator';
 
-// Suppress noisy internal Firestore unreachable backend warnings when only Realtime Database is enabled
+// Suppress noisy internal Firestore warnings in console
 try {
   setLogLevel('silent');
 } catch {}
+
+export const firebaseConfig = {
+  apiKey: "AIzaSyAw5j4fochMJoU4CzWv5h8gl3vXVA49PEU",
+  authDomain: "geladestazelulove1628.firebaseapp.com",
+  projectId: "geladestazelulove1628",
+  storageBucket: "geladestazelulove1628.firebasestorage.app",
+  messagingSenderId: "873670244371",
+  appId: "1:873670244371:web:5e58672da91ce8d284e7e6"
+};
 
 export interface FirebaseProjectProfile {
   id: string;
@@ -16,9 +24,7 @@ export interface FirebaseProjectProfile {
   config: {
     apiKey: string;
     authDomain: string;
-    databaseURL: string;
-    databaseURL_alt?: string;
-    databaseURL_alt2?: string;
+    databaseURL?: string;
     projectId: string;
     storageBucket: string;
     messagingSenderId: string;
@@ -29,63 +35,9 @@ export interface FirebaseProjectProfile {
 
 export const KNOWN_PROJECTS: FirebaseProjectProfile[] = [
   {
-    id: "birbir-town-khc-child-ministry",
-    label: "birbir-town-khc-child-ministry (ዋናው አዲሱ ዳታቤዝ)",
-    config: {
-      apiKey: "AIzaSyAruE9nGOFGkGRHs1hbRT2EmLq1hJrWSb8",
-      authDomain: "birbir-town-khc-child-ministry.firebaseapp.com",
-      databaseURL: "https://birbir-town-khc-child-ministry-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://birbir-town-khc-child-ministry-default-rtdb.firebaseio.com",
-      databaseURL_alt2: "https://birbir-town-khc-child-ministry.firebaseio.com",
-      projectId: "birbir-town-khc-child-ministry",
-      storageBucket: "birbir-town-khc-child-ministry.firebasestorage.app",
-      messagingSenderId: "556764983235",
-      appId: "1:556764983235:web:fb6fecffab48f8e6285776"
-    }
-  },
-  {
-    id: "birbir-khc-child-page",
-    label: "birbir-khc-child-page",
-    config: {
-      apiKey: "AIzaSyCRyDJHarx0va7X5pXXP2rnGafq2eBLq9s",
-      authDomain: "birbir-khc-child-page.firebaseapp.com",
-      databaseURL: "https://birbir-khc-child-page-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://birbir-khc-child-page-default-rtdb.firebaseio.com",
-      databaseURL_alt2: "https://birbir-khc-child-page.firebaseio.com",
-      projectId: "birbir-khc-child-page",
-      storageBucket: "birbir-khc-child-page.firebasestorage.app",
-      messagingSenderId: "44927911746",
-      appId: "1:44927911746:web:e4ccfd7048a7ee1fb8aadb",
-      measurementId: "G-XMQ04TVFFN"
-    }
-  },
-  {
-    id: "birbir-town-khc-child-page",
-    label: "birbir-town-khc-child-page (የቀድሞው ዳታቤዝ - ስራ የነበረበት)",
-    config: {
-      apiKey: "AIzaSyBx7ZJxRNzjNb8Lx79R2vXjWq-MsZBPTfA",
-      authDomain: "birbir-town-khc-child-page.firebaseapp.com",
-      databaseURL: "https://birbir-town-khc-child-page-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://birbir-town-khc-child-page-default-rtdb.firebaseio.com",
-      projectId: "birbir-town-khc-child-page",
-      storageBucket: "birbir-town-khc-child-page.firebasestorage.app",
-      messagingSenderId: "1007927588446",
-      appId: "1:1007927588446:web:b85df399e7b1b89c1d26cf"
-    }
-  },
-  {
-    id: "birbir-town-khc-bible-sc-82849",
-    label: "birbir-town-khc-bible-sc-82849",
-    config: {
-      apiKey: "AIzaSyAnUdWOOAZhOfRtx-GfW89pz1iKrDonz_s",
-      authDomain: "birbir-town-khc-bible-sc-82849.firebaseapp.com",
-      databaseURL: "https://birbir-town-khc-bible-sc-82849-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://birbir-town-khc-bible-sc-82849-default-rtdb.firebaseio.com",
-      projectId: "birbir-town-khc-bible-sc-82849",
-      storageBucket: "birbir-town-khc-bible-sc-82849.firebasestorage.app",
-      messagingSenderId: "745550786105",
-      appId: "1:745550786105:web:6724bcaecde6d39b1967e8"
-    }
+    id: "geladestazelulove1628",
+    label: "geladestazelulove1628 (ዋናው የFirebase ዳታቤዝ)",
+    config: firebaseConfig
   }
 ];
 
@@ -95,11 +47,7 @@ const BACKUP_STORAGE_KEY = 'birbir_khc_safety_backup';
 const DB_KEY = 'kaleheywet_data';
 
 export const getActiveProjectId = (): string => {
-  const saved = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-  if (!saved || saved === 'birbir-khc-child-page') {
-    return 'birbir-town-khc-child-ministry';
-  }
-  return saved;
+  return firebaseConfig.projectId;
 };
 
 export const setActiveProjectId = (projectId: string) => {
@@ -107,15 +55,11 @@ export const setActiveProjectId = (projectId: string) => {
 };
 
 export const getActiveProjectProfile = (): FirebaseProjectProfile => {
-  const currentId = getActiveProjectId();
-  return KNOWN_PROJECTS.find((p) => p.id === currentId) || KNOWN_PROJECTS[0];
+  return KNOWN_PROJECTS[0];
 };
-
-export const firebaseConfig = getActiveProjectProfile().config;
 
 // Initialize Firebase App
 let appInstance: FirebaseApp | null = null;
-let rtdbInstance: Database | null = null;
 let firestoreInstance: Firestore | null = null;
 
 const countStudentsInData = (data: any): number => {
@@ -129,26 +73,18 @@ const countStudentsInData = (data: any): number => {
 
 const initFirebaseForActiveProject = () => {
   try {
-    const profile = getActiveProjectProfile();
-    const appName = `app_${profile.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-    
-    const existing = getApps().find((a) => a.name === appName);
-    appInstance = existing || initializeApp(profile.config, appName);
-
-    // Try primary RTDB URL (europe-west1 or us)
+    // Clean up any stale project selection from previous configurations
     try {
-      rtdbInstance = getDatabase(appInstance, profile.config.databaseURL);
-    } catch {
-      if (profile.config.databaseURL_alt) {
-        try {
-          rtdbInstance = getDatabase(appInstance, profile.config.databaseURL_alt);
-        } catch {}
+      const saved = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+      if (saved && saved !== firebaseConfig.projectId) {
+        localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, firebaseConfig.projectId);
       }
-    }
-
-    try {
-      firestoreInstance = getFirestore(appInstance);
     } catch {}
+
+    const appName = `app_${firebaseConfig.projectId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const existing = getApps().find((a) => a.name === appName);
+    appInstance = existing || initializeApp(firebaseConfig, appName);
+    firestoreInstance = getFirestore(appInstance);
   } catch (err) {
     console.warn('Firebase init notice:', err);
   }
@@ -156,7 +92,7 @@ const initFirebaseForActiveProject = () => {
 
 initFirebaseForActiveProject();
 
-export const db = rtdbInstance;
+export const db = null;
 export const firestore = firestoreInstance;
 
 // Load stored local data with exhaustive recovery check across all potential keys in localStorage
@@ -164,7 +100,6 @@ export const loadStoredLocalData = (): AppData => {
   try {
     const candidates: any[] = [];
 
-    // Explicit known keys
     const knownKeys = [
       LOCAL_STORAGE_KEY,
       BACKUP_STORAGE_KEY,
@@ -185,7 +120,6 @@ export const loadStoredLocalData = (): AppData => {
       } catch {}
     });
 
-    // Also scan all localStorage items in case of custom or legacy keys
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -203,7 +137,6 @@ export const loadStoredLocalData = (): AppData => {
       }
     } catch {}
 
-    // Find candidate with most student records
     let bestSource: any = null;
     let maxStudents = -1;
 
@@ -249,8 +182,7 @@ export const saveToLocalStorage = (data: AppData) => {
     const jsonStr = JSON.stringify(sanitized);
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, jsonStr);
-    } catch (quotaErr) {
-      // Clean up legacy backup keys if quota exceeded
+    } catch {
       const legacyKeys = ['birbir_khc_safety_backup', 'kaleheywet_data', 'birbir_town_khc_data', 'sunday_school_data'];
       legacyKeys.forEach((k) => localStorage.removeItem(k));
       try {
@@ -276,13 +208,76 @@ export interface SyncDiagnosticInfo {
 
 export let currentDiagnostic: SyncDiagnosticInfo = {
   status: 'offline',
-  projectId: getActiveProjectId(),
-  projectLabel: getActiveProjectProfile().label,
-  databaseURL: getActiveProjectProfile().config.databaseURL,
+  projectId: firebaseConfig.projectId,
+  projectLabel: KNOWN_PROJECTS[0].label,
+  databaseURL: `firestore://${firebaseConfig.projectId}`,
   totalStudentsLocal: 0
 };
 
 export const CLIENT_SESSION_ID = `client_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+// Helper to write large AppData payloads safely within Firestore's 1MB document limit
+const writeAppDataToFirestore = async (fs: Firestore, payload: any): Promise<void> => {
+  const docRef = doc(fs, 'church_data', DB_KEY);
+  const serialized = JSON.stringify(payload);
+
+  // If well under Firestore 1MB limit, write single document directly
+  if (serialized.length < 800000) {
+    await setDoc(docRef, { ...payload, _membersChunkCount: 0 });
+    return;
+  }
+
+  // Split churchMembers into 1,500-record chunk docs to support 5,300+ members cleanly
+  const allMembers = Array.isArray(payload.churchMembers) ? payload.churchMembers : [];
+  const CHUNK_SIZE = 1500;
+  const chunks: any[][] = [];
+  for (let i = 0; i < allMembers.length; i += CHUNK_SIZE) {
+    chunks.push(allMembers.slice(i, i + CHUNK_SIZE));
+  }
+
+  await Promise.all(
+    chunks.map((chunk, idx) =>
+      setDoc(doc(fs, 'church_data', `${DB_KEY}_members_${idx}`), {
+        members: chunk,
+        _syncMeta: payload._syncMeta
+      })
+    )
+  );
+
+  const corePayload = {
+    ...payload,
+    churchMembers: [],
+    _membersChunkCount: chunks.length
+  };
+  await setDoc(docRef, corePayload);
+};
+
+// Helper to reassemble chunked churchMembers from Firestore when needed
+const readChunksFromFirestore = async (fs: Firestore, docData: any): Promise<any> => {
+  const chunkCount = Number(docData?._membersChunkCount || 0);
+  if (chunkCount <= 0) return docData;
+
+  const chunkDocs = await Promise.all(
+    Array.from({ length: chunkCount }, (_, idx) =>
+      getDoc(doc(fs, 'church_data', `${DB_KEY}_members_${idx}`))
+    )
+  );
+
+  const reassembledMembers: any[] = [];
+  chunkDocs.forEach((snap) => {
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data?.members)) {
+        reassembledMembers.push(...data.members);
+      }
+    }
+  });
+
+  return {
+    ...docData,
+    churchMembers: reassembledMembers
+  };
+};
 
 export const subscribeToAppData = (
   onData: (data: AppData) => void,
@@ -294,18 +289,16 @@ export const subscribeToAppData = (
   initFirebaseForActiveProject();
   const profile = getActiveProjectProfile();
 
-  let unsubRtdb: (() => void) | null = null;
   let unsubFirestore: (() => void) | null = null;
 
   const handleRemoteData = (val: any) => {
     if (val && typeof val === 'object') {
-      // If this update was emitted by this very client session, skip re-render to prevent loopback echo and input lag
       if (val._syncMeta && val._syncMeta.clientId === CLIENT_SESSION_ID) {
         currentDiagnostic = {
           status: 'connected',
           projectId: profile.id,
           projectLabel: profile.label,
-          databaseURL: profile.config.databaseURL,
+          databaseURL: `firestore://${profile.id}`,
           lastSyncTime: new Date().toLocaleTimeString('am-ET')
         };
         onStatusChange('connected', currentDiagnostic);
@@ -340,7 +333,6 @@ export const subscribeToAppData = (
         });
       });
 
-      // Safe non-destructive merge: do NOT overwrite non-empty local records with empty remote ones!
       const mergedData: AppData = {
         ...INITIAL_APP_DATA,
         ...currentLocal,
@@ -370,58 +362,75 @@ export const subscribeToAppData = (
         status: 'connected',
         projectId: profile.id,
         projectLabel: profile.label,
-        databaseURL: profile.config.databaseURL,
-        lastSyncTime: new Date().toLocaleTimeString('am-ET')
+        databaseURL: `firestore://${profile.id}`,
+        lastSyncTime: new Date().toLocaleTimeString('am-ET'),
+        totalStudentsLocal: countStudentsInData(sanitizedMerged)
       };
       onStatusChange('connected', currentDiagnostic);
     }
   };
 
-  // Try Realtime Database with connection listeners
-  if (rtdbInstance) {
+  if (firestoreInstance) {
     try {
-      const dataRef = ref(rtdbInstance, DB_KEY);
-      unsubRtdb = onValue(
-        dataRef,
-        (snapshot) => {
-          const val = snapshot.val();
-          if (val) {
-            handleRemoteData(val);
+      const fs = firestoreInstance;
+      const docRef = doc(fs, 'church_data', DB_KEY);
+      unsubFirestore = onSnapshot(
+        docRef,
+        async (snap) => {
+          if (snap.exists()) {
+            try {
+              const fullData = await readChunksFromFirestore(fs, snap.data());
+              handleRemoteData(fullData);
+            } catch (err: any) {
+              console.warn('Firestore chunk read notice:', err?.message);
+              handleRemoteData(snap.data());
+            }
           } else {
-            // Remote is empty: upload our local data so cloud is populated!
-            set(dataRef, initialLocal)
-              .then(() => {
-                currentDiagnostic = {
-                  status: 'connected',
-                  projectId: profile.id,
-                  projectLabel: profile.label,
-                  databaseURL: profile.config.databaseURL,
-                  lastSyncTime: new Date().toLocaleTimeString('am-ET')
-                };
-                onStatusChange('connected', currentDiagnostic);
-              })
-              .catch((err) => {
-                const isPermission = err?.message?.includes('PERMISSION_DENIED');
-                currentDiagnostic = {
-                  status: isPermission ? 'permission_denied' : 'offline',
-                  projectId: profile.id,
-                  projectLabel: profile.label,
-                  databaseURL: profile.config.databaseURL,
-                  errorMessage: err?.message
-                };
-                onStatusChange('offline', currentDiagnostic);
+            // Remote is empty: seed Firestore with local data
+            try {
+              await writeAppDataToFirestore(fs, {
+                ...initialLocal,
+                _syncMeta: { clientId: CLIENT_SESSION_ID, timestamp: Date.now() }
               });
+              currentDiagnostic = {
+                status: 'connected',
+                projectId: profile.id,
+                projectLabel: profile.label,
+                databaseURL: `firestore://${profile.id}`,
+                lastSyncTime: new Date().toLocaleTimeString('am-ET'),
+                totalStudentsLocal: countStudentsInData(initialLocal)
+              };
+              onStatusChange('connected', currentDiagnostic);
+            } catch (err: any) {
+              const isPermission =
+                err?.code === 'permission-denied' ||
+                err?.message?.includes('PERMISSION_DENIED') ||
+                err?.message?.includes('Missing or insufficient permissions');
+              currentDiagnostic = {
+                status: isPermission ? 'permission_denied' : 'offline',
+                projectId: profile.id,
+                projectLabel: profile.label,
+                databaseURL: `firestore://${profile.id}`,
+                errorMessage: isPermission
+                  ? 'የFirebase Firestore ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console ውስጥ Rules ን allow read, write: if true; ያድርጉ።'
+                  : err?.message
+              };
+              onStatusChange('offline', currentDiagnostic);
+            }
           }
         },
         (error) => {
-          const isPermission = error?.message?.includes('PERMISSION_DENIED');
+          const isPermission =
+            error?.code === 'permission-denied' ||
+            error?.message?.includes('PERMISSION_DENIED') ||
+            error?.message?.includes('Missing or insufficient permissions');
           currentDiagnostic = {
             status: isPermission ? 'permission_denied' : 'offline',
             projectId: profile.id,
             projectLabel: profile.label,
-            databaseURL: profile.config.databaseURL,
+            databaseURL: `firestore://${profile.id}`,
             errorMessage: isPermission
-              ? 'የFirebase ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console ውስጥ Rules ን .read: true, .write: true ያድርጉ።'
+              ? 'የFirebase Firestore ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console ውስጥ Rules ን allow read, write: if true; ያድርጉ።'
               : error?.message
           };
           onStatusChange('offline', currentDiagnostic);
@@ -432,46 +441,14 @@ export const subscribeToAppData = (
         status: 'offline',
         projectId: profile.id,
         projectLabel: profile.label,
-        databaseURL: profile.config.databaseURL,
+        databaseURL: `firestore://${profile.id}`,
         errorMessage: err?.message
       };
       onStatusChange('offline', currentDiagnostic);
     }
   }
 
-  // Only try Firestore listener as fallback if Realtime Database is not present
-  if (firestoreInstance && !rtdbInstance) {
-    try {
-      const docRef = doc(firestoreInstance, 'church_data', DB_KEY);
-      unsubFirestore = onSnapshot(
-        docRef,
-        (snap) => {
-          if (snap.exists()) {
-            handleRemoteData(snap.data());
-            currentDiagnostic = {
-              status: 'connected',
-              projectId: profile.id,
-              projectLabel: profile.label,
-              databaseURL: profile.config.databaseURL,
-              lastSyncTime: new Date().toLocaleTimeString('am-ET'),
-              totalStudentsLocal: countStudentsInData(loadStoredLocalData())
-            };
-            onStatusChange('connected', currentDiagnostic);
-          }
-        },
-        () => {
-          // Gracefully ignore Firestore offline / backend connection notes
-          if (unsubFirestore) {
-            unsubFirestore();
-            unsubFirestore = null;
-          }
-        }
-      );
-    } catch {}
-  }
-
   return () => {
-    if (unsubRtdb) unsubRtdb();
     if (unsubFirestore) unsubFirestore();
   };
 };
@@ -488,33 +465,24 @@ export const syncAppDataToFirebase = async (data: AppData): Promise<boolean> => 
     }
   };
 
-  if (rtdbInstance) {
+  if (firestoreInstance) {
     try {
-      const dataRef = ref(rtdbInstance, DB_KEY);
-      await set(dataRef, payload);
-      synced = true;
-      currentDiagnostic.lastSyncTime = new Date().toLocaleTimeString('am-ET');
-    } catch (error: any) {
-      console.warn('RTDB sync note:', error?.message);
-    }
-  }
-
-  if (firestoreInstance && !rtdbInstance) {
-    try {
-      const docRef = doc(firestoreInstance, 'church_data', DB_KEY);
-      // Timeout Firestore setDoc so it never hangs if backend is unreachable
       await Promise.race([
-        setDoc(docRef, payload, { merge: true }),
-        new Promise<void>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+        writeAppDataToFirestore(firestoreInstance, payload),
+        new Promise<void>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
       ]);
       synced = true;
-    } catch {}
+      currentDiagnostic.status = 'connected';
+      currentDiagnostic.lastSyncTime = new Date().toLocaleTimeString('am-ET');
+    } catch (err: any) {
+      console.warn('Firestore sync notice:', err?.message);
+    }
   }
 
   return synced;
 };
 
-// Scan and recover previous cloud data from other projects
+// Check current configured Firebase project for existing cloud data
 export const scanAndRecoverPreviousCloudData = async (): Promise<{
   found: boolean;
   projectLabel?: string;
@@ -522,62 +490,28 @@ export const scanAndRecoverPreviousCloudData = async (): Promise<{
   data?: AppData;
   studentCount?: number;
 }> => {
-  for (const proj of KNOWN_PROJECTS) {
-    try {
-      const tempAppName = `scanner_${proj.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      const tempApp = getApps().find((a) => a.name === tempAppName) || initializeApp(proj.config, tempAppName);
-
-      // Try RTDB URLs
-      const urls = [proj.config.databaseURL, proj.config.databaseURL_alt, proj.config.databaseURL_alt2].filter(Boolean) as string[];
-      for (const u of urls) {
-        try {
-          const tempRtdb = getDatabase(tempApp, u);
-          const dataRef = ref(tempRtdb, DB_KEY);
-          // Simple timeout promise for quick probe
-          const snap = await Promise.race([
-            get(dataRef),
-            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-          ]);
-          if (snap && snap.exists()) {
-            const val = snap.val();
-            const count = countStudentsInData(val);
-            if (count > 0 || (val?.teachers && val.teachers.length > 0)) {
-              return {
-                found: true,
-                projectLabel: proj.label,
-                projectId: proj.id,
-                data: val,
-                studentCount: count
-              };
-            }
-          }
-        } catch {}
+  if (!firestoreInstance) return { found: false };
+  try {
+    const profile = getActiveProjectProfile();
+    const docRef = doc(firestoreInstance, 'church_data', DB_KEY);
+    const snap = await Promise.race([
+      getDoc(docRef),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+    ]);
+    if (snap && snap.exists()) {
+      const val = await readChunksFromFirestore(firestoreInstance, snap.data());
+      const count = countStudentsInData(val);
+      if (count > 0 || (val?.teachers && val.teachers.length > 0)) {
+        return {
+          found: true,
+          projectLabel: profile.label,
+          projectId: profile.id,
+          data: val as AppData,
+          studentCount: count
+        };
       }
-
-      // Try Firestore
-      try {
-        const tempFirestore = getFirestore(tempApp);
-        const docRef = doc(tempFirestore, 'church_data', DB_KEY);
-        const snap = await Promise.race([
-          getDoc(docRef),
-          new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-        ]);
-        if (snap && snap.exists()) {
-          const val = snap.data();
-          const count = countStudentsInData(val);
-          if (count > 0 || (val?.teachers && val.teachers.length > 0)) {
-            return {
-              found: true,
-              projectLabel: proj.label,
-              projectId: proj.id,
-              data: val as AppData,
-              studentCount: count
-            };
-          }
-        }
-      } catch {}
-    } catch {}
-  }
+    }
+  } catch {}
   return { found: false };
 };
 
