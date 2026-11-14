@@ -10,7 +10,8 @@ import {
   Save,
   Server,
   Search,
-  FileCheck2
+  FileCheck2,
+  ArrowDownToLine
 } from 'lucide-react';
 import { AppData } from '../types';
 import {
@@ -21,6 +22,7 @@ import {
   importBackupJSON,
   syncAppDataToFirebase,
   scanAndRecoverPreviousCloudData,
+  fetchDataFromPreviousFirebaseUrl,
   countStudentsInData
 } from '../services/firebase';
 
@@ -40,10 +42,15 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   syncStatus
 }) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>(getActiveProjectId());
+  const [copiedRtdbRules, setCopiedRtdbRules] = useState(false);
   const [copiedFirestoreRules, setCopiedFirestoreRules] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [importingUrl, setImportingUrl] = useState(false);
+  const [prevFirebaseUrl, setPrevFirebaseUrl] = useState('');
+  const [prevFirebaseAuth, setPrevFirebaseAuth] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusIsError, setStatusIsError] = useState(false);
   const [foundCloudData, setFoundCloudData] = useState<{
     projectLabel?: string;
     projectId?: string;
@@ -55,12 +62,14 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
 
   const totalStudents = countStudentsInData(appData);
   const totalTeachers = appData.teachers?.length || 0;
+  const totalSubjects = appData.subjects?.length || 0;
 
   const handleSwitchProject = (newId: string) => {
     setSelectedProjectId(newId);
     setActiveProjectId(newId);
     setSwitching(true);
-    setStatusMessage('ወደተመረጠው ፕሮጀክት በመቀየር ዳታ በመፈለግ ላይ ነው...');
+    setStatusIsError(false);
+    setStatusMessage('ዳታቤዙን በማደስ ላይ ነው...');
     setTimeout(() => {
       window.location.reload();
     }, 800);
@@ -68,6 +77,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
 
   const handleDownloadBackup = () => {
     exportBackupJSON(appData);
+    setStatusIsError(false);
     setStatusMessage('ሙሉ የዳታ ባክአፕ ወደ ኮምፒዩተርዎ/ስልክዎ ወርዷል! መረጃዎ 100% ደህንነቱ የተጠበቀ ነው።');
   };
 
@@ -78,16 +88,54 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      const restored = importBackupJSON(content);
+      const restored = importBackupJSON(content, appData);
       if (restored) {
         onDataRestored(restored);
-        setStatusMessage('ዳታው ከተጫነው ባክአፕ ፋይል በተሳካ ሁኔታ ተመልሷል!');
+        const stCount = countStudentsInData(restored);
+        const subjCount = restored.subjects?.length || 0;
+        const tCount = restored.teachers?.length || 0;
+        setStatusIsError(false);
+        setStatusMessage(
+          `✓ ከተጫነው JSON ፋይል መረጃው በተሳካ ሁኔታ ገብቷል! (ተማሪዎች፦ ${stCount}፣ የትምህርት ዓይነቶች፦ ${subjCount}፣ መምህራን፦ ${tCount})`
+        );
       } else {
-        alert('የተመረጠው ፋይል ትክክለኛ የባክአፕ ፎርማት አይደለም!');
+        setStatusIsError(true);
+        setStatusMessage('የተመረጠው ፋይል ትክክለኛ የFirebase Export JSON ወይም የባክአፕ ፎርማት አይደለም!');
       }
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const handleFetchFromOldFirebase = async () => {
+    setImportingUrl(true);
+    setStatusIsError(false);
+    setStatusMessage('ከቀድሞው Firebase ተማሪዎችን፣ ትምህርቶችን እና የመምህራን ምደባ በመፈለግ ላይ...');
+    try {
+      const res = await fetchDataFromPreviousFirebaseUrl(prevFirebaseUrl, appData, prevFirebaseAuth);
+      if (res.ok && res.merged && res.summary) {
+        onDataRestored(res.merged);
+        setStatusIsError(false);
+        setStatusMessage(
+          `✓ ከቀድሞው Firebase በተሳካ ሁኔታ ገብቷል! ተማሪዎች፦ ${res.summary.studentsCount}፣ የትምህርት ዓይነቶች፦ ${res.summary.subjectsCount} (በክፍል የተመደቡ፦ ${res.summary.classSubjectsCount})፣ መምህራን፦ ${res.summary.teachersCount}`
+        );
+      } else {
+        setStatusIsError(true);
+        setStatusMessage(res.message || 'መረጃውን ማምጣት አልተቻለም።');
+      }
+    } catch {
+      setStatusIsError(true);
+      setStatusMessage('ከቀድሞው Firebase ጋር መገናኘት አልተቻለም። እባክዎ አድራሻውን ወይም JSON ፋይልን ይጠቀሙ።');
+    } finally {
+      setImportingUrl(false);
+    }
+  };
+
+  const copyRtdbRules = () => {
+    const rulesText = `{\n  "rules": {\n    ".read": true,\n    ".write": true\n  }\n}`;
+    navigator.clipboard.writeText(rulesText);
+    setCopiedRtdbRules(true);
+    setTimeout(() => setCopiedRtdbRules(false), 2500);
   };
 
   const copyFirestoreRules = () => {
@@ -98,19 +146,22 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   };
 
   const handleForceSync = async () => {
+    setStatusIsError(false);
     setStatusMessage('ዳታውን ወደ ኦንላይን ዳታቤዝ በመላክ ላይ...');
     const ok = await syncAppDataToFirebase(appData);
     if (ok) {
-      setStatusMessage('✓ ዳታው በሙሉ ወደ ኦንላይን ዳታቤዝ በሚገባ ተልኳል!');
+      setStatusIsError(false);
+      setStatusMessage('✓ ዳታው በሙሉ ወደ ኦንላይን ዳታቤዝ (geladestazelulove1628) በሚገባ ተልኳል!');
     } else {
+      setStatusIsError(true);
       setStatusMessage('ወደ ኦንላይን መላክ አልተሳካም። እባክዎ ከታች የFirebase Rules መከፈቱን ያረጋግጡ። ስራዎ በብሮውዘርዎ ውስጥ በደህና ተቀምጧል!');
     }
   };
 
-  // Deep Cloud Scanner to recover previous work
   const handleScanForPreviousWork = async () => {
     setScanning(true);
-    setStatusMessage('የቀድሞ ፕሮጀክቶች በመፈተሽ ላይ ናቸው...');
+    setStatusIsError(false);
+    setStatusMessage('በአዲሱ Firebase ውስጥ የተቀመጠ ዳታ በመፈተሽ ላይ ነው...');
     try {
       const result = await scanAndRecoverPreviousCloudData();
       if (result.found && result.data) {
@@ -122,7 +173,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
         });
         setStatusMessage(`በ${result.projectLabel} ውስጥ ${result.studentCount} ተማሪዎች ተገኝተዋል!`);
       } else {
-        setStatusMessage('በቀድሞዎቹ ፕሮጀክቶች ውስጥ ተጨማሪ ተማሪዎች አልተገኙም። በአሁኑ ገጽ ላይ ያለው መረጃ ዋናው ነው።');
+        setStatusMessage('በአሁኑ ኦንላይን ዳታቤዝ ውስጥ ተጨማሪ ዳታ አልተገኘም። ከቀድሞ Firebase ለማምጣት ከታች ያለውን መሳሪያ ይጠቀሙ።');
       }
     } catch {
       setStatusMessage('ፍተሻው ተጠናቋል።');
@@ -135,7 +186,8 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
     if (foundCloudData?.data) {
       onDataRestored(foundCloudData.data);
       syncAppDataToFirebase(foundCloudData.data);
-      setStatusMessage('✓ የቀድሞው ዳታ ሙሉ በሙሉ ተመልሶ ወደ አዲሱ ዳታቤዝ ተልኳል!');
+      setStatusIsError(false);
+      setStatusMessage('✓ ዳታው በሙሉ ተመልሶ ተገናኝቷል!');
       setFoundCloudData(null);
     }
   };
@@ -157,16 +209,16 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-900">
-                የዳታ ደህንነት እና የFirebase ዳታቤዝ ማስተካከያ
+                የዳታ ደህንነት፣ ከቀድሞ Firebase ማምጫ እና Sync
               </h3>
               <p className="text-xs text-slate-500">
-                መረጃዎ እንዳይጠፋ ማረጋገጫ፣ ባክአፕ ማውረጃ እና የዳታቤዝ ግንኙነት
+                ተማሪዎችን፣ ትምህርቶችን እና የመምህራን ምደባን ማስገቢያ እና ባክአፕ
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 font-bold text-lg p-1"
+            className="text-slate-400 hover:text-slate-600 font-bold text-lg p-1 cursor-pointer"
           >
             ✕
           </button>
@@ -178,19 +230,30 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
           <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-950">
             <div className="flex items-center gap-2 font-bold text-sm text-emerald-800">
               <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-              <span>የእርስዎ የሰሩት ስራ አልጠፋም! (Data is Protected)</span>
+              <span>የእርስዎ የሰሩት ስራ የተጠበቀ ነው (Data is Protected)</span>
             </div>
             <p className="mt-1 text-[11px] text-emerald-900 leading-relaxed">
-              የሰሯቸው ስራዎች በሙሉ በብሮውዘርዎ ማህደረ-ትውስታ ውስጥ ተቀምጠዋል።
-              አሁን በስርዓቱ ውስጥ፦ <strong>{totalStudents} ተማሪዎች</strong> እና <strong>{totalTeachers} መምህራን</strong> ተመዝግበው ይገኛሉ።
+              አሁን በስርዓቱ ውስጥ፦ <strong>{totalStudents} ተማሪዎች</strong>፣{' '}
+              <strong>{totalSubjects} የትምህርት ዓይነቶች</strong> እና{' '}
+              <strong>{totalTeachers} መምህራን</strong> ተመዝግበው ይገኛሉ።
             </p>
           </div>
 
           {/* Status Notification Message */}
           {statusMessage && (
-            <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-xl font-medium flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
-              <span>{statusMessage}</span>
+            <div
+              className={`p-3 rounded-xl font-medium flex items-start gap-2 border ${
+                statusIsError
+                  ? 'bg-rose-50 border-rose-200 text-rose-900'
+                  : 'bg-blue-50 border-blue-200 text-blue-900'
+              }`}
+            >
+              {statusIsError ? (
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              )}
+              <span className="leading-relaxed">{statusMessage}</span>
             </div>
           )}
 
@@ -201,43 +264,73 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                 <FileCheck2 className="w-4 h-4 text-amber-600" />
                 <span>በ{foundCloudData.projectLabel} ውስጥ {foundCloudData.studentCount} ተማሪዎች ተገኝተዋል!</span>
               </div>
-              <p className="text-amber-800 text-[11px]">
-                የቀድሞ ስራዎን ወደ አሁኑ ገጽ በማምጣት ወደ አዲሱ Firebase ዳታቤዝ ማዛወር ይችላሉ።
-              </p>
               <button
                 type="button"
                 onClick={handleApplyRecoveredData}
-                className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow"
+                className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                የተገኘውን ዳታ አሁን ወደ አዲሱ ዳታቤዝ አዛውር (Migrate to New Database)
+                የተገኘውን ዳታ አሁን አስገባ
               </button>
             </div>
           )}
 
-          {/* Action 1: Instant Backup Download (Zero Risk) */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-            <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              1. የዳታ ባክአፕ ማውረጃ እና መመለሻ (Data Protection)
+          {/* Action 1: Import from Previous Firebase (Students, Subjects, Teachers) */}
+          <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-3">
+            <h4 className="font-bold text-indigo-950 text-xs flex items-center gap-1.5">
+              <ArrowDownToLine className="w-4 h-4 text-indigo-700" />
+              1. ከቀድሞ Firebase ተማሪዎች፣ ትምህርቶች እና የመምህራን ምደባ ማስገቢያ
             </h4>
-            <p className="text-slate-500 text-[11px]">
-              የሰሩትን ሙሉ ስራ (ተማሪዎች፣ ውጤቶች፣ መምህራን፣ ዕቅዶች) ወደ ኮምፒዩተርዎ ወይም ስልክዎ እንደ ፋይል አውርደው ያስቀምጡ።
+            <p className="text-slate-600 text-[11px] leading-relaxed">
+              በቀድሞው Firebase ውስጥ ተስተካክሎ የነበረውን የሰንበት ትምህርት ቤት <strong>ተማሪዎች</strong>፣{' '}
+              <strong>የትምህርት ዓይነቶች</strong> እና <strong>የመምህራን ምደባ</strong> ወደዚህ ለማስገባት (አሁን ያለውን 5,300+ የቤተክርስቲያን ቋት ሳያጠፋ) ከሁለቱ አንዱን ይጠቀሙ፦
             </p>
 
-            <div className="flex flex-wrap gap-2 pt-1">
-              <button
-                type="button"
-                onClick={handleDownloadBackup}
-                className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow"
-              >
-                <Download className="w-3.5 h-3.5" />
-                💾 ሙሉ ዳታዬን ባክአፕ አውርድ (Backup JSON)
-              </button>
+            {/* Option A: Direct URL / Project ID */}
+            <div className="p-3 bg-white rounded-xl border border-indigo-200/80 space-y-2">
+              <p className="font-bold text-[11px] text-indigo-900">
+                መንገድ ሀ) በቀድሞው Firebase ሊንክ ወይም Project ID ቀጥታ ማምጣት፦
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={prevFirebaseUrl}
+                  onChange={(e) => setPrevFirebaseUrl(e.target.value)}
+                  placeholder="https://...-default-rtdb.europe-west1.firebasedatabase.app ወይም Project ID"
+                  className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                />
+                <input
+                  type="password"
+                  value={prevFirebaseAuth}
+                  onChange={(e) => setPrevFirebaseAuth(e.target.value)}
+                  placeholder="Database Secret/Token (አማራጭ)"
+                  className="sm:w-44 px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={importingUrl || !prevFirebaseUrl.trim()}
+                  onClick={handleFetchFromOldFirebase}
+                  className="bg-indigo-700 hover:bg-indigo-600 disabled:bg-slate-300 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                >
+                  <ArrowDownToLine className="w-3.5 h-3.5" />
+                  {importingUrl ? 'በማምጣት ላይ...' : '📥 ከቀድሞ Firebase አምጣ & አዋህድ'}
+                </button>
+              </div>
+            </div>
 
-              <label className="bg-slate-700 hover:bg-slate-600 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer">
+            {/* Option B: Export JSON from Old Firebase Console */}
+            <div className="p-3 bg-white rounded-xl border border-indigo-200/80 space-y-2">
+              <p className="font-bold text-[11px] text-indigo-900">
+                መንገድ ለ) ከቀድሞው Firebase Console በExport JSON የወረደ ፋይል መጫን (Rules የተቆለፈ ከሆነ ቀላሉ መንገድ)፦
+              </p>
+              <p className="text-[10px] text-slate-500">
+                በቀድሞው Firebase Console &gt; Realtime Database &gt; <strong>⋮ &gt; Export JSON</strong> የሚለውን ተጭነው የወረደውን <code className="bg-slate-100 px-1 rounded">.json</code> ፋይል እዚህ ይጫኑ፦
+              </p>
+              <label className="inline-flex bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl transition items-center gap-1.5 shadow cursor-pointer">
                 <Upload className="w-3.5 h-3.5" />
-                📥 የባክአፕ ፋይል ጫን (Restore)
+                📂 የቀድሞ Firebase Export JSON ፋይል ጫን
                 <input
                   type="file"
                   accept=".json"
@@ -245,38 +338,53 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                   className="hidden"
                 />
               </label>
+            </div>
+          </div>
+
+          {/* Action 2: Backup Download & Force Sync */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+            <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              2. የዳታ ባክአፕ ማውረጃ እና ወደ አዲሱ Firebase ማስቀመጫ
+            </h4>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleDownloadBackup}
+                className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                💾 ሙሉ ዳታዬን ባክአፕ አውርድ (Backup JSON)
+              </button>
 
               <button
                 type="button"
                 onClick={handleForceSync}
-                className="bg-blue-800 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow"
+                className="bg-blue-800 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5" />
-                ወደ ኦንላይን ዳታቤዝ አስቀምጥ
+                ወደ geladestazelulove1628 ላክ
               </button>
 
               <button
                 type="button"
                 disabled={scanning}
                 onClick={handleScanForPreviousWork}
-                className="bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow"
+                className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
               >
                 <Search className="w-3.5 h-3.5" />
-                {scanning ? 'በመፈለግ ላይ...' : '🔍 የቀድሞ ስራዬን ፈልግ / አምጣ'}
+                {scanning ? 'በመፈተሽ ላይ...' : '🔍 በአዲሱ ዳታቤዝ ፈልግ'}
               </button>
             </div>
           </div>
 
-          {/* Action 2: Active Firebase Database Project */}
+          {/* Action 3: Active Firebase Database Project */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
             <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
               <Server className="w-4 h-4 text-blue-600" />
-              2. የተገናኘው የFirebase ፕሮጀክት (Active Firebase Project)
+              3. የተገናኘው የFirebase ፕሮጀክት (Active Firebase Project)
             </h4>
-            <p className="text-slate-500 text-[11px]">
-              አፕሊኬሽኑ በቀጥታ ከሚከተለው Firebase ፕሮጀክት ጋር ተገናኝቷል፦
-            </p>
-
             <div className="space-y-2">
               {KNOWN_PROJECTS.map((proj) => {
                 const isSelected = selectedProjectId === proj.id;
@@ -293,7 +401,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-600 block font-mono mt-0.5">
-                        Project ID: {proj.config.projectId} | Auth Domain: {proj.config.authDomain}
+                        {proj.config.databaseURL || proj.config.authDomain}
                       </span>
                     </div>
 
@@ -311,24 +419,42 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
             </div>
           </div>
 
-          {/* Action 3: Firebase Rules Instructions */}
+          {/* Action 4: Firebase Rules Instructions */}
           <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-3">
             <h4 className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 text-amber-600" />
-              3. የFirebase Firestore ፍቃድ ማስተካከያ (Firestore Rules Setup)
+              4. የFirebase ዳታቤዝ ፍቃድ ማስተካከያ (Firebase Rules Setup)
             </h4>
             <p className="text-slate-600 text-[11px] leading-relaxed">
-              Firebase Firestore አዲስ ሲፈጠር በነባሪነት እንዳይጻፍበት ተቆልፎ (Locked Mode) ሊሆን ይችላል። ኦንላይን ዳታቤዝ እንዲገናኝ በFirebase Console &gt; Firestore Database &gt; Rules ውስጥ የሚከተለውን ደንብ (Rules) ያስገቡ፦
+              ኦንላይን ዳታቤዝ እንዲገናኝ በFirebase Console ውስጥ Rules ን ይክፈቱ፦
             </p>
+
+            {/* RTDB Rules */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-bold text-slate-700 text-[11px]">ሀ) ለ Realtime Database፦</span>
+                <button
+                  type="button"
+                  onClick={copyRtdbRules}
+                  className="bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 rounded text-[10px] flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedRtdbRules ? <CheckCircle2 className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
+                  {copiedRtdbRules ? 'ተቀድቷል!' : 'ኮፒ አድርግ'}
+                </button>
+              </div>
+              <div className="bg-slate-900 text-emerald-300 font-mono text-[10px] p-2.5 rounded-xl overflow-x-auto">
+                <pre>{`{\n  "rules": {\n    ".read": true,\n    ".write": true\n  }\n}`}</pre>
+              </div>
+            </div>
 
             {/* Firestore Rules */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-slate-700 text-[11px]">ለ Cloud Firestore፦</span>
+                <span className="font-bold text-slate-700 text-[11px]">ለ) ለ Cloud Firestore፦</span>
                 <button
                   type="button"
                   onClick={copyFirestoreRules}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[10px] flex items-center gap-1"
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[10px] flex items-center gap-1 cursor-pointer"
                 >
                   {copiedFirestoreRules ? <CheckCircle2 className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
                   {copiedFirestoreRules ? 'ተቀድቷል!' : 'ኮፒ አድርግ'}
@@ -349,7 +475,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 text-xs bg-blue-900 hover:bg-blue-800 text-white rounded-xl font-bold shadow"
+            className="px-5 py-2 text-xs bg-blue-900 hover:bg-blue-800 text-white rounded-xl font-bold shadow cursor-pointer"
           >
             ዝጋ / ተመለስ
           </button>
