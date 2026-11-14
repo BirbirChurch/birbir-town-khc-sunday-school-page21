@@ -1,5 +1,5 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, Database } from 'firebase/database';
+import { getDatabase, ref, onValue, set, get, Database } from 'firebase/database';
 import { getFirestore, doc, onSnapshot, setDoc, getDoc, Firestore, setLogLevel } from 'firebase/firestore';
 import { AppData } from '../types';
 import { INITIAL_APP_DATA, DEFAULT_CHAPELS } from '../constants/initialData';
@@ -10,25 +10,15 @@ try {
   setLogLevel('silent');
 } catch {}
 
-export const firebaseConfig = {
-  apiKey: "AIzaSyAw5j4fochMJoU4CzWv5h8gl3vXVA49PEU",
-  authDomain: "geladestazelulove1628.firebaseapp.com",
-  projectId: "geladestazelulove1628",
-  storageBucket: "geladestazelulove1628.firebasestorage.app",
-  messagingSenderId: "873670244371",
-  appId: "1:873670244371:web:5e58672da91ce8d284e7e6"
-};
-
-const RTDB_PRIMARY_URL = `https://${firebaseConfig.projectId}-default-rtdb.europe-west1.firebasedatabase.app`;
-const RTDB_ALT_URL = `https://${firebaseConfig.projectId}-default-rtdb.firebaseio.com`;
-
 export interface FirebaseProjectProfile {
   id: string;
   label: string;
   config: {
     apiKey: string;
     authDomain: string;
-    databaseURL?: string;
+    databaseURL: string;
+    databaseURL_alt?: string;
+    databaseURL_alt2?: string;
     projectId: string;
     storageBucket: string;
     messagingSenderId: string;
@@ -39,11 +29,76 @@ export interface FirebaseProjectProfile {
 
 export const KNOWN_PROJECTS: FirebaseProjectProfile[] = [
   {
-    id: firebaseConfig.projectId,
-    label: `${firebaseConfig.projectId} (ዋናው የFirebase ዳታቤዝ)`,
+    id: "geladestazelulove1628",
+    label: "geladestazelulove1628 (አዲሱ ዋና ዳታቤዝ)",
     config: {
-      ...firebaseConfig,
-      databaseURL: RTDB_PRIMARY_URL
+      apiKey: "AIzaSyAw5j4fochMJoU4CzWv5h8gl3vXVA49PEU",
+      authDomain: "geladestazelulove1628.firebaseapp.com",
+      databaseURL: "https://geladestazelulove1628-default-rtdb.europe-west1.firebasedatabase.app",
+      databaseURL_alt: "https://geladestazelulove1628-default-rtdb.firebaseio.com",
+      projectId: "geladestazelulove1628",
+      storageBucket: "geladestazelulove1628.firebasestorage.app",
+      messagingSenderId: "873670244371",
+      appId: "1:873670244371:web:5e58672da91ce8d284e7e6"
+    }
+  },
+  {
+    id: "birbir-town-khc-child-ministry",
+    label: "birbir-town-khc-child-ministry (የቀድሞው ዋና ዳታቤዝ)",
+    config: {
+      apiKey: "AIzaSyAruE9nGOFGkGRHs1hbRT2EmLq1hJrWSb8",
+      authDomain: "birbir-town-khc-child-ministry.firebaseapp.com",
+      databaseURL: "https://birbir-town-khc-child-ministry-default-rtdb.europe-west1.firebasedatabase.app",
+      databaseURL_alt: "https://birbir-town-khc-child-ministry-default-rtdb.firebaseio.com",
+      databaseURL_alt2: "https://birbir-town-khc-child-ministry.firebaseio.com",
+      projectId: "birbir-town-khc-child-ministry",
+      storageBucket: "birbir-town-khc-child-ministry.firebasestorage.app",
+      messagingSenderId: "556764983235",
+      appId: "1:556764983235:web:fb6fecffab48f8e6285776"
+    }
+  },
+  {
+    id: "birbir-khc-child-page",
+    label: "birbir-khc-child-page",
+    config: {
+      apiKey: "AIzaSyCRyDJHarx0va7X5pXXP2rnGafq2eBLq9s",
+      authDomain: "birbir-khc-child-page.firebaseapp.com",
+      databaseURL: "https://birbir-khc-child-page-default-rtdb.europe-west1.firebasedatabase.app",
+      databaseURL_alt: "https://birbir-khc-child-page-default-rtdb.firebaseio.com",
+      databaseURL_alt2: "https://birbir-khc-child-page.firebaseio.com",
+      projectId: "birbir-khc-child-page",
+      storageBucket: "birbir-khc-child-page.firebasestorage.app",
+      messagingSenderId: "44927911746",
+      appId: "1:44927911746:web:e4ccfd7048a7ee1fb8aadb",
+      measurementId: "G-XMQ04TVFFN"
+    }
+  },
+  {
+    id: "birbir-town-khc-child-page",
+    label: "birbir-town-khc-child-page (የቀድሞው ዳታቤዝ - ስራ የነበረበት)",
+    config: {
+      apiKey: "AIzaSyBx7ZJxRNzjNb8Lx79R2vXjWq-MsZBPTfA",
+      authDomain: "birbir-town-khc-child-page.firebaseapp.com",
+      databaseURL: "https://birbir-town-khc-child-page-default-rtdb.europe-west1.firebasedatabase.app",
+      databaseURL_alt: "https://birbir-town-khc-child-page-default-rtdb.firebaseio.com",
+      projectId: "birbir-town-khc-child-page",
+      storageBucket: "birbir-town-khc-child-page.firebasestorage.app",
+      messagingSenderId: "1007927588446",
+      appId: "1:1007927588446:web:b85df399e7b1b89c1d26cf"
+    }
+  },
+  {
+    id: "birbir-town-khc-bible-sc-82849",
+    label: "birbir-town-khc-bible-sc-82849",
+    config: {
+      apiKey: "AIzaSyAnUdWOOAZhOfRtx-GfW89pz1iKrDonz_s",
+      authDomain: "birbir-town-khc-bible-sc-82849.firebaseapp.com",
+      databaseURL: "https://birbir-town-khc-bible-sc-82849-default-rtdb.europe-west1.firebasedatabase.app",
+      databaseURL_alt: "https://birbir-town-khc-bible-sc-82849-default-rtdb.firebaseio.com",
+      projectId: "birbir-town-khc-bible-sc-82849",
+      storageBucket: "birbir-town-khc-bible-sc-82849.firebasestorage.app",
+      messagingSenderId: "745550786105",
+      appId: "1:745550786105:web:6724bcaecde6d39b1967e8"
     }
   }
 ];
@@ -54,7 +109,13 @@ const BACKUP_STORAGE_KEY = 'birbir_khc_safety_backup';
 const DB_KEY = 'kaleheywet_data';
 
 export const getActiveProjectId = (): string => {
-  return firebaseConfig.projectId;
+  try {
+    const saved = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+    if (saved && KNOWN_PROJECTS.some((p) => p.id === saved)) {
+      return saved;
+    }
+  } catch {}
+  return KNOWN_PROJECTS[0].id;
 };
 
 export const setActiveProjectId = (projectId: string) => {
@@ -62,8 +123,11 @@ export const setActiveProjectId = (projectId: string) => {
 };
 
 export const getActiveProjectProfile = (): FirebaseProjectProfile => {
-  return KNOWN_PROJECTS[0];
+  const currentId = getActiveProjectId();
+  return KNOWN_PROJECTS.find((p) => p.id === currentId) || KNOWN_PROJECTS[0];
 };
+
+export const firebaseConfig = getActiveProjectProfile().config;
 
 // Initialize Firebase App
 let appInstance: FirebaseApp | null = null;
@@ -81,23 +145,20 @@ const countStudentsInData = (data: any): number => {
 
 const initFirebaseForActiveProject = () => {
   try {
-    try {
-      const saved = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-      if (saved && saved !== firebaseConfig.projectId) {
-        localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, firebaseConfig.projectId);
-      }
-    } catch {}
+    const profile = getActiveProjectProfile();
+    const appName = `app_${profile.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-    const appName = `app_${firebaseConfig.projectId.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const existing = getApps().find((a) => a.name === appName);
-    appInstance = existing || initializeApp(firebaseConfig, appName);
+    appInstance = existing || initializeApp(profile.config, appName);
 
     try {
-      rtdbInstance = getDatabase(appInstance, RTDB_PRIMARY_URL);
+      rtdbInstance = getDatabase(appInstance, profile.config.databaseURL);
     } catch {
-      try {
-        rtdbInstance = getDatabase(appInstance, RTDB_ALT_URL);
-      } catch {}
+      if (profile.config.databaseURL_alt) {
+        try {
+          rtdbInstance = getDatabase(appInstance, profile.config.databaseURL_alt);
+        } catch {}
+      }
     }
 
     try {
@@ -226,9 +287,9 @@ export interface SyncDiagnosticInfo {
 
 export let currentDiagnostic: SyncDiagnosticInfo = {
   status: 'offline',
-  projectId: firebaseConfig.projectId,
-  projectLabel: KNOWN_PROJECTS[0].label,
-  databaseURL: RTDB_PRIMARY_URL,
+  projectId: getActiveProjectId(),
+  projectLabel: getActiveProjectProfile().label,
+  databaseURL: getActiveProjectProfile().config.databaseURL,
   totalStudentsLocal: 0
 };
 
@@ -312,7 +373,7 @@ export const subscribeToAppData = (
           status: 'connected',
           projectId: profile.id,
           projectLabel: profile.label,
-          databaseURL: RTDB_PRIMARY_URL,
+          databaseURL: profile.config.databaseURL,
           lastSyncTime: new Date().toLocaleTimeString('am-ET')
         };
         onStatusChange('connected', currentDiagnostic);
@@ -375,7 +436,7 @@ export const subscribeToAppData = (
         status: 'connected',
         projectId: profile.id,
         projectLabel: profile.label,
-        databaseURL: RTDB_PRIMARY_URL,
+        databaseURL: profile.config.databaseURL,
         lastSyncTime: new Date().toLocaleTimeString('am-ET'),
         totalStudentsLocal: countStudentsInData(sanitizedMerged)
       };
@@ -383,7 +444,6 @@ export const subscribeToAppData = (
     }
   };
 
-  // Primary: Realtime Database listener on geladestazelulove1628
   if (rtdbInstance) {
     try {
       const dataRef = ref(rtdbInstance, DB_KEY);
@@ -400,7 +460,7 @@ export const subscribeToAppData = (
                   status: 'connected',
                   projectId: profile.id,
                   projectLabel: profile.label,
-                  databaseURL: RTDB_PRIMARY_URL,
+                  databaseURL: profile.config.databaseURL,
                   lastSyncTime: new Date().toLocaleTimeString('am-ET')
                 };
                 onStatusChange('connected', currentDiagnostic);
@@ -411,10 +471,8 @@ export const subscribeToAppData = (
                   status: isPermission ? 'permission_denied' : 'offline',
                   projectId: profile.id,
                   projectLabel: profile.label,
-                  databaseURL: RTDB_PRIMARY_URL,
-                  errorMessage: isPermission
-                    ? 'የFirebase Realtime Database ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console ውስጥ Rules ን .read: true, .write: true ያድርጉ።'
-                    : err?.message
+                  databaseURL: profile.config.databaseURL,
+                  errorMessage: err?.message
                 };
                 onStatusChange('offline', currentDiagnostic);
               });
@@ -426,9 +484,9 @@ export const subscribeToAppData = (
             status: isPermission ? 'permission_denied' : 'offline',
             projectId: profile.id,
             projectLabel: profile.label,
-            databaseURL: RTDB_PRIMARY_URL,
+            databaseURL: profile.config.databaseURL,
             errorMessage: isPermission
-              ? 'የFirebase Realtime Database ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console ውስጥ Rules ን .read: true, .write: true ያድርጉ።'
+              ? 'የFirebase ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console ውስጥ Rules ን .read: true, .write: true ያድርጉ።'
               : error?.message
           };
           onStatusChange('offline', currentDiagnostic);
@@ -439,13 +497,14 @@ export const subscribeToAppData = (
         status: 'offline',
         projectId: profile.id,
         projectLabel: profile.label,
-        databaseURL: RTDB_PRIMARY_URL,
+        databaseURL: profile.config.databaseURL,
         errorMessage: err?.message
       };
       onStatusChange('offline', currentDiagnostic);
     }
-  } else if (firestoreInstance) {
-    // Fallback: Cloud Firestore
+  }
+
+  if (firestoreInstance && !rtdbInstance) {
     try {
       const fs = firestoreInstance;
       const docRef = doc(fs, 'church_data', DB_KEY);
@@ -459,44 +518,13 @@ export const subscribeToAppData = (
             } catch {
               handleRemoteData(snap.data());
             }
-          } else {
-            try {
-              await writeAppDataToFirestore(fs, {
-                ...initialLocal,
-                _syncMeta: { clientId: CLIENT_SESSION_ID, timestamp: Date.now() }
-              });
-              currentDiagnostic = {
-                status: 'connected',
-                projectId: profile.id,
-                projectLabel: profile.label,
-                databaseURL: `firestore://${profile.id}`,
-                lastSyncTime: new Date().toLocaleTimeString('am-ET')
-              };
-              onStatusChange('connected', currentDiagnostic);
-            } catch (err: any) {
-              const isPermission =
-                err?.code === 'permission-denied' ||
-                err?.message?.includes('PERMISSION_DENIED');
-              currentDiagnostic = {
-                status: isPermission ? 'permission_denied' : 'offline',
-                projectId: profile.id,
-                projectLabel: profile.label,
-                databaseURL: `firestore://${profile.id}`,
-                errorMessage: err?.message
-              };
-              onStatusChange('offline', currentDiagnostic);
-            }
           }
         },
-        (error) => {
-          currentDiagnostic = {
-            status: 'offline',
-            projectId: profile.id,
-            projectLabel: profile.label,
-            databaseURL: `firestore://${profile.id}`,
-            errorMessage: error?.message
-          };
-          onStatusChange('offline', currentDiagnostic);
+        () => {
+          if (unsubFirestore) {
+            unsubFirestore();
+            unsubFirestore = null;
+          }
         }
       );
     } catch {}
@@ -530,8 +558,8 @@ export const syncAppDataToFirebase = async (data: AppData): Promise<boolean> => 
       synced = true;
       currentDiagnostic.status = 'connected';
       currentDiagnostic.lastSyncTime = new Date().toLocaleTimeString('am-ET');
-    } catch (err: any) {
-      console.warn('RTDB sync note:', err?.message);
+    } catch (error: any) {
+      console.warn('RTDB sync note:', error?.message);
     }
   }
 
@@ -544,9 +572,7 @@ export const syncAppDataToFirebase = async (data: AppData): Promise<boolean> => 
       synced = true;
       currentDiagnostic.status = 'connected';
       currentDiagnostic.lastSyncTime = new Date().toLocaleTimeString('am-ET');
-    } catch (err: any) {
-      console.warn('Firestore sync note:', err?.message);
-    }
+    } catch {}
   }
 
   return synced;
@@ -564,7 +590,6 @@ export const extractFirebasePayloadObject = (raw: any): any | null => {
     return raw;
   }
 
-  // Search 1 level deep in case root export used a custom node key
   for (const val of Object.values(raw)) {
     if (val && typeof val === 'object' && !Array.isArray(val)) {
       const candidate = val as any;
@@ -592,7 +617,6 @@ export const mergeImportedSundaySchoolData = (
   const source = extractFirebasePayloadObject(rawInput);
   if (!source) return null;
 
-  // 1. Merge students across years and classes
   const mergedStudents: AppData['students'] = { ...(currentData.students || {}) };
   const incomingStudents = source.students && typeof source.students === 'object' ? source.students : {};
 
@@ -601,7 +625,6 @@ export const mergeImportedSundaySchoolData = (
     const existingYearMap = { ...(mergedStudents[year] || {}) };
     Object.entries(classMap).forEach(([clsName, arr]: [string, any]) => {
       if (Array.isArray(arr) && arr.length > 0) {
-        // Combine without duplicating exact name + gender inside same class
         const currentList = Array.isArray(existingYearMap[clsName]) ? [...existingYearMap[clsName]] : [];
         const existingNames = new Set(currentList.map((s: any) => String(s?.name || '').trim().toLowerCase()));
         arr.forEach((st: any) => {
@@ -610,7 +633,6 @@ export const mergeImportedSundaySchoolData = (
             currentList.push(st);
             existingNames.add(stName.toLowerCase());
           } else if (stName && existingNames.has(stName.toLowerCase())) {
-            // Update scores/fields if incoming record has more complete data
             const idx = currentList.findIndex((s: any) => String(s?.name || '').trim().toLowerCase() === stName.toLowerCase());
             if (idx !== -1 && (Number(st?.total || 0) >= Number(currentList[idx]?.total || 0))) {
               currentList[idx] = { ...currentList[idx], ...st };
@@ -623,7 +645,6 @@ export const mergeImportedSundaySchoolData = (
     mergedStudents[year] = existingYearMap;
   });
 
-  // 2. Subjects & ClassSubjects
   const incomingSubjects = Array.isArray(source.subjects) ? source.subjects.filter(Boolean) : [];
   const mergedSubjects = incomingSubjects.length > 0
     ? Array.from(new Set([...incomingSubjects, ...(currentData.subjects || [])]))
@@ -634,7 +655,6 @@ export const mergeImportedSundaySchoolData = (
     ...(source.classSubjects && typeof source.classSubjects === 'object' ? source.classSubjects : {})
   };
 
-  // 3. Teachers & assignments
   const incomingTeachers = Array.isArray(source.teachers) && source.teachers.length > 0
     ? source.teachers
     : currentData.teachers;
@@ -684,7 +704,7 @@ export const mergeImportedSundaySchoolData = (
   };
 };
 
-// Fetch data directly from a user-supplied previous Firebase RTDB URL or Project ID
+// Fetch data directly from a previous Firebase RTDB URL or Project ID
 export const fetchDataFromPreviousFirebaseUrl = async (
   urlOrProjectId: string,
   currentData: AppData,
@@ -710,7 +730,6 @@ export const fetchDataFromPreviousFirebaseUrl = async (
     const cleanBase = input.replace(/\/kaleheywet_data\.json.*$/i, '').replace(/\/\.json.*$/i, '');
     candidateBases.push(cleanBase);
   } else {
-    // User typed a Firebase projectId -> construct standard RTDB base URLs
     const cleanId = input.replace(/[^a-zA-Z0-9-]/g, '');
     candidateBases.push(`https://${cleanId}-default-rtdb.europe-west1.firebasedatabase.app`);
     candidateBases.push(`https://${cleanId}-default-rtdb.firebaseio.com`);
@@ -751,18 +770,18 @@ export const fetchDataFromPreviousFirebaseUrl = async (
       ok: false,
       errorType: 'permission_denied',
       message:
-        'የቀድሞው Firebase ዳታቤዝ በRules ተቆልፏል (Permission Denied)። መረጃውን ለማምጣት፦ (1) በቀድሞው Firebase Console > Realtime Database > ⋮ Export JSON በማውረድ ከታች በ"JSON ፋይል ጫን" ያስገቡት፣ ወይም (2) በቀድሞው Firebase Rules ላይ ".read": true አድርገው እንደገና ይሞክሩ።'
+        'የተመረጠው Firebase ዳታቤዝ በRules ተቆልፏል (Permission Denied)። መረጃውን ለማምጣት፦ (1) በዚያ Firebase Console > Realtime Database > ⋮ Export JSON በማውረድ ከታች በ"JSON ፋይል ጫን" ያስገቡት፣ ወይም (2) በRules ላይ ".read": true አድርገው እንደገና ይሞክሩ።'
     };
   }
 
   return {
     ok: false,
     errorType: 'not_found',
-    message: 'በተሰጠው Firebase አድራሻ ውስጥ የተማሪዎች/መምህራን መረጃ አልተገኘም። እባክዎ አድራሻውን ወይም የወረደውን JSON ፋይል ያረጋግጡ።'
+    message: 'በተሰጠው Firebase አድራሻ ውስጥ የተማሪዎች/መምህራን መረጃ አልተገኘም።'
   };
 };
 
-// Check current configured Firebase project for cloud data
+// Scan and recover cloud data across ALL projects in KNOWN_PROJECTS
 export const scanAndRecoverPreviousCloudData = async (): Promise<{
   found: boolean;
   projectLabel?: string;
@@ -770,48 +789,59 @@ export const scanAndRecoverPreviousCloudData = async (): Promise<{
   data?: AppData;
   studentCount?: number;
 }> => {
-  const profile = getActiveProjectProfile();
-
-  try {
-    const res = await fetch(`${RTDB_PRIMARY_URL}/${DB_KEY}.json`);
-    if (res.ok) {
-      const val = await res.json();
-      const count = countStudentsInData(val);
-      if (val && (count > 0 || (val?.teachers && val.teachers.length > 0))) {
-        return {
-          found: true,
-          projectLabel: profile.label,
-          projectId: profile.id,
-          data: val as AppData,
-          studentCount: count
-        };
-      }
-    }
-  } catch {}
-
-  if (firestoreInstance) {
+  for (const proj of KNOWN_PROJECTS) {
     try {
-      const docRef = doc(firestoreInstance, 'church_data', DB_KEY);
-      const snap = await Promise.race([
-        getDoc(docRef),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-      ]);
-      if (snap && snap.exists()) {
-        const val = await readChunksFromFirestore(firestoreInstance, snap.data());
-        const count = countStudentsInData(val);
-        if (count > 0 || (val?.teachers && val.teachers.length > 0)) {
-          return {
-            found: true,
-            projectLabel: profile.label,
-            projectId: profile.id,
-            data: val as AppData,
-            studentCount: count
-          };
-        }
+      const tempAppName = `scanner_${proj.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const tempApp = getApps().find((a) => a.name === tempAppName) || initializeApp(proj.config, tempAppName);
+
+      const urls = [proj.config.databaseURL, proj.config.databaseURL_alt, proj.config.databaseURL_alt2].filter(Boolean) as string[];
+      for (const u of urls) {
+        try {
+          const tempRtdb = getDatabase(tempApp, u);
+          const dataRef = ref(tempRtdb, DB_KEY);
+          const snap = await Promise.race([
+            get(dataRef),
+            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          ]);
+          if (snap && snap.exists()) {
+            const val = snap.val();
+            const count = countStudentsInData(val);
+            if (count > 0 || (val?.teachers && val.teachers.length > 0)) {
+              return {
+                found: true,
+                projectLabel: proj.label,
+                projectId: proj.id,
+                data: val,
+                studentCount: count
+              };
+            }
+          }
+        } catch {}
       }
+
+      try {
+        const tempFirestore = getFirestore(tempApp);
+        const docRef = doc(tempFirestore, 'church_data', DB_KEY);
+        const snap = await Promise.race([
+          getDoc(docRef),
+          new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+        ]);
+        if (snap && snap.exists()) {
+          const val = await readChunksFromFirestore(tempFirestore, snap.data());
+          const count = countStudentsInData(val);
+          if (count > 0 || (val?.teachers && val.teachers.length > 0)) {
+            return {
+              found: true,
+              projectLabel: proj.label,
+              projectId: proj.id,
+              data: val as AppData,
+              studentCount: count
+            };
+          }
+        }
+      } catch {}
     } catch {}
   }
-
   return { found: false };
 };
 
@@ -831,7 +861,7 @@ export const exportBackupJSON = (data: AppData) => {
   URL.revokeObjectURL(url);
 };
 
-// Full Backup / Firebase Export JSON Importer (supports both app backup and Firebase Console Export JSON)
+// Full Backup / Firebase Export JSON Importer
 export const importBackupJSON = (jsonString: string, currentData?: AppData): AppData | null => {
   try {
     const parsed = JSON.parse(jsonString);

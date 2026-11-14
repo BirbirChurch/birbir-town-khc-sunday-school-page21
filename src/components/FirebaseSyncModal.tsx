@@ -23,6 +23,7 @@ import {
   syncAppDataToFirebase,
   scanAndRecoverPreviousCloudData,
   fetchDataFromPreviousFirebaseUrl,
+  mergeImportedSundaySchoolData,
   countStudentsInData
 } from '../services/firebase';
 
@@ -151,7 +152,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
     const ok = await syncAppDataToFirebase(appData);
     if (ok) {
       setStatusIsError(false);
-      setStatusMessage('✓ ዳታው በሙሉ ወደ ኦንላይን ዳታቤዝ (geladestazelulove1628) በሚገባ ተልኳል!');
+      setStatusMessage(`✓ ዳታው በሙሉ ወደ ኦንላይን ዳታቤዝ (${selectedProjectId}) በሚገባ ተልኳል!`);
     } else {
       setStatusIsError(true);
       setStatusMessage('ወደ ኦንላይን መላክ አልተሳካም። እባክዎ ከታች የFirebase Rules መከፈቱን ያረጋግጡ። ስራዎ በብሮውዘርዎ ውስጥ በደህና ተቀምጧል!');
@@ -161,7 +162,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   const handleScanForPreviousWork = async () => {
     setScanning(true);
     setStatusIsError(false);
-    setStatusMessage('በአዲሱ Firebase ውስጥ የተቀመጠ ዳታ በመፈተሽ ላይ ነው...');
+    setStatusMessage('ሁሉንም 5ቱን የFirebase ዳታቤዞች በመፈተሽ ላይ ነው...');
     try {
       const result = await scanAndRecoverPreviousCloudData();
       if (result.found && result.data) {
@@ -173,7 +174,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
         });
         setStatusMessage(`በ${result.projectLabel} ውስጥ ${result.studentCount} ተማሪዎች ተገኝተዋል!`);
       } else {
-        setStatusMessage('በአሁኑ ኦንላይን ዳታቤዝ ውስጥ ተጨማሪ ዳታ አልተገኘም። ከቀድሞ Firebase ለማምጣት ከታች ያለውን መሳሪያ ይጠቀሙ።');
+        setStatusMessage('በተዘረዘሩት 5ቱ ዳታቤዞች ውስጥ ክፍት ዳታ አልተገኘም። Rules የተቆለፈ ከሆነ ከላይ ባለው መንገድ ሀ/ለ ይጠቀሙ።');
       }
     } catch {
       setStatusMessage('ፍተሻው ተጠናቋል።');
@@ -184,10 +185,18 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
 
   const handleApplyRecoveredData = () => {
     if (foundCloudData?.data) {
-      onDataRestored(foundCloudData.data);
-      syncAppDataToFirebase(foundCloudData.data);
+      const mergedRes = mergeImportedSundaySchoolData(appData, foundCloudData.data);
+      const nextData = mergedRes ? mergedRes.merged : foundCloudData.data;
+      onDataRestored(nextData);
+      syncAppDataToFirebase(nextData);
       setStatusIsError(false);
-      setStatusMessage('✓ ዳታው በሙሉ ተመልሶ ተገናኝቷል!');
+      if (mergedRes) {
+        setStatusMessage(
+          `✓ ከ${foundCloudData.projectLabel} የተገኘው መረጃ ተዋህዶ ገብቷል! (ተማሪዎች፦ ${mergedRes.summary.studentsCount}፣ የትምህርት ዓይነቶች፦ ${mergedRes.summary.subjectsCount}፣ መምህራን፦ ${mergedRes.summary.teachersCount})`
+        );
+      } else {
+        setStatusMessage('✓ ዳታው በሙሉ ተመልሶ ተገናኝቷል!');
+      }
       setFoundCloudData(null);
     }
   };
@@ -364,7 +373,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                 className="bg-blue-800 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5" />
-                ወደ geladestazelulove1628 ላክ
+                ወደ {selectedProjectId} ላክ
               </button>
 
               <button
@@ -374,44 +383,61 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                 className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
               >
                 <Search className="w-3.5 h-3.5" />
-                {scanning ? 'በመፈተሽ ላይ...' : '🔍 በአዲሱ ዳታቤዝ ፈልግ'}
+                {scanning ? 'በመፈተሽ ላይ...' : '🔍 ሁሉንም 5ቱን ዳታቤዞች ፈልግ'}
               </button>
             </div>
           </div>
 
-          {/* Action 3: Active Firebase Database Project */}
+          {/* Action 3: All Firebase Database Projects (Previous + New) */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
             <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
               <Server className="w-4 h-4 text-blue-600" />
-              3. የተገናኘው የFirebase ፕሮጀክት (Active Firebase Project)
+              3. የFirebase ፕሮጀክቶች (የቀድሞዎቹ 4 እና አዲሱ በአንድ ላይ — Switch / Merge)
             </h4>
+            <p className="text-slate-500 text-[11px]">
+              ሁሉም የFirebase ዳታቤዞች እዚህ አንድ ላይ ተቀምጠዋል። የፈለጉትን ጠቅ አድርገው መቀየር ወይም መረጃውን ማምጣት ይችላሉ፦
+            </p>
             <div className="space-y-2">
               {KNOWN_PROJECTS.map((proj) => {
                 const isSelected = selectedProjectId === proj.id;
                 return (
                   <div
                     key={proj.id}
-                    className="p-3 rounded-xl border bg-blue-50/80 border-blue-400 font-bold text-blue-950 shadow-sm flex items-center justify-between"
+                    onClick={() => !isSelected && handleSwitchProject(proj.id)}
+                    className={`p-3 rounded-xl border flex items-center justify-between transition ${
+                      isSelected
+                        ? 'bg-blue-50/80 border-blue-400 font-bold text-blue-950 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer'
+                    }`}
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0 pr-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs">{proj.label}</span>
-                        <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
-                          ንቁ (Active)
-                        </span>
+                        {isSelected && (
+                          <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
+                            አሁን የተመረጠው (Active)
+                          </span>
+                        )}
                       </div>
-                      <span className="text-[10px] text-slate-600 block font-mono mt-0.5">
+                      <span className="text-[10px] text-slate-500 block font-mono mt-0.5 truncate">
                         {proj.config.databaseURL || proj.config.authDomain}
                       </span>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => handleSwitchProject(proj.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSwitchProject(proj.id);
+                      }}
                       disabled={switching || isSelected}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-blue-600 text-white font-semibold"
+                      className={`text-xs px-2.5 py-1 rounded-lg shrink-0 ${
+                        isSelected
+                          ? 'bg-blue-600 text-white font-semibold'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer font-semibold'
+                      }`}
                     >
-                      ተገናኝቷል
+                      {isSelected ? 'ተመርጧል' : 'ቀይር & ጫን'}
                     </button>
                   </div>
                 );
