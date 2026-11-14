@@ -31,8 +31,8 @@ import {
   ChurchChild,
   ChurchMember
 } from './types';
-import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS } from './constants/initialData';
-import { subscribeToAppData, syncAppDataToFirebase, saveToLocalStorage, countStudentsInData, exportBackupJSON } from './services/firebase';
+import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from './constants/initialData';
+import { subscribeToAppData, syncAppDataToFirebase, saveToLocalStorage, countStudentsInData, exportBackupJSON, importBackupJSON } from './services/firebase';
 import { generateUniqueId, sanitizeAndDeduplicateAppData } from './utils/idGenerator';
 import { normalizeAmharicSearchText } from './utils/churchExcelParser';
 import { Header } from './components/Header';
@@ -682,52 +682,54 @@ export default function App() {
     }));
   };
 
-  // Church Children handlers
+  // Church Children handlers (strictly scoped when loggedInChapel is active)
   const handleAddChurchChild = (newChild: Omit<ChurchChild, 'id'>) => {
+    const enforcedChapel = loggedInChapel
+      ? mapToOfficialChapel(loggedInChapel)
+      : mapToOfficialChapel(newChild.chapel || DEFAULT_CHAPELS[0]);
     const childWithId: ChurchChild = {
       ...newChild,
+      chapel: enforcedChapel,
       id: generateUniqueId()
     };
     updateAppData(
-      (prev) => {
-        const existingChapels = new Set(prev.chapels || DEFAULT_CHAPELS);
-        const updatedChapels =
-          newChild.chapel && !existingChapels.has(newChild.chapel)
-            ? [...(prev.chapels || DEFAULT_CHAPELS), newChild.chapel]
-            : prev.chapels || DEFAULT_CHAPELS;
-
-        return {
-          ...prev,
-          chapels: updatedChapels,
-          churchChildren: [...(prev.churchChildren || []), childWithId]
-        };
-      },
+      (prev) => ({
+        ...prev,
+        chapels: DEFAULT_CHAPELS,
+        churchChildren: [...(prev.churchChildren || []), childWithId]
+      }),
       { immediate: true }
     );
   };
 
   const handleUpdateChurchChild = (updatedChild: ChurchChild) => {
-    updateAppData((prev) => {
-      const existingChapels = new Set(prev.chapels || DEFAULT_CHAPELS);
-      const updatedChapels =
-        updatedChild.chapel && !existingChapels.has(updatedChild.chapel)
-          ? [...(prev.chapels || DEFAULT_CHAPELS), updatedChild.chapel]
-          : prev.chapels || DEFAULT_CHAPELS;
+    const enforcedChapel = loggedInChapel
+      ? mapToOfficialChapel(loggedInChapel)
+      : mapToOfficialChapel(updatedChild.chapel || DEFAULT_CHAPELS[0]);
 
-      return {
-        ...prev,
-        chapels: updatedChapels,
-        churchChildren: (prev.churchChildren || []).map((c) =>
-          c.id === updatedChild.id ? updatedChild : c
-        )
-      };
-    });
+    updateAppData((prev) => ({
+      ...prev,
+      chapels: DEFAULT_CHAPELS,
+      churchChildren: (prev.churchChildren || []).map((c) => {
+        if (c.id !== updatedChild.id) return c;
+        if (loggedInChapel && mapToOfficialChapel(c.chapel || '') !== enforcedChapel) {
+          return c;
+        }
+        return { ...updatedChild, chapel: enforcedChapel };
+      })
+    }));
   };
 
   const handleDeleteChurchChild = (id: number) => {
     updateAppData((prev) => ({
       ...prev,
-      churchChildren: (prev.churchChildren || []).filter((c) => c.id !== id)
+      churchChildren: (prev.churchChildren || []).filter((c) => {
+        if (c.id !== id) return true;
+        if (loggedInChapel && mapToOfficialChapel(c.chapel || '') !== mapToOfficialChapel(loggedInChapel)) {
+          return true;
+        }
+        return false;
+      })
     }));
   };
 
@@ -736,30 +738,37 @@ export default function App() {
     mode: 'append' | 'replace' = 'append'
   ) => {
     if (!children.length) return;
+    const targetChapel = loggedInChapel ? mapToOfficialChapel(loggedInChapel) : null;
+    const filteredIncoming = (targetChapel
+      ? children.filter((c) => mapToOfficialChapel(c.chapel || targetChapel) === targetChapel)
+      : children
+    ).map((c) => ({
+      ...c,
+      chapel: targetChapel || mapToOfficialChapel(c.chapel || DEFAULT_CHAPELS[0])
+    }));
+    if (!filteredIncoming.length) return;
+
     updateAppData(
       (prev) => {
-        const existingChapels = new Set(prev.chapels || DEFAULT_CHAPELS);
-        const newChapels: string[] = [];
-        children.forEach((c) => {
-          if (c.chapel && !existingChapels.has(c.chapel)) {
-            existingChapels.add(c.chapel);
-            newChapels.push(c.chapel);
-          }
-        });
-
-        const updatedChapels =
-          newChapels.length > 0
-            ? [...(prev.chapels || DEFAULT_CHAPELS), ...newChapels]
-            : prev.chapels || DEFAULT_CHAPELS;
-
         if (mode === 'replace') {
-          const withIds: ChurchChild[] = children.map((c) => ({
+          const withIds: ChurchChild[] = filteredIncoming.map((c) => ({
             ...c,
             id: generateUniqueId()
           }));
+          if (targetChapel) {
+            // Only replace the logged-in chapel's children, preserving other chapels
+            const others = (prev.churchChildren || []).filter(
+              (c) => mapToOfficialChapel(c.chapel || '') !== targetChapel
+            );
+            return {
+              ...prev,
+              chapels: DEFAULT_CHAPELS,
+              churchChildren: [...others, ...withIds]
+            };
+          }
           return {
             ...prev,
-            chapels: updatedChapels,
+            chapels: DEFAULT_CHAPELS,
             churchChildren: withIds
           };
         }
@@ -772,7 +781,7 @@ export default function App() {
           if (!keyToIndex.has(key)) keyToIndex.set(key, idx);
         });
 
-        children.forEach((incoming) => {
+        filteredIncoming.forEach((incoming) => {
           const key = `${normalizeAmharicSearchText(incoming.name)}|${mapToOfficialChapel(incoming.chapel || '')}`;
           const existingIdx = keyToIndex.get(key);
           if (existingIdx !== undefined) {
@@ -802,7 +811,7 @@ export default function App() {
 
         return {
           ...prev,
-          chapels: updatedChapels,
+          chapels: DEFAULT_CHAPELS,
           churchChildren: existingList
         };
       },
@@ -813,39 +822,34 @@ export default function App() {
   const handleClearChurchChildren = (chapelFilter?: string | string[]) => {
     updateAppData(
       (prev) => {
-        if (Array.isArray(chapelFilter) && chapelFilter.length > 0) {
-          const normTargets = chapelFilter.map((c) =>
-            (c || '').trim().toLowerCase().replace(/ቻፕል|አጥቢያ|ማዕከል/g, '').trim()
-          );
+        // When a chapel leader is logged in, NEVER allow clearing any other chapel
+        if (loggedInChapel) {
+          const ownTarget = mapToOfficialChapel(loggedInChapel);
           return {
             ...prev,
-            churchChildren: (prev.churchChildren || []).filter((child) => {
-              const chNorm = (child.chapel || 'ኤልሮኢ ቻፕል')
-                .trim()
-                .toLowerCase()
-                .replace(/ቻፕል|አጥቢያ|ማዕከል/g, '')
-                .trim();
-              return !normTargets.includes(chNorm);
-            })
+            churchChildren: (prev.churchChildren || []).filter(
+              (child) => mapToOfficialChapel(child.chapel || '') !== ownTarget
+            )
+          };
+        }
+
+        if (Array.isArray(chapelFilter) && chapelFilter.length > 0) {
+          const normTargets = chapelFilter.map((c) => mapToOfficialChapel(c || ''));
+          return {
+            ...prev,
+            churchChildren: (prev.churchChildren || []).filter(
+              (child) => !normTargets.includes(mapToOfficialChapel(child.chapel || ''))
+            )
           };
         }
 
         if (typeof chapelFilter === 'string' && chapelFilter && chapelFilter !== 'all') {
-          const normTarget = chapelFilter
-            .trim()
-            .toLowerCase()
-            .replace(/ቻፕል|አጥቢያ|ማዕከል/g, '')
-            .trim();
+          const normTarget = mapToOfficialChapel(chapelFilter);
           return {
             ...prev,
-            churchChildren: (prev.churchChildren || []).filter((child) => {
-              const chNorm = (child.chapel || 'ኤልሮኢ ቻፕል')
-                .trim()
-                .toLowerCase()
-                .replace(/ቻፕል|አጥቢያ|ማዕከል/g, '')
-                .trim();
-              return chNorm !== normTarget;
-            })
+            churchChildren: (prev.churchChildren || []).filter(
+              (child) => mapToOfficialChapel(child.chapel || '') !== normTarget
+            )
           };
         }
 
@@ -862,7 +866,10 @@ export default function App() {
     handleAddStudentToClass(targetClass, {
       name: child.name,
       gender: child.gender || 'ወ',
-      age: child.age || 7,
+      age: child.age !== undefined && child.age !== '' ? child.age : 7,
+      chapel: child.chapel,
+      parentName: child.parentName,
+      phone: child.phone,
       m1: 0,
       m2: 0,
       m3: 0,
@@ -875,14 +882,16 @@ export default function App() {
   };
 
   const handleImportMissingStudentsToChurchChildren = (
-    missingStudents: { name: string; gender: string; age: number | string; className: string }[]
+    missingStudents: { name: string; gender: string; age: number | string; className: string; chapel?: string; phone?: string }[]
   ) => {
     if (!missingStudents.length) return;
     const toAdd: ChurchChild[] = missingStudents.map((st) => ({
       id: generateUniqueId(),
       name: st.name,
       gender: st.gender || 'ወ',
-      age: st.age || 7,
+      age: st.age !== undefined && st.age !== '' ? st.age : 7,
+      chapel: loggedInChapel ? mapToOfficialChapel(loggedInChapel) : (st.chapel ? mapToOfficialChapel(st.chapel) : DEFAULT_CHAPELS[0]),
+      phone: st.phone,
       residence: 'ብርብር ከተማ',
       notes: `ከሰንበት ት/ቤት (${st.className}) የተወሰደ`,
       registeredDate: new Date().toISOString().split('T')[0]
@@ -897,6 +906,7 @@ export default function App() {
   };
 
   const handleDeleteChapel = (chapelName: string) => {
+    if (loggedInChapel) return; // Chapel leaders cannot delete chapels
     updateAppData(
       (prev) => {
         const currentChapels = prev.chapels || DEFAULT_CHAPELS;
@@ -918,26 +928,53 @@ export default function App() {
     );
   };
 
-  // General Church Members handlers (strictly locked to the 10 official chapels)
+  // General Church Members handlers (strictly locked to 10 official chapels & scoped when loggedInChapel is active)
   const handleBatchAddChurchMembers = (members: ChurchMember[], mode: 'append' | 'replace' = 'append') => {
     if (!members.length) return;
-    const sanitizedMembers = members.map((m) => ({
-      ...m,
-      chapel: mapToOfficialChapel(m.chapel || '')
-    }));
+    const targetChapel = loggedInChapel ? mapToOfficialChapel(loggedInChapel) : null;
+    const sanitizedMembers = members
+      .map((m) => ({
+        ...m,
+        chapel: targetChapel || mapToOfficialChapel(m.chapel || '')
+      }))
+      .filter((m) => !targetChapel || mapToOfficialChapel(m.chapel || '') === targetChapel);
+
+    if (!sanitizedMembers.length) return;
 
     updateAppData(
-      (prev) => ({
-        ...prev,
-        chapels: DEFAULT_CHAPELS,
-        churchMembers: mode === 'replace' ? sanitizedMembers : [...(prev.churchMembers || []), ...sanitizedMembers]
-      }),
+      (prev) => {
+        if (mode === 'replace') {
+          if (targetChapel) {
+            const others = (prev.churchMembers || []).filter(
+              (m) => mapToOfficialChapel(m.chapel || '') !== targetChapel
+            );
+            return {
+              ...prev,
+              chapels: DEFAULT_CHAPELS,
+              churchMembers: [...others, ...sanitizedMembers]
+            };
+          }
+          return {
+            ...prev,
+            chapels: DEFAULT_CHAPELS,
+            churchMembers: sanitizedMembers
+          };
+        }
+        return {
+          ...prev,
+          chapels: DEFAULT_CHAPELS,
+          churchMembers: [...(prev.churchMembers || []), ...sanitizedMembers]
+        };
+      },
       { immediate: true }
     );
   };
 
   const handleAddChurchMember = (newMember: Omit<ChurchMember, 'id'>) => {
-    const mWithId: ChurchMember = { ...newMember, id: generateUniqueId() };
+    const enforcedChapel = loggedInChapel
+      ? mapToOfficialChapel(loggedInChapel)
+      : mapToOfficialChapel(newMember.chapel || '');
+    const mWithId: ChurchMember = { ...newMember, chapel: enforcedChapel, id: generateUniqueId() };
     updateAppData(
       (prev) => ({
         ...prev,
@@ -948,25 +985,52 @@ export default function App() {
   };
 
   const handleUpdateChurchMember = (updatedMember: ChurchMember) => {
+    const enforcedChapel = loggedInChapel
+      ? mapToOfficialChapel(loggedInChapel)
+      : mapToOfficialChapel(updatedMember.chapel || '');
+
     updateAppData((prev) => ({
       ...prev,
-      churchMembers: (prev.churchMembers || []).map((m) => (m.id === updatedMember.id ? updatedMember : m))
+      churchMembers: (prev.churchMembers || []).map((m) => {
+        if (m.id !== updatedMember.id) return m;
+        if (loggedInChapel && mapToOfficialChapel(m.chapel || '') !== enforcedChapel) {
+          return m;
+        }
+        return { ...updatedMember, chapel: enforcedChapel };
+      })
     }));
   };
 
   const handleDeleteChurchMember = (id: number) => {
     updateAppData((prev) => ({
       ...prev,
-      churchMembers: (prev.churchMembers || []).filter((m) => m.id !== id)
+      churchMembers: (prev.churchMembers || []).filter((m) => {
+        if (m.id !== id) return true;
+        if (loggedInChapel && mapToOfficialChapel(m.chapel || '') !== mapToOfficialChapel(loggedInChapel)) {
+          return true;
+        }
+        return false;
+      })
     }));
   };
 
   const handleClearChurchMembers = () => {
     updateAppData(
-      (prev) => ({
-        ...prev,
-        churchMembers: []
-      }),
+      (prev) => {
+        if (loggedInChapel) {
+          const targetChapel = mapToOfficialChapel(loggedInChapel);
+          return {
+            ...prev,
+            churchMembers: (prev.churchMembers || []).filter(
+              (m) => mapToOfficialChapel(m.chapel || '') !== targetChapel
+            )
+          };
+        }
+        return {
+          ...prev,
+          churchMembers: []
+        };
+      },
       { immediate: true }
     );
   };
@@ -1063,15 +1127,48 @@ export default function App() {
     }));
   };
 
-  // Save Role PINs
-  const handleSavePins = (adminPin: string, leaderPin: string) => {
-    updateAppData((prev) => ({
-      ...prev,
-      pins: {
-        admin: adminPin,
-        leader: leaderPin
+  // Save Role & Chapel PINs (Admin Controlled)
+  const handleSavePins = (
+    adminPin: string,
+    leaderPin: string,
+    chapelPins?: { [chapelName: string]: string }
+  ) => {
+    updateAppData(
+      (prev) => ({
+        ...prev,
+        pins: {
+          admin: adminPin,
+          leader: leaderPin,
+          chapels: chapelPins || prev.pins?.chapels || DEFAULT_CHAPEL_PINS
+        }
+      }),
+      { immediate: true }
+    );
+  };
+
+  const quickJsonInputRef = useRef<HTMLInputElement>(null);
+  const [quickJsonFeedback, setQuickJsonFeedback] = useState<string>('');
+
+  const handleQuickJsonUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !appData) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const content = ev.target?.result as string;
+      const restored = importBackupJSON(content, appData, 'merge');
+      if (restored) {
+        setAppData(restored);
+        syncAppDataToFirebase(restored);
+        setQuickJsonFeedback(
+          `✓ JSON ፋይል በተሳካ ሁኔታ ወደ አዲሱ Firebase ገብቷል! (ተማሪዎች፦ ${countStudentsInData(restored)}፣ አባላት፦ ${restored.churchMembers?.length || 0}፣ ልጆች፦ ${restored.churchChildren?.length || 0})`
+        );
+        setTimeout(() => setQuickJsonFeedback(''), 6000);
+      } else {
+        alert('የተመረጠው ፋይል ትክክለኛ JSON ፎርማት አይደለም!');
       }
-    }));
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   if (!appData) {
@@ -1097,10 +1194,17 @@ export default function App() {
     { id: 'planReportTab', label: 'የዓመት ዕቅድ & ሩብ ሪፖርት', icon: Target, roles: ['admin'] },
     { id: 'teachersTab', label: 'የመምህራን ዝርዝር & PIN', icon: UserCheck, roles: ['admin', 'leader'] },
     { id: 'subjectsTab', label: 'የትምህርት ዓይነቶች', icon: BookMarked, roles: ['admin', 'leader'] },
-    { id: 'pinManageTab', label: 'የመግቢያ ቁልፍ ቅንብር', icon: KeyRound, roles: ['admin'] },
+    { id: 'pinManageTab', label: 'የሁሉም መግቢያ ቁልፍ (PIN) ቅንብር', icon: KeyRound, roles: ['admin'] },
   ];
 
-  const visibleTabs = tabs.filter((t) => currentUserRole && t.roles.includes(currentUserRole));
+  // Chapel Leaders ONLY see & manage their own Chapel's tabs (churchChildrenTab & churchMasterTab)
+  const visibleTabs = tabs.filter((t) => {
+    if (!currentUserRole || !t.roles.includes(currentUserRole)) return false;
+    if (loggedInChapel) {
+      return t.id === 'churchChildrenTab' || t.id === 'churchMasterTab';
+    }
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans print:min-h-0 print:bg-white print:block">
@@ -1111,6 +1215,7 @@ export default function App() {
             teachers={appData.teachers}
             adminPin={appData.pins?.admin || '1234'}
             leaderPin={appData.pins?.leader || '5678'}
+            chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
             chapelList={appData.chapels || DEFAULT_CHAPELS}
             onLoginSuccess={handleLoginSuccess}
           />
@@ -1128,42 +1233,72 @@ export default function App() {
             loggedInChapel={loggedInChapel}
             onLogout={handleLogout}
             syncStatus={syncStatus}
-            onOpenSyncModal={() => setIsSyncModalOpen(true)}
+            onOpenSyncModal={!loggedInChapel && currentUserRole !== 'teacher' ? () => setIsSyncModalOpen(true) : undefined}
           />
 
-          {/* Reassurance & Fast Data Protection Banner (Inside only) */}
+          {/* Reassurance, JSON Import/Export & Chapel Scope Banner */}
           {appData && (
             <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 text-white px-4 py-2.5 border-b border-emerald-700/50 print:hidden text-xs shadow-sm">
               <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                  <span className="font-bold text-emerald-100">
-                    ✓ የሰሩት ስራ አልጠፋም! በደህንነት ተቀምጧል
-                  </span>
-                  <span className="text-emerald-300/90 hidden md:inline">
-                    (በስርዓቱ ውስጥ፦ {countStudentsInData(appData)} ተማሪዎች፣ {appData.teachers?.length || 0} መምህራን ተመዝግበዋል)
-                  </span>
+                  {loggedInChapel ? (
+                    <span className="font-bold text-amber-200">
+                      🏛️ የ{loggedInChapel} የተለየ መግቢያ — የ{loggedInChapel}ን መረጃ ብቻ ያስተዳድራሉ
+                    </span>
+                  ) : (
+                    <>
+                      <span className="font-bold text-emerald-100">
+                        ✓ ከአዲሱ Firebase (geladestazelulove1628) ጋር ተገናኝቷል!
+                      </span>
+                      <span className="text-emerald-300/90 hidden md:inline">
+                        (በስርዓቱ ውስጥ፦ {countStudentsInData(appData)} ተማሪዎች፣ {appData.teachers?.length || 0} መምህራን ተመዝግበዋል)
+                      </span>
+                    </>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => exportBackupJSON(appData)}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
-                    title="የሰሩትን ሙሉ መረጃ ወዲያውኑ ወደ ኮምፒዩተርዎ ያውርዱ"
-                  >
-                    <span>💾 ባክአፕ አውርድ (JSON)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsSyncModalOpen(true)}
-                    className="bg-blue-800 hover:bg-blue-700 text-amber-300 font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 border border-blue-700 shadow cursor-pointer"
-                    title="የFirebase ግንኙነት ማስተካከያና የቀድሞ ስራ መፈለጊያ"
-                  >
-                    <span>⚙️ ዳታቤዝ ማስተካከያ & የቀድሞ ስራ መፈለጊያ</span>
-                  </button>
-                </div>
+                {!loggedInChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      ref={quickJsonInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleQuickJsonUpload}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => quickJsonInputRef.current?.click()}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
+                      title="የFirebase Export ወይም Backup JSON ፋይል በቀጥታ ይጫኑ"
+                    >
+                      <span>📂 JSON ጫን</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportBackupJSON(appData)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
+                      title="የሰሩትን ሙሉ መረጃ በJSON ወደ ኮምፒዩተርዎ ያውርዱ"
+                    >
+                      <span>💾 ባክአፕ አውርድ (JSON)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsSyncModalOpen(true)}
+                      className="bg-blue-800 hover:bg-blue-700 text-amber-300 font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 border border-blue-700 shadow cursor-pointer"
+                      title="የJSON ፋይል መጫኛ እና የአዲሱ Firebase ማስተካከያ"
+                    >
+                      <span>⚙️ ዳታቤዝ & JSON መቀበያ</span>
+                    </button>
+                  </div>
+                )}
               </div>
+              {quickJsonFeedback && (
+                <div className="max-w-7xl mx-auto mt-2 bg-emerald-800/90 border border-emerald-400/50 text-emerald-100 px-3 py-1.5 rounded-lg font-bold text-[11px]">
+                  {quickJsonFeedback}
+                </div>
+              )}
             </div>
           )}
 
@@ -1258,6 +1393,7 @@ export default function App() {
                   onClearChurchMembers={handleClearChurchMembers}
                   onExtractChildrenToChildrenTab={handleBatchAddChurchChildren}
                   currentUserRole={currentUserRole}
+                  loggedInChapel={loggedInChapel}
                 />
               )}
 
@@ -1380,7 +1516,11 @@ export default function App() {
                 <PinManageTab
                   adminPin={appData.pins?.admin || '1234'}
                   leaderPin={appData.pins?.leader || '5678'}
+                  chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
+                  chapelList={appData.chapels || DEFAULT_CHAPELS}
+                  teachers={appData.teachers}
                   onSavePins={handleSavePins}
+                  onUpdateTeacher={handleUpdateTeacher}
                 />
               )}
             </div>

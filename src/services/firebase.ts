@@ -2,8 +2,9 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, get, Database } from 'firebase/database';
 import { getFirestore, doc, onSnapshot, setDoc, getDoc, Firestore, setLogLevel } from 'firebase/firestore';
 import { AppData } from '../types';
-import { INITIAL_APP_DATA, DEFAULT_CHAPELS } from '../constants/initialData';
+import { INITIAL_APP_DATA, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import { sanitizeAndDeduplicateAppData } from '../utils/idGenerator';
+import { normalizeAmharicSearchText, mapToOfficialChapelStrict } from '../utils/churchExcelParser';
 
 // Suppress noisy internal Firestore warnings in console
 try {
@@ -30,7 +31,7 @@ export interface FirebaseProjectProfile {
 export const KNOWN_PROJECTS: FirebaseProjectProfile[] = [
   {
     id: "geladestazelulove1628",
-    label: "geladestazelulove1628 (አዲሱ ዋና ዳታቤዝ)",
+    label: "geladestazelulove1628 (ዋናው አዲሱ የቤተክርስቲያን ዳታቤዝ)",
     config: {
       apiKey: "AIzaSyAw5j4fochMJoU4CzWv5h8gl3vXVA49PEU",
       authDomain: "geladestazelulove1628.firebaseapp.com",
@@ -40,65 +41,6 @@ export const KNOWN_PROJECTS: FirebaseProjectProfile[] = [
       storageBucket: "geladestazelulove1628.firebasestorage.app",
       messagingSenderId: "873670244371",
       appId: "1:873670244371:web:5e58672da91ce8d284e7e6"
-    }
-  },
-  {
-    id: "birbir-town-khc-child-ministry",
-    label: "birbir-town-khc-child-ministry (የቀድሞው ዋና ዳታቤዝ)",
-    config: {
-      apiKey: "AIzaSyAruE9nGOFGkGRHs1hbRT2EmLq1hJrWSb8",
-      authDomain: "birbir-town-khc-child-ministry.firebaseapp.com",
-      databaseURL: "https://birbir-town-khc-child-ministry-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://birbir-town-khc-child-ministry-default-rtdb.firebaseio.com",
-      databaseURL_alt2: "https://birbir-town-khc-child-ministry.firebaseio.com",
-      projectId: "birbir-town-khc-child-ministry",
-      storageBucket: "birbir-town-khc-child-ministry.firebasestorage.app",
-      messagingSenderId: "556764983235",
-      appId: "1:556764983235:web:fb6fecffab48f8e6285776"
-    }
-  },
-  {
-    id: "birbir-khc-child-page",
-    label: "birbir-khc-child-page",
-    config: {
-      apiKey: "AIzaSyCRyDJHarx0va7X5pXXP2rnGafq2eBLq9s",
-      authDomain: "birbir-khc-child-page.firebaseapp.com",
-      databaseURL: "https://birbir-khc-child-page-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://birbir-khc-child-page-default-rtdb.firebaseio.com",
-      databaseURL_alt2: "https://birbir-khc-child-page.firebaseio.com",
-      projectId: "birbir-khc-child-page",
-      storageBucket: "birbir-khc-child-page.firebasestorage.app",
-      messagingSenderId: "44927911746",
-      appId: "1:44927911746:web:e4ccfd7048a7ee1fb8aadb",
-      measurementId: "G-XMQ04TVFFN"
-    }
-  },
-  {
-    id: "birbir-town-khc-child-page",
-    label: "birbir-town-khc-child-page (የቀድሞው ዳታቤዝ - ስራ የነበረበት)",
-    config: {
-      apiKey: "AIzaSyBx7ZJxRNzjNb8Lx79R2vXjWq-MsZBPTfA",
-      authDomain: "birbir-town-khc-child-page.firebaseapp.com",
-      databaseURL: "https://birbir-town-khc-child-page-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://birbir-town-khc-child-page-default-rtdb.firebaseio.com",
-      projectId: "birbir-town-khc-child-page",
-      storageBucket: "birbir-town-khc-child-page.firebasestorage.app",
-      messagingSenderId: "1007927588446",
-      appId: "1:1007927588446:web:b85df399e7b1b89c1d26cf"
-    }
-  },
-  {
-    id: "birbir-town-khc-bible-sc-82849",
-    label: "birbir-town-khc-bible-sc-82849",
-    config: {
-      apiKey: "AIzaSyAnUdWOOAZhOfRtx-GfW89pz1iKrDonz_s",
-      authDomain: "birbir-town-khc-bible-sc-82849.firebaseapp.com",
-      databaseURL: "https://birbir-town-khc-bible-sc-82849-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://birbir-town-khc-bible-sc-82849-default-rtdb.firebaseio.com",
-      projectId: "birbir-town-khc-bible-sc-82849",
-      storageBucket: "birbir-town-khc-bible-sc-82849.firebasestorage.app",
-      messagingSenderId: "745550786105",
-      appId: "1:745550786105:web:6724bcaecde6d39b1967e8"
     }
   }
 ];
@@ -111,20 +53,20 @@ const DB_KEY = 'kaleheywet_data';
 export const getActiveProjectId = (): string => {
   try {
     const saved = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-    if (saved && KNOWN_PROJECTS.some((p) => p.id === saved)) {
-      return saved;
+    if (saved && saved !== KNOWN_PROJECTS[0].id) {
+      localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, KNOWN_PROJECTS[0].id);
     }
   } catch {}
   return KNOWN_PROJECTS[0].id;
 };
 
 export const setActiveProjectId = (projectId: string) => {
-  localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, projectId);
+  const valid = KNOWN_PROJECTS.some((p) => p.id === projectId) ? projectId : KNOWN_PROJECTS[0].id;
+  localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, valid);
 };
 
 export const getActiveProjectProfile = (): FirebaseProjectProfile => {
-  const currentId = getActiveProjectId();
-  return KNOWN_PROJECTS.find((p) => p.id === currentId) || KNOWN_PROJECTS[0];
+  return KNOWN_PROJECTS[0];
 };
 
 export const firebaseConfig = getActiveProjectProfile().config;
@@ -232,7 +174,11 @@ export const loadStoredLocalData = (): AppData => {
     const rawData: AppData = {
       ...INITIAL_APP_DATA,
       ...source,
-      pins: { ...INITIAL_APP_DATA.pins, ...(source.pins || {}) },
+      pins: {
+        admin: source.pins?.admin || INITIAL_APP_DATA.pins.admin,
+        leader: source.pins?.leader || INITIAL_APP_DATA.pins.leader,
+        chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) }
+      },
       teachers: (source.teachers && source.teachers.length > 0) ? source.teachers : INITIAL_APP_DATA.teachers,
       plans: (source.plans && source.plans.length > 0) ? source.plans : INITIAL_APP_DATA.plans,
       choirGroups: (source.choirGroups && source.choirGroups.length > 0) ? source.choirGroups : INITIAL_APP_DATA.choirGroups,
@@ -411,7 +357,15 @@ export const subscribeToAppData = (
         ...INITIAL_APP_DATA,
         ...currentLocal,
         ...val,
-        pins: val.pins || currentLocal.pins || INITIAL_APP_DATA.pins,
+        pins: {
+          admin: val.pins?.admin || currentLocal.pins?.admin || INITIAL_APP_DATA.pins.admin,
+          leader: val.pins?.leader || currentLocal.pins?.leader || INITIAL_APP_DATA.pins.leader,
+          chapels: {
+            ...DEFAULT_CHAPEL_PINS,
+            ...(currentLocal.pins?.chapels || {}),
+            ...(val.pins?.chapels || {})
+          }
+        },
         teachers: (val.teachers && val.teachers.length > 0) ? val.teachers : currentLocal.teachers,
         subjects: (val.subjects && val.subjects.length > 0) ? val.subjects : currentLocal.subjects,
         classSubjects: val.classSubjects || currentLocal.classSubjects || {},
@@ -578,24 +532,60 @@ export const syncAppDataToFirebase = async (data: AppData): Promise<boolean> => 
   return synced;
 };
 
-// Unwrap exported Firebase RTDB JSON (whether wrapped in { kaleheywet_data: {...} } or root object)
+const hasRecognizableAppFields = (obj: any): boolean => {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+  return Boolean(
+    obj.students ||
+    obj.teachers ||
+    obj.subjects ||
+    obj.classSubjects ||
+    obj.churchMembers ||
+    obj.churchChildren ||
+    obj.plans ||
+    obj.attendance ||
+    obj.weeklyAttendance ||
+    obj.choirMembers ||
+    obj.spiritualMembers ||
+    obj.pins ||
+    obj.years
+  );
+};
+
+// Unwrap exported Firebase RTDB JSON, app backup JSON, or standalone JSON arrays/objects
 export const extractFirebasePayloadObject = (raw: any): any | null => {
   if (!raw || typeof raw !== 'object') return null;
 
+  // Case 1: Array of records (churchMembers / churchChildren / students)
+  if (Array.isArray(raw)) {
+    if (raw.length === 0) return { churchMembers: [] };
+    const sample = raw[0] || {};
+    if (sample.m1 !== undefined || sample.assignedClass === undefined && sample.total !== undefined) {
+      return { students: { '2019': { '1ኛ ክፍል ሀ': raw } } };
+    }
+    if (sample.assignedClass !== undefined && sample.pin !== undefined) {
+      return { teachers: raw };
+    }
+    if (sample.chapel !== undefined || sample.parentName !== undefined || sample.age !== undefined) {
+      const hasAdult = raw.some((r: any) => Number(r?.age) > 14);
+      return hasAdult ? { churchMembers: raw } : { churchChildren: raw };
+    }
+    return { churchMembers: raw };
+  }
+
+  // Case 2: Standard Firebase wrapper { kaleheywet_data: {...} }
   if (raw[DB_KEY] && typeof raw[DB_KEY] === 'object') {
     return raw[DB_KEY];
   }
 
-  if (raw.students || raw.teachers || raw.subjects || raw.classSubjects) {
+  // Case 3: Direct AppData-like JSON object
+  if (hasRecognizableAppFields(raw)) {
     return raw;
   }
 
+  // Case 4: Nested 1-level wrapper (e.g. { data: {...} } or { backup: {...} })
   for (const val of Object.values(raw)) {
-    if (val && typeof val === 'object' && !Array.isArray(val)) {
-      const candidate = val as any;
-      if (candidate.students || candidate.teachers || candidate.subjects || candidate.classSubjects) {
-        return candidate;
-      }
+    if (hasRecognizableAppFields(val)) {
+      return val;
     }
   }
 
@@ -607,33 +597,127 @@ export interface ImportSundaySchoolSummary {
   subjectsCount: number;
   classSubjectsCount: number;
   teachersCount: number;
+  churchMembersCount?: number;
+  churchChildrenCount?: number;
 }
 
-// Merge Sunday School students, subjects, classSubjects, and teacher assignments cleanly into current AppData
+const mergeNamedChurchRecords = <T extends { name: string; chapel?: string; phone?: string; parentName?: string; residence?: string }>(
+  existing: T[],
+  incoming: T[]
+): T[] => {
+  if (!incoming || incoming.length === 0) return existing;
+  if (!existing || existing.length === 0) return incoming.map((item) => ({ ...item, chapel: mapToOfficialChapelStrict(item.chapel || '') }));
+
+  const result = [...existing];
+  const keyToIdx = new Map<string, number>();
+  result.forEach((item, idx) => {
+    const key = `${normalizeAmharicSearchText(item.name)}|${mapToOfficialChapelStrict(item.chapel || '')}`;
+    if (!keyToIdx.has(key)) keyToIdx.set(key, idx);
+  });
+
+  incoming.forEach((inc) => {
+    if (!inc || !inc.name) return;
+    const chapel = mapToOfficialChapelStrict(inc.chapel || '');
+    const key = `${normalizeAmharicSearchText(inc.name)}|${chapel}`;
+    const idx = keyToIdx.get(key);
+    if (idx !== undefined) {
+      const cur = result[idx];
+      result[idx] = {
+        ...cur,
+        ...inc,
+        chapel,
+        phone: cur.phone || inc.phone,
+        parentName: cur.parentName || inc.parentName,
+        residence: cur.residence || inc.residence
+      };
+    } else {
+      keyToIdx.set(key, result.length);
+      result.push({ ...inc, chapel });
+    }
+  });
+
+  return result;
+};
+
+// Merge OR Replace full AppData cleanly from any JSON payload
 export const mergeImportedSundaySchoolData = (
   currentData: AppData,
-  rawInput: any
+  rawInput: any,
+  mode: 'merge' | 'replace' = 'merge'
 ): { merged: AppData; summary: ImportSundaySchoolSummary } | null => {
   const source = extractFirebasePayloadObject(rawInput);
   if (!source) return null;
 
-  const mergedStudents: AppData['students'] = { ...(currentData.students || {}) };
   const incomingStudents = source.students && typeof source.students === 'object' ? source.students : {};
+  const incomingSubjects = Array.isArray(source.subjects) ? source.subjects.filter(Boolean) : [];
+  const incomingChurchMembers = Array.isArray(source.churchMembers) ? source.churchMembers : [];
+  const incomingChurchChildren = Array.isArray(source.churchChildren) ? source.churchChildren : [];
+  const incomingTeachers = Array.isArray(source.teachers) ? source.teachers : [];
 
+  if (mode === 'replace') {
+    const replacedData: AppData = sanitizeAndDeduplicateAppData({
+      ...INITIAL_APP_DATA,
+      ...source,
+      years: Array.isArray(source.years) && source.years.length > 0 ? source.years : INITIAL_APP_DATA.years,
+      pins: {
+        admin: source.pins?.admin || currentData.pins?.admin || INITIAL_APP_DATA.pins.admin,
+        leader: source.pins?.leader || currentData.pins?.leader || INITIAL_APP_DATA.pins.leader,
+        chapels: {
+          ...DEFAULT_CHAPEL_PINS,
+          ...(currentData.pins?.chapels || {}),
+          ...(source.pins?.chapels || {})
+        }
+      },
+      teachers: incomingTeachers.length > 0 ? incomingTeachers : currentData.teachers,
+      subjects: incomingSubjects.length > 0 ? incomingSubjects : currentData.subjects,
+      classSubjects: source.classSubjects || {},
+      students: incomingStudents,
+      attendance: Array.isArray(source.attendance) ? source.attendance : [],
+      weeklyAttendance: source.weeklyAttendance || {},
+      weekDates: source.weekDates || {},
+      plans: Array.isArray(source.plans) && source.plans.length > 0 ? source.plans : currentData.plans,
+      choirGroups: Array.isArray(source.choirGroups) && source.choirGroups.length > 0 ? source.choirGroups : currentData.choirGroups,
+      choirMembers: Array.isArray(source.choirMembers) ? source.choirMembers : [],
+      spiritualGroups: Array.isArray(source.spiritualGroups) && source.spiritualGroups.length > 0 ? source.spiritualGroups : currentData.spiritualGroups,
+      spiritualMembers: Array.isArray(source.spiritualMembers) ? source.spiritualMembers : [],
+      chapels: DEFAULT_CHAPELS,
+      churchChildren: incomingChurchChildren.map((c: any) => ({ ...c, chapel: mapToOfficialChapelStrict(c.chapel || '') })),
+      churchMembers: incomingChurchMembers.map((m: any) => ({ ...m, chapel: mapToOfficialChapelStrict(m.chapel || '') }))
+    });
+
+    saveToLocalStorage(replacedData);
+    syncAppDataToFirebase(replacedData);
+
+    return {
+      merged: replacedData,
+      summary: {
+        studentsCount: countStudentsInData(replacedData),
+        subjectsCount: replacedData.subjects?.length || 0,
+        classSubjectsCount: replacedData.classSubjects ? Object.keys(replacedData.classSubjects).length : 0,
+        teachersCount: replacedData.teachers?.length || 0,
+        churchMembersCount: replacedData.churchMembers?.length || 0,
+        churchChildrenCount: replacedData.churchChildren?.length || 0
+      }
+    };
+  }
+
+  // Smart Merge mode
+  const mergedStudents: AppData['students'] = { ...(currentData.students || {}) };
   Object.entries(incomingStudents).forEach(([year, classMap]: [string, any]) => {
     if (!classMap || typeof classMap !== 'object') return;
     const existingYearMap = { ...(mergedStudents[year] || {}) };
     Object.entries(classMap).forEach(([clsName, arr]: [string, any]) => {
       if (Array.isArray(arr) && arr.length > 0) {
         const currentList = Array.isArray(existingYearMap[clsName]) ? [...existingYearMap[clsName]] : [];
-        const existingNames = new Set(currentList.map((s: any) => String(s?.name || '').trim().toLowerCase()));
+        const existingNames = new Set(currentList.map((s: any) => normalizeAmharicSearchText(s?.name || '')));
         arr.forEach((st: any) => {
           const stName = String(st?.name || '').trim();
-          if (stName && !existingNames.has(stName.toLowerCase())) {
+          const stNorm = normalizeAmharicSearchText(stName);
+          if (stNorm && !existingNames.has(stNorm)) {
             currentList.push(st);
-            existingNames.add(stName.toLowerCase());
-          } else if (stName && existingNames.has(stName.toLowerCase())) {
-            const idx = currentList.findIndex((s: any) => String(s?.name || '').trim().toLowerCase() === stName.toLowerCase());
+            existingNames.add(stNorm);
+          } else if (stNorm && existingNames.has(stNorm)) {
+            const idx = currentList.findIndex((s: any) => normalizeAmharicSearchText(s?.name || '') === stNorm);
             if (idx !== -1 && (Number(st?.total || 0) >= Number(currentList[idx]?.total || 0))) {
               currentList[idx] = { ...currentList[idx], ...st };
             }
@@ -645,7 +729,6 @@ export const mergeImportedSundaySchoolData = (
     mergedStudents[year] = existingYearMap;
   });
 
-  const incomingSubjects = Array.isArray(source.subjects) ? source.subjects.filter(Boolean) : [];
   const mergedSubjects = incomingSubjects.length > 0
     ? Array.from(new Set([...incomingSubjects, ...(currentData.subjects || [])]))
     : currentData.subjects;
@@ -655,38 +738,42 @@ export const mergeImportedSundaySchoolData = (
     ...(source.classSubjects && typeof source.classSubjects === 'object' ? source.classSubjects : {})
   };
 
-  const incomingTeachers = Array.isArray(source.teachers) && source.teachers.length > 0
-    ? source.teachers
-    : currentData.teachers;
-
+  const mergedTeachers = incomingTeachers.length > 0 ? incomingTeachers : currentData.teachers;
   const mergedYears = Array.isArray(source.years) && source.years.length > 0
     ? Array.from(new Set([...(currentData.years || []), ...source.years])).sort()
     : currentData.years;
+
+  const mergedChurchChildren = mergeNamedChurchRecords(currentData.churchChildren || [], incomingChurchChildren);
+  const mergedChurchMembers = mergeNamedChurchRecords(currentData.churchMembers || [], incomingChurchMembers);
 
   const mergedData: AppData = {
     ...INITIAL_APP_DATA,
     ...currentData,
     years: mergedYears,
-    pins: source.pins || currentData.pins,
-    teachers: incomingTeachers,
+    pins: {
+      admin: source.pins?.admin || currentData.pins?.admin || INITIAL_APP_DATA.pins.admin,
+      leader: source.pins?.leader || currentData.pins?.leader || INITIAL_APP_DATA.pins.leader,
+      chapels: {
+        ...DEFAULT_CHAPEL_PINS,
+        ...(currentData.pins?.chapels || {}),
+        ...(source.pins?.chapels || {})
+      }
+    },
+    teachers: mergedTeachers,
     subjects: mergedSubjects,
     classSubjects: mergedClassSubjects,
     students: mergedStudents,
     attendance: (Array.isArray(source.attendance) && source.attendance.length > 0) ? source.attendance : currentData.attendance,
-    weeklyAttendance: source.weeklyAttendance || currentData.weeklyAttendance || {},
-    weekDates: source.weekDates || currentData.weekDates || {},
+    weeklyAttendance: { ...(currentData.weeklyAttendance || {}), ...(source.weeklyAttendance || {}) },
+    weekDates: { ...(currentData.weekDates || {}), ...(source.weekDates || {}) },
     plans: (Array.isArray(source.plans) && source.plans.length > 0) ? source.plans : currentData.plans,
     choirGroups: (Array.isArray(source.choirGroups) && source.choirGroups.length > 0) ? source.choirGroups : currentData.choirGroups,
     choirMembers: (Array.isArray(source.choirMembers) && source.choirMembers.length > 0) ? source.choirMembers : currentData.choirMembers,
     spiritualGroups: (Array.isArray(source.spiritualGroups) && source.spiritualGroups.length > 0) ? source.spiritualGroups : currentData.spiritualGroups,
     spiritualMembers: (Array.isArray(source.spiritualMembers) && source.spiritualMembers.length > 0) ? source.spiritualMembers : currentData.spiritualMembers,
     chapels: DEFAULT_CHAPELS,
-    churchChildren: (currentData.churchChildren && currentData.churchChildren.length > 0)
-      ? currentData.churchChildren
-      : (Array.isArray(source.churchChildren) ? source.churchChildren : []),
-    churchMembers: (currentData.churchMembers && currentData.churchMembers.length > 0)
-      ? currentData.churchMembers
-      : (Array.isArray(source.churchMembers) ? source.churchMembers : [])
+    churchChildren: mergedChurchChildren,
+    churchMembers: mergedChurchMembers
   };
 
   const sanitized = sanitizeAndDeduplicateAppData(mergedData);
@@ -699,12 +786,14 @@ export const mergeImportedSundaySchoolData = (
       studentsCount: countStudentsInData({ students: incomingStudents }),
       subjectsCount: incomingSubjects.length,
       classSubjectsCount: source.classSubjects ? Object.keys(source.classSubjects).length : 0,
-      teachersCount: Array.isArray(source.teachers) ? source.teachers.length : 0
+      teachersCount: incomingTeachers.length,
+      churchMembersCount: incomingChurchMembers.length,
+      churchChildrenCount: incomingChurchChildren.length
     }
   };
 };
 
-// Fetch data directly from a previous Firebase RTDB URL or Project ID
+// Fetch data directly from a previous Firebase RTDB URL or Project ID (kept for optional JSON/URL import)
 export const fetchDataFromPreviousFirebaseUrl = async (
   urlOrProjectId: string,
   currentData: AppData,
@@ -721,7 +810,7 @@ export const fetchDataFromPreviousFirebaseUrl = async (
     return {
       ok: false,
       errorType: 'invalid',
-      message: 'እባክዎ የቀድሞውን Firebase Database URL ወይም Project ID ያስገቡ።'
+      message: 'እባክዎ Firebase Database URL ወይም Project ID ያስገቡ።'
     };
   }
 
@@ -770,18 +859,18 @@ export const fetchDataFromPreviousFirebaseUrl = async (
       ok: false,
       errorType: 'permission_denied',
       message:
-        'የተመረጠው Firebase ዳታቤዝ በRules ተቆልፏል (Permission Denied)። መረጃውን ለማምጣት፦ (1) በዚያ Firebase Console > Realtime Database > ⋮ Export JSON በማውረድ ከታች በ"JSON ፋይል ጫን" ያስገቡት፣ ወይም (2) በRules ላይ ".read": true አድርገው እንደገና ይሞክሩ።'
+        'ዳታቤዙ በRules ተቆልፏል (Permission Denied)። JSON ፋይሉን ከFirebase Console በExport JSON አውርደው እዚህ ይጫኑ።'
     };
   }
 
   return {
     ok: false,
     errorType: 'not_found',
-    message: 'በተሰጠው Firebase አድራሻ ውስጥ የተማሪዎች/መምህራን መረጃ አልተገኘም።'
+    message: 'በተሰጠው Firebase አድራሻ ውስጥ መረጃ አልተገኘም።'
   };
 };
 
-// Scan and recover cloud data across ALL projects in KNOWN_PROJECTS
+// Scan active project cloud data
 export const scanAndRecoverPreviousCloudData = async (): Promise<{
   found: boolean;
   projectLabel?: string;
@@ -862,12 +951,16 @@ export const exportBackupJSON = (data: AppData) => {
 };
 
 // Full Backup / Firebase Export JSON Importer
-export const importBackupJSON = (jsonString: string, currentData?: AppData): AppData | null => {
+export const importBackupJSON = (
+  jsonString: string,
+  currentData?: AppData,
+  mode: 'merge' | 'replace' = 'merge'
+): AppData | null => {
   try {
     const parsed = JSON.parse(jsonString);
     if (parsed && typeof parsed === 'object') {
       if (currentData) {
-        const mergedRes = mergeImportedSundaySchoolData(currentData, parsed);
+        const mergedRes = mergeImportedSundaySchoolData(currentData, parsed, mode);
         if (mergedRes) return mergedRes.merged;
       }
 
@@ -875,6 +968,11 @@ export const importBackupJSON = (jsonString: string, currentData?: AppData): App
       const validData: AppData = sanitizeAndDeduplicateAppData({
         ...INITIAL_APP_DATA,
         ...source,
+        pins: {
+          admin: source.pins?.admin || INITIAL_APP_DATA.pins.admin,
+          leader: source.pins?.leader || INITIAL_APP_DATA.pins.leader,
+          chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) }
+        },
         students: source.students || {},
         teachers: (source.teachers && source.teachers.length > 0) ? source.teachers : INITIAL_APP_DATA.teachers,
         subjects: (source.subjects && source.subjects.length > 0) ? source.subjects : INITIAL_APP_DATA.subjects,
@@ -883,6 +981,8 @@ export const importBackupJSON = (jsonString: string, currentData?: AppData): App
         attendance: source.attendance || [],
         choirMembers: source.choirMembers || [],
         spiritualMembers: source.spiritualMembers || [],
+        churchChildren: source.churchChildren || [],
+        churchMembers: source.churchMembers || [],
         chapels: DEFAULT_CHAPELS
       });
       saveToLocalStorage(validData);

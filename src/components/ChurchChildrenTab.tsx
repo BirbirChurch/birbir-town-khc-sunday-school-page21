@@ -530,24 +530,31 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   loggedInChapel,
   onDeleteChapel
 }) => {
+  const officialLoggedInChapel = useMemo(
+    () => (loggedInChapel ? mapToOfficialChapel(loggedInChapel) : null),
+    [loggedInChapel]
+  );
+
+  // Strict data isolation: when a Chapel Leader logs in, expose ONLY their chapel's children
+  const effectiveChurchChildren = useMemo(() => {
+    if (!officialLoggedInChapel) return churchChildren;
+    return churchChildren.filter(
+      (c) => mapToOfficialChapel(c.chapel || '') === officialLoggedInChapel
+    );
+  }, [churchChildren, officialLoggedInChapel]);
+
   // State
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all');
   const [genderFilter, setGenderFilter] = useState<string>('all');
-  const [selectedChapelFilter, setSelectedChapelFilter] = useState<string>(loggedInChapel || 'all');
+  const [selectedChapelFilter, setSelectedChapelFilter] = useState<string>(officialLoggedInChapel || 'all');
   // Multi-Chapel Filtering for Main Registry Tab
-  const [selectedChapels, setSelectedChapels] = useState<string[]>(loggedInChapel ? [loggedInChapel] : []);
+  const [selectedChapels, setSelectedChapels] = useState<string[]>(
+    officialLoggedInChapel ? [officialLoggedInChapel] : []
+  );
   const [displayLayoutMode, setDisplayLayoutMode] = useState<'table' | 'grouped_chapels'>('table');
   const [copiedPhoneId, setCopiedPhoneId] = useState<number | null>(null);
-
-  // Sync loggedInChapel when selected chapel changes
-  React.useEffect(() => {
-    if (loggedInChapel) {
-      setSelectedChapelFilter(loggedInChapel);
-      setSelectedChapels([loggedInChapel]);
-    }
-  }, [loggedInChapel]);
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
@@ -556,8 +563,10 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   const [selectedEnrollClass, setSelectedEnrollClass] = useState<string>(classList[0] || 'ማቆያ ክፍል');
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState<boolean>(false);
-  const [clearScope, setClearScope] = useState<'all' | 'selected'>('all');
-  const [clearSelectedChapels, setClearSelectedChapels] = useState<string[]>([]);
+  const [clearScope, setClearScope] = useState<'all' | 'selected'>(officialLoggedInChapel ? 'selected' : 'all');
+  const [clearSelectedChapels, setClearSelectedChapels] = useState<string[]>(
+    officialLoggedInChapel ? [officialLoggedInChapel] : []
+  );
   const [clearConfirmWord, setClearConfirmWord] = useState<string>('');
 
   // Form state
@@ -566,12 +575,23 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   const [formAge, setFormAge] = useState<string>('5');
   const [formEducationLevel, setFormEducationLevel] = useState<string>('1ኛ ክፍል');
   const [formOccupation, setFormOccupation] = useState<string>('ተማሪ');
-  const [formChapel, setFormChapel] = useState<string>(chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+  const [formChapel, setFormChapel] = useState<string>(officialLoggedInChapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
   const [formParent, setFormParent] = useState<string>('');
   const [formPhone, setFormPhone] = useState<string>('');
   const [formResidence, setFormResidence] = useState<string>('');
   const [formVillage, setFormVillage] = useState<string>('');
   const [formNotes, setFormNotes] = useState<string>('');
+
+  // Sync loggedInChapel when selected chapel changes
+  React.useEffect(() => {
+    if (officialLoggedInChapel) {
+      setSelectedChapelFilter(officialLoggedInChapel);
+      setSelectedChapels([officialLoggedInChapel]);
+      setFormChapel(officialLoggedInChapel);
+      setClearScope('selected');
+      setClearSelectedChapels([officialLoggedInChapel]);
+    }
+  }, [officialLoggedInChapel]);
 
   // Import preview state (General church database 0-14 filter)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -612,7 +632,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
   // 2. Identify Church Children enrollment status (strictly by name, regardless of age differences)
   const churchChildrenWithStatus = useMemo(() => {
-    return churchChildren.map((child) => {
+    return effectiveChurchChildren.map((child) => {
       const match = matchChildNameToSundaySchool(child.name, sundaySchoolIndex);
       return {
         ...child,
@@ -623,18 +643,23 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         studentAge: match?.student?.age ?? null
       };
     });
-  }, [churchChildren, sundaySchoolIndex]);
+  }, [effectiveChurchChildren, sundaySchoolIndex]);
 
   // 3. Identify Sunday School students MISSING from Church Children Registry (strictly by name)
   const missingFromChurchChildren = useMemo(() => {
     const missing: { student: Student; className: string }[] = [];
 
     sundaySchoolIndex.allStudentsList.forEach((item) => {
+      // When logged in as a chapel, only compare students assigned to that chapel (or unassigned)
+      if (officialLoggedInChapel && item.student.chapel && mapToOfficialChapel(item.student.chapel) !== officialLoggedInChapel) {
+        return;
+      }
+
       const normStudent = normalizeAmharicName(item.student.name);
       const studentParts = normStudent.split(' ').filter(Boolean);
       const studentTwo = studentParts.slice(0, 2).join(' ');
 
-      const foundInChurch = churchChildren.some((child) => {
+      const foundInChurch = effectiveChurchChildren.some((child) => {
         const normChild = normalizeAmharicName(child.name);
         if (normChild === normStudent) return true;
         const childParts = normChild.split(' ').filter(Boolean);
@@ -653,16 +678,18 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     });
 
     return missing;
-  }, [churchChildren, sundaySchoolIndex]);
+  }, [effectiveChurchChildren, sundaySchoolIndex, officialLoggedInChapel]);
 
   // 4. Chapel Breakdown Statistics Matrix
   const chapelStats = useMemo(() => {
-    const chapels = Array.from(
-      new Set([
-        ...chapelList,
-        ...churchChildrenWithStatus.map((c) => c.chapel).filter(Boolean) as string[]
-      ])
-    );
+    const chapels = officialLoggedInChapel
+      ? [officialLoggedInChapel]
+      : Array.from(
+          new Set([
+            ...chapelList,
+            ...(churchChildrenWithStatus.map((c) => c.chapel).filter(Boolean) as string[])
+          ])
+        );
 
     const statsMap: { [chapel: string]: { total: number; enrolled: number; notEnrolled: number; male: number; female: number } } = {};
     chapels.forEach((ch) => {
@@ -670,7 +697,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     });
 
     churchChildrenWithStatus.forEach((child) => {
-      const ch = child.chapel || 'ያልተገለጸ ቻፕል';
+      const ch = officialLoggedInChapel || child.chapel || 'ያልተገለጸ ቻፕል';
       if (!statsMap[ch]) {
         statsMap[ch] = { total: 0, enrolled: 0, notEnrolled: 0, male: 0, female: 0 };
       }
@@ -686,7 +713,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       chapels: Object.keys(statsMap),
       statsMap
     };
-  }, [chapelList, churchChildrenWithStatus]);
+  }, [chapelList, churchChildrenWithStatus, officialLoggedInChapel]);
 
   // 5. Age Demographic Cohorts Calculation (0-3, 4-6, 7-9, 10-12, 13-14, 15+)
   const demographicStats = useMemo(() => {
@@ -861,7 +888,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     setFormAge('5');
     setFormEducationLevel('1ኛ ክፍል');
     setFormOccupation('ተማሪ');
-    setFormChapel(chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+    setFormChapel(officialLoggedInChapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
     setFormParent('');
     setFormPhone('');
     setFormResidence('');
@@ -877,7 +904,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     setFormAge(String(child.age || '5'));
     setFormEducationLevel(child.educationLevel || '1ኛ ክፍል');
     setFormOccupation(child.occupation || 'ተማሪ');
-    setFormChapel(child.chapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+    setFormChapel(officialLoggedInChapel || child.chapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
     setFormParent(child.parentName || '');
     setFormPhone(child.phone || '');
     setFormResidence(child.residence || '');
@@ -900,7 +927,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       age: isNaN(parsedFormAge) ? 5 : Math.max(0, parsedFormAge),
       educationLevel: formEducationLevel.trim() || undefined,
       occupation: formOccupation.trim() || undefined,
-      chapel: formChapel.trim() || undefined,
+      chapel: officialLoggedInChapel || formChapel.trim() || undefined,
       parentName: formParent.trim() || undefined,
       phone: formPhone.trim() || undefined,
       residence: formResidence.trim() || undefined,
@@ -1084,10 +1111,11 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     defChapel: string,
     overrideFirst?: SheetRowOverrideMapping
   ) => {
+    const effectiveDefaultChapel = officialLoggedInChapel || defChapel;
     const parsed = parseChurchWorkbookAllSheets(workbook, parseChildAge, {
       refYear,
       ageMode,
-      defaultChapelFallback: defChapel,
+      defaultChapelFallback: effectiveDefaultChapel,
       firstSheetOverride: overrideFirst
     });
 
@@ -1113,16 +1141,20 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       setImportRawRows(parsed.firstSheetRawRows);
     }
 
+    const scopedChildren = officialLoggedInChapel
+      ? parsed.children.filter((ch) => mapToOfficialChapel(ch.chapel || effectiveDefaultChapel) === officialLoggedInChapel)
+      : parsed.children;
+
     setImportTotalRows(parsed.members.length);
-    setImportChildrenPreview(parsed.children);
+    setImportChildrenPreview(scopedChildren);
     setImportAdultsSkipped(parsed.adultsSkipped);
 
     const chapelsMap: Record<string, number> = {};
-    parsed.children.forEach((ch) => {
-      const name = ch.chapel || defChapel;
+    scopedChildren.forEach((ch) => {
+      const name = ch.chapel || effectiveDefaultChapel;
       chapelsMap[name] = (chapelsMap[name] || 0) + 1;
     });
-    setImportSelectedChapels(Object.keys(chapelsMap));
+    setImportSelectedChapels(officialLoggedInChapel ? [officialLoggedInChapel] : Object.keys(chapelsMap));
     setImportActiveTab('children');
   };
 
@@ -1222,6 +1254,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
   // Toggle individual chapel selection in Import modal
   const handleToggleImportChapel = (chapelName: string) => {
+    if (officialLoggedInChapel) return;
     setImportSelectedChapels((prev) => {
       if (prev.includes(chapelName)) {
         return prev.filter((c) => c !== chapelName);
@@ -1233,6 +1266,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
   // Toggle individual chapel filter in Main Tab
   const handleToggleTabChapelFilter = (chapelName: string) => {
+    if (officialLoggedInChapel) return;
     setSelectedChapels((prev) => {
       if (prev.includes(chapelName)) {
         return prev.filter((c) => c !== chapelName);
@@ -1247,7 +1281,12 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     if (displayedImportChildren.length === 0) return;
 
     if (importMode === 'replace') {
-      if (
+      if (officialLoggedInChapel) {
+        if (onClearChurchChildren) {
+          onClearChurchChildren([officialLoggedInChapel]);
+        }
+        onBatchAddChildren(displayedImportChildren, 'append');
+      } else if (
         importSelectedChapels.length === 0 ||
         importSelectedChapels.length >= importChapelsSummary.length
       ) {
@@ -1276,14 +1315,16 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   // Clear Church Children data handler (Supports Clear All or Clear Selected Chapels)
   const handleExecuteClear = () => {
     if (!onClearChurchChildren) return;
-    if (clearScope === 'all') {
+    if (officialLoggedInChapel) {
+      onClearChurchChildren([officialLoggedInChapel]);
+    } else if (clearScope === 'all') {
       onClearChurchChildren('all');
     } else {
       onClearChurchChildren(clearSelectedChapels);
     }
     setIsClearModalOpen(false);
     setClearConfirmWord('');
-    setClearSelectedChapels([]);
+    setClearSelectedChapels(officialLoggedInChapel ? [officialLoggedInChapel] : []);
   };
 
   return (
@@ -1308,10 +1349,14 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               </div>
               <div>
                 <h2 className="text-lg font-extrabold text-slate-900">
-                  የቤተክርስቲያኒቱ አጠቃላይ የልጆች መረጃ ቋት
+                  {officialLoggedInChapel
+                    ? `${officialLoggedInChapel} - የልጆች መረጃ ቋት`
+                    : 'የቤተክርስቲያኒቱ አጠቃላይ የልጆች መረጃ ቋት'}
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  ከሰንበት ት/ቤት ጋር በስም በማገናኘት የሚማሩና የማይማሩትን፣ ቻፕላቸውን እና የወላጅ ስልክ ቁጥር ማስተባበሪያ
+                  {officialLoggedInChapel
+                    ? `የ${officialLoggedInChapel} ብቻ የ0-14 ዓመት ልጆች መዝገብ እና የሰንበት ት/ቤት የመማር ሁኔታ ማስተባበሪያ`
+                    : 'ከሰንበት ት/ቤት ጋር በስም በማገናኘት የሚማሩና የማይማሩትን፣ ቻፕላቸውን እና የወላጅ ስልክ ቁጥር ማስተባበሪያ'}
                 </p>
               </div>
             </div>
@@ -1372,7 +1417,10 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (selectedChapels.length > 0) {
+                  if (officialLoggedInChapel) {
+                    setClearScope('selected');
+                    setClearSelectedChapels([officialLoggedInChapel]);
+                  } else if (selectedChapels.length > 0) {
                     setClearScope('selected');
                     setClearSelectedChapels(selectedChapels);
                   } else if (selectedChapelFilter !== 'all') {
@@ -1384,7 +1432,11 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                   setIsClearModalOpen(true);
                 }}
                 className="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 border border-rose-200/80 shadow-2xs cursor-pointer"
-                title="ቀድሞ የገባውን የልጆች መረጃ ሙሉ በሙሉ ወይም በቻፕል ለይተህ አጽዳ"
+                title={
+                  officialLoggedInChapel
+                    ? `የ${officialLoggedInChapel}ን የልጆች መረጃ አጽዳ`
+                    : 'ቀድሞ የገባውን የልጆች መረጃ ሙሉ በሙሉ ወይም በቻፕል ለይተህ አጽዳ'
+                }
               >
                 <Trash2 className="w-4 h-4 text-rose-600" />
                 <span>🧹 መረጃ አጽዳ</span>
@@ -1487,18 +1539,20 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap print:hidden">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedChapels(chapelStats.chapels);
-                setSelectedChapelFilter('all');
-              }}
-              className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs"
-              title="በስርዓቱ ውስጥ ያሉትን 10ሩንም ቻፕሎች በአንድ ጊዜ ምረጥ"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-blue-800" />
-              <span>✓ ሁሉንም ቻፕሎች በአንድ ጊዜ ምረጥ</span>
-            </button>
+            {!officialLoggedInChapel && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedChapels(chapelStats.chapels);
+                  setSelectedChapelFilter('all');
+                }}
+                className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs"
+                title="በስርዓቱ ውስጥ ያሉትን 10ሩንም ቻፕሎች በአንድ ጊዜ ምረጥ"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-blue-800" />
+                <span>✓ ሁሉንም ቻፕሎች በአንድ ጊዜ ምረጥ</span>
+              </button>
+            )}
 
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button
@@ -1522,14 +1576,14 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                     ? 'bg-blue-900 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="10ሩንም ቻፕሎች በየራሳቸው ገጽና ሰንጠረዥ ከፋፍለህ በአንድ ጊዜ አሳይ"
+                title="በየቻፕሉ የተከፋፈለ እይታ"
               >
                 <Church className="w-3.5 h-3.5 text-amber-300" />
                 <span>🏛️ በየቻፕሉ የተከፋፈለ እይታ</span>
               </button>
             </div>
 
-            {(selectedChapels.length > 0 || selectedChapelFilter !== 'all') && (
+            {!officialLoggedInChapel && (selectedChapels.length > 0 || selectedChapelFilter !== 'all') && (
               <button
                 type="button"
                 onClick={() => {
@@ -1544,7 +1598,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className={`grid grid-cols-2 sm:grid-cols-3 ${officialLoggedInChapel ? 'lg:grid-cols-1 max-w-sm' : 'lg:grid-cols-6'} gap-3`}>
           {chapelStats.chapels.map((ch) => {
             const st = chapelStats.statsMap[ch];
             const isSelected = selectedChapels.includes(ch) || selectedChapelFilter === ch;
@@ -1554,7 +1608,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               <div
                 key={`chapel_stat_${ch}`}
                 onClick={() => handleToggleTabChapelFilter(ch)}
-                className={`p-3.5 rounded-2xl border cursor-pointer transition-all text-left relative ${
+                className={`p-3.5 rounded-2xl border ${officialLoggedInChapel ? 'cursor-default' : 'cursor-pointer'} transition-all text-left relative ${
                   isSelected
                     ? 'border-blue-800 bg-blue-50/90 ring-2 ring-blue-700/30 shadow-xs'
                     : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50'
@@ -1565,7 +1619,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                     {ch}
                   </h4>
                   <div className="flex items-center gap-1">
-                    {onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                    {!officialLoggedInChapel && onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1748,7 +1802,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
             >
               <span>ሁሉም ልጆች</span>
               <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700">
-                {churchChildren.length}
+                {effectiveChurchChildren.length}
               </span>
             </button>
 
@@ -1847,13 +1901,17 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 <Church className="w-4 h-4 text-slate-400 shrink-0" />
                 <select
                   value={selectedChapelFilter}
+                  disabled={Boolean(officialLoggedInChapel)}
                   onChange={(e) => {
+                    if (officialLoggedInChapel) return;
                     setSelectedChapelFilter(e.target.value);
                     setSelectedChapels([]);
                   }}
-                  className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  className={`w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                    officialLoggedInChapel ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                  }`}
                 >
-                  <option value="all">ሁሉም ቻፕሎች (አጥቢያዎች)</option>
+                  {!officialLoggedInChapel && <option value="all">ሁሉም ቻፕሎች (አጥቢያዎች)</option>}
                   {chapelStats.chapels.map((ch) => (
                     <option key={`opt_ch_${ch}`} value={ch}>
                       {ch}
@@ -1909,16 +1967,17 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
             {(searchTerm ||
               ageFilter !== 'all' ||
               genderFilter !== 'all' ||
-              selectedChapelFilter !== 'all' ||
-              selectedChapels.length > 0) && (
+              (!officialLoggedInChapel && (selectedChapelFilter !== 'all' || selectedChapels.length > 0))) && (
               <button
                 type="button"
                 onClick={() => {
                   setSearchTerm('');
                   setAgeFilter('all');
                   setGenderFilter('all');
-                  setSelectedChapelFilter('all');
-                  setSelectedChapels([]);
+                  if (!officialLoggedInChapel) {
+                    setSelectedChapelFilter('all');
+                    setSelectedChapels([]);
+                  }
                 }}
                 className="text-rose-600 hover:text-rose-800 hover:underline font-bold cursor-pointer"
               >
@@ -1933,8 +1992,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
           viewFilter !== 'missing_from_church' &&
           filteredChildren.length === 0 &&
           churchChildrenWithStatus.length > 0 &&
-          (selectedChapelFilter !== 'all' ||
-            selectedChapels.length > 0 ||
+          ((!officialLoggedInChapel && (selectedChapelFilter !== 'all' || selectedChapels.length > 0)) ||
             ageFilter !== 'all' ||
             genderFilter !== 'all' ||
             viewFilter !== 'all') && (
@@ -1944,8 +2002,10 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 type="button"
                 onClick={() => {
                   setViewFilter('all');
-                  setSelectedChapelFilter('all');
-                  setSelectedChapels([]);
+                  if (!officialLoggedInChapel) {
+                    setSelectedChapelFilter('all');
+                    setSelectedChapels([]);
+                  }
                   setAgeFilter('all');
                   setGenderFilter('all');
                 }}
@@ -1985,30 +2045,32 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 print:hidden shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleTabChapelFilter(chName)}
-                        className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-white/20 transition shrink-0 cursor-pointer"
-                      >
-                        {selectedChapels.includes(chName) ? '✕ ምርጫውን አስወግድ' : '🔍 ይህን ቻፕል ብቻ አሳይ'}
-                      </button>
-                      {onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                    {!officialLoggedInChapel && (
+                      <div className="flex items-center gap-2 print:hidden shrink-0">
                         <button
                           type="button"
-                          onClick={() => {
-                            if (window.confirm(`"${chName}" ቻፕል ከስርዓቱ በቋሚነት እንዲሰረዝ ይፈልጋሉ?`)) {
-                              onDeleteChapel(chName);
-                            }
-                          }}
-                          className="bg-rose-500/20 hover:bg-rose-500/40 text-rose-200 hover:text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-rose-400/40 transition shrink-0 cursor-pointer flex items-center gap-1"
-                          title="ቻፕል ሰርዝ"
+                          onClick={() => handleToggleTabChapelFilter(chName)}
+                          className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-white/20 transition shrink-0 cursor-pointer"
                         >
-                          <Trash2 className="w-3.5 h-3.5 text-rose-300" />
-                          <span>ቻፕል ሰርዝ</span>
+                          {selectedChapels.includes(chName) ? '✕ ምርጫውን አስወግድ' : '🔍 ይህን ቻፕል ብቻ አሳይ'}
                         </button>
-                      )}
-                    </div>
+                        {onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`"${chName}" ቻፕል ከስርዓቱ በቋሚነት እንዲሰረዝ ይፈልጋሉ?`)) {
+                                onDeleteChapel(chName);
+                              }
+                            }}
+                            className="bg-rose-500/20 hover:bg-rose-500/40 text-rose-200 hover:text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-rose-400/40 transition shrink-0 cursor-pointer flex items-center gap-1"
+                            title="ቻፕል ሰርዝ"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-300" />
+                            <span>ቻፕል ሰርዝ</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Chapel Children Table */}
@@ -2428,11 +2490,16 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                   ቻፕል (አጥቢያ ማዕከል) <span className="text-rose-500">*</span>
                 </label>
                 <select
-                  value={formChapel}
-                  onChange={(e) => setFormChapel(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white font-bold text-slate-900"
+                  value={officialLoggedInChapel || formChapel}
+                  disabled={Boolean(officialLoggedInChapel)}
+                  onChange={(e) => {
+                    if (!officialLoggedInChapel) setFormChapel(e.target.value);
+                  }}
+                  className={`w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-900 ${
+                    officialLoggedInChapel ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                  }`}
                 >
-                  {chapelList.map((ch) => (
+                  {(officialLoggedInChapel ? [officialLoggedInChapel] : chapelList).map((ch) => (
                     <option key={`ch_opt_${ch}`} value={ch}>
                       {ch}
                     </option>
@@ -2886,15 +2953,19 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">ነባሪ ቻፕል (በፋይሉ ካልተጠቀሰ)፦</label>
                           <select
-                            value={importDefaultChapel}
+                            value={officialLoggedInChapel || importDefaultChapel}
+                            disabled={Boolean(officialLoggedInChapel)}
                             onChange={(e) => {
+                              if (officialLoggedInChapel) return;
                               const v = e.target.value;
                               setImportDefaultChapel(v);
                               handleReapplyMapping(undefined, undefined, undefined, v);
                             }}
-                            className="w-full text-xs border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
+                            className={`w-full text-xs border border-slate-300 rounded-lg p-1.5 text-slate-800 ${
+                              officialLoggedInChapel ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                            }`}
                           >
-                            {chapelList.map((ch) => (
+                            {(officialLoggedInChapel ? [officialLoggedInChapel] : chapelList).map((ch) => (
                               <option key={`def_ch_${ch}`} value={ch}>
                                 {ch}
                               </option>
@@ -2975,7 +3046,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                   {importActiveTab === 'children' && (
                     <div className="space-y-3">
                       {/* Multi-Chapel Filter & Selection Chips Strip */}
-                      {importChapelsSummary.length > 0 && (
+                      {!officialLoggedInChapel && importChapelsSummary.length > 0 && (
                         <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-slate-50 p-3.5 rounded-2xl border border-blue-200/80">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
                             <div className="flex items-center gap-2">
@@ -3271,55 +3342,61 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-800 block">የማጽዳት ወሰን ይምረጡ፦</label>
                 <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-slate-50/50">
-                  {/* Option 1: Clear All */}
-                  <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-white transition border border-transparent hover:border-slate-200">
-                    <input
-                      type="radio"
-                      name="clearScopeRadio"
-                      checked={clearScope === 'all'}
-                      onChange={() => setClearScope('all')}
-                      className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
-                    />
-                    <div className="text-xs">
-                      <span className="font-extrabold text-slate-900 block">
-                        የሁሉንም ቻፕሎች መረጃ ሙሉ በሙሉ አጽዳ (ጠቅላላ {churchChildren.length} ልጆች)
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        በቋቱ ውስጥ ያሉትን ሁሉንም ልጆች መረጃ ሙሉ በሙሉ አጥፍቶ ባዶ ያደርገዋል።
-                      </span>
-                    </div>
-                  </label>
+                  {/* Option 1: Clear All (Hidden for Chapel Leaders) */}
+                  {!officialLoggedInChapel && (
+                    <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-white transition border border-transparent hover:border-slate-200">
+                      <input
+                        type="radio"
+                        name="clearScopeRadio"
+                        checked={clearScope === 'all'}
+                        onChange={() => setClearScope('all')}
+                        className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      />
+                      <div className="text-xs">
+                        <span className="font-extrabold text-slate-900 block">
+                          የሁሉንም ቻፕሎች መረጃ ሙሉ በሙሉ አጽዳ (ጠቅላላ {effectiveChurchChildren.length} ልጆች)
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          በቋቱ ውስጥ ያሉትን ሁሉንም ልጆች መረጃ ሙሉ በሙሉ አጥፍቶ ባዶ ያደርገዋል።
+                        </span>
+                      </div>
+                    </label>
+                  )}
 
                   {/* Option 2: Clear Specific Chapels */}
                   <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-white transition border border-transparent hover:border-slate-200">
                     <input
                       type="radio"
                       name="clearScopeRadio"
-                      checked={clearScope === 'selected'}
+                      checked={officialLoggedInChapel ? true : clearScope === 'selected'}
                       onChange={() => setClearScope('selected')}
                       className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
                     />
                     <div className="text-xs flex-1">
                       <span className="font-extrabold text-slate-900 block">
-                        የተመረጡትን ቻፕሎች መረጃ ብቻ አጽዳ
+                        {officialLoggedInChapel
+                          ? `የ${officialLoggedInChapel} መረጃ ብቻ አጽዳ`
+                          : 'የተመረጡትን ቻፕሎች መረጃ ብቻ አጽዳ'}
                       </span>
                       <span className="text-[11px] text-slate-500 block mb-2">
-                        ሌሎች ቻፕሎች ሳይነኩ የተመረጡት ቻፕሎች መረጃ ብቻ ያጸዳል።
+                        {officialLoggedInChapel
+                          ? 'ሌሎች ቻፕሎች ሳይነኩ የራስዎ ቻፕል የልጆች መረጃ ብቻ ይጸዳል።'
+                          : 'ሌሎች ቻፕሎች ሳይነኩ የተመረጡት ቻፕሎች መረጃ ብቻ ያጸዳል።'}
                       </span>
 
-                      {clearScope === 'selected' && (
+                      {(officialLoggedInChapel || clearScope === 'selected') && (
                         <div className="mt-2 space-y-2 bg-white p-3 rounded-xl border border-slate-200 max-h-48 overflow-y-auto">
                           <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                            የሚጸዱትን ቻፕሎች ምልክት ያድርጉ፦
+                            {officialLoggedInChapel ? 'የሚጸዳው ቻፕል፦' : 'የሚጸዱትን ቻፕሎች ምልክት ያድርጉ፦'}
                           </label>
-                          {chapelList.map((ch) => {
-                            const countInChapel = churchChildren.filter((c) => {
+                          {(officialLoggedInChapel ? [officialLoggedInChapel] : chapelList).map((ch) => {
+                            const countInChapel = effectiveChurchChildren.filter((c) => {
                               const chNorm = normalizeChapel(c.chapel || 'ዋናው ማዕከል ቻፕል');
                               const targetNorm = normalizeChapel(ch);
                               return chNorm === targetNorm || (c.chapel || '').includes(ch);
                             }).length;
 
-                            const isChecked = clearSelectedChapels.includes(ch);
+                            const isChecked = officialLoggedInChapel ? true : clearSelectedChapels.includes(ch);
 
                             return (
                               <label
@@ -3330,7 +3407,9 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
+                                    disabled={Boolean(officialLoggedInChapel)}
                                     onChange={() => {
+                                      if (officialLoggedInChapel) return;
                                       setClearSelectedChapels((prev) =>
                                         prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]
                                       );
@@ -3356,10 +3435,12 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               <div className="bg-slate-100 p-3 rounded-xl text-xs flex items-center justify-between">
                 <span className="text-slate-600 font-semibold">የሚጠፉ ልጆች ጠቅላላ ቁጥር፦</span>
                 <span className="text-sm font-black text-rose-700 tabular-nums">
-                  {clearScope === 'all'
-                    ? `${churchChildren.length} ልጆች (ሁሉም)`
+                  {officialLoggedInChapel
+                    ? `${effectiveChurchChildren.length} ልጆች (${officialLoggedInChapel})`
+                    : clearScope === 'all'
+                    ? `${effectiveChurchChildren.length} ልጆች (ሁሉም)`
                     : `${
-                        churchChildren.filter((c) => {
+                        effectiveChurchChildren.filter((c) => {
                           const chNorm = normalizeChapel(c.chapel || 'ዋናው ማዕከል ቻፕል');
                           return clearSelectedChapels.some(
                             (sel) => normalizeChapel(sel) === chNorm || (c.chapel || '').includes(sel)
@@ -3377,7 +3458,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 onClick={() => {
                   setIsClearModalOpen(false);
                   setClearConfirmWord('');
-                  setClearSelectedChapels([]);
+                  setClearSelectedChapels(officialLoggedInChapel ? [officialLoggedInChapel] : []);
                 }}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl transition"
               >
@@ -3388,15 +3469,19 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 type="button"
                 onClick={handleExecuteClear}
                 disabled={
-                  clearScope === 'all'
-                    ? churchChildren.length === 0
+                  officialLoggedInChapel
+                    ? effectiveChurchChildren.length === 0
+                    : clearScope === 'all'
+                    ? effectiveChurchChildren.length === 0
                     : clearSelectedChapels.length === 0
                 }
                 className="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer hover:scale-[1.01] active:scale-95"
               >
                 <Trash2 className="w-4 h-4 text-white" />
                 <span>
-                  {clearScope === 'all'
+                  {officialLoggedInChapel
+                    ? `🗑️ የ${officialLoggedInChapel}ን መረጃ አጽዳ`
+                    : clearScope === 'all'
                     ? '🗑️ የሁሉንም ቻፕሎች መረጃ አጽዳ'
                     : `🗑️ የተመረጡትን (${clearSelectedChapels.length}) ቻፕሎች መረጃ አጽዳ`}
                 </span>
@@ -3410,9 +3495,13 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       <NameCrossReferenceModal
         isOpen={isNameCompareModalOpen}
         onClose={() => setIsNameCompareModalOpen(false)}
-        title="የቤተክርስቲያን ልጆች እና የሰንበት ትምህርት ቤት የስም ማስተያያ ሰንጠረዥ"
-        sourceLabel="የልጆች ቋት (0-14)"
-        churchItems={churchChildren}
+        title={
+          officialLoggedInChapel
+            ? `${officialLoggedInChapel} ልጆች እና የሰንበት ትምህርት ቤት የስም ማስተያያ ሰንጠረዥ`
+            : 'የቤተክርስቲያን ልጆች እና የሰንበት ትምህርት ቤት የስም ማስተያያ ሰንጠረዥ'
+        }
+        sourceLabel={officialLoggedInChapel ? `${officialLoggedInChapel} የልጆች ቋት (0-14)` : 'የልጆች ቋት (0-14)'}
+        churchItems={effectiveChurchChildren}
         studentsByClass={studentsByClass}
         classList={classList}
         chapelList={chapelStats.chapels}

@@ -101,6 +101,19 @@ export const DEFAULT_CHAPELS: string[] = [
   "አዶናይ ቻፕል"
 ];
 
+export const DEFAULT_CHAPEL_PINS: { [chapelName: string]: string } = {
+  "ኤልሮኢ ቻፕል": "2001",
+  "ሻሎም ቻፕል": "2002",
+  "ቤቴል ቻፕል": "2003",
+  "ያህዌ ቻፕል": "2004",
+  "ኤዴን ቻፕል": "2005",
+  "አቤንኤዘር ቻፕል": "2006",
+  "ርኆቦት ቻፕል": "2007",
+  "ኤልሻዳይ ቻፕል": "2008",
+  "ሩሐማ ቻፕል": "2009",
+  "አዶናይ ቻፕል": "2010"
+};
+
 export const INITIAL_CHURCH_CHILDREN: ChurchChild[] = [
   // 0 - 3 ዓመት
   { id: 101, name: "ዮናታን ዳዊት", gender: "ወ", age: 2, educationLevel: "ጨቅላ/ያልጀመረ", occupation: "የቤት ውስጥ", chapel: "ኤልሮኢ ቻፕል", parentName: "ዳዊት ታደሰ", phone: "0911223344", residence: "ቀበሌ 01", fellowshipOrVillage: "ቤቴል ህብረት", notes: "ህፃን", registeredDate: "2019-01-10" },
@@ -137,7 +150,8 @@ export const INITIAL_APP_DATA: AppData = {
   years: ["2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "2028", "2029", "2030"],
   pins: {
     admin: "1234",
-    leader: "5678"
+    leader: "5678",
+    chapels: DEFAULT_CHAPEL_PINS
   },
   teachers: INITIAL_TEACHERS.map((name, index) => ({
     id: index + 1,

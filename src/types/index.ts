@@ -133,6 +133,7 @@ export interface AppData {
   pins: {
     admin: string;
     leader: string;
+    chapels?: { [chapelName: string]: string };
   };
   teachers: Teacher[];
   subjects: string[];

@@ -53,6 +53,7 @@ interface ChurchMasterTabProps {
   onClearChurchMembers: () => void;
   onExtractChildrenToChildrenTab: (children: Omit<ChurchChild, 'id'>[], mode?: 'append' | 'replace') => void;
   currentUserRole: Role | null;
+  loggedInChapel?: string | null;
 }
 
 export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
@@ -68,11 +69,27 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   onDeleteMember,
   onClearChurchMembers,
   onExtractChildrenToChildrenTab,
-  currentUserRole
+  currentUserRole,
+  loggedInChapel
 }) => {
+  const officialLoggedInChapel = useMemo(
+    () => (loggedInChapel ? mapToOfficialChapel(loggedInChapel) : null),
+    [loggedInChapel]
+  );
+
+  // Strict data isolation: when a Chapel Leader logs in, expose ONLY that chapel's members
+  const effectiveMembers = useMemo(() => {
+    if (!officialLoggedInChapel) return churchMembers;
+    return churchMembers.filter(
+      (m) => mapToOfficialChapel(m.chapel || '') === officialLoggedInChapel
+    );
+  }, [churchMembers, officialLoggedInChapel]);
+
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [selectedChapelFilter, setSelectedChapelFilter] = useState<string>('all');
-  const [selectedChapels, setSelectedChapels] = useState<string[]>([]);
+  const [selectedChapelFilter, setSelectedChapelFilter] = useState<string>(officialLoggedInChapel || 'all');
+  const [selectedChapels, setSelectedChapels] = useState<string[]>(
+    officialLoggedInChapel ? [officialLoggedInChapel] : []
+  );
   const [displayLayoutMode, setDisplayLayoutMode] = useState<'table' | 'grouped_chapels'>('table');
   const [extractedSuccessMsg, setExtractedSuccessMsg] = useState<string>('');
   const [selectedAgeCohort, setSelectedAgeCohort] = useState<string>('all');
@@ -91,10 +108,22 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const [formAge, setFormAge] = useState<string>('30');
   const [formEducationLevel, setFormEducationLevel] = useState<string>('ዲግሪ');
   const [formOccupation, setFormOccupation] = useState<string>('የመንግሥት ሠራተኛ');
-  const [formChapel, setFormChapel] = useState<string>(DEFAULT_CHAPELS[0]);
+  const [formChapel, setFormChapel] = useState<string>(officialLoggedInChapel || DEFAULT_CHAPELS[0]);
   const [formParent, setFormParent] = useState<string>('');
   const [formPhone, setFormPhone] = useState<string>('');
   const [formResidence, setFormResidence] = useState<string>('');
+
+  React.useEffect(() => {
+    if (officialLoggedInChapel) {
+      setSelectedChapelFilter(officialLoggedInChapel);
+      setSelectedChapels([officialLoggedInChapel]);
+      setFormChapel(officialLoggedInChapel);
+    } else {
+      setSelectedChapelFilter('all');
+      setSelectedChapels([]);
+      setFormChapel(DEFAULT_CHAPELS[0]);
+    }
+  }, [officialLoggedInChapel]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,7 +139,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     let totalMale = 0;
     let totalFemale = 0;
 
-    churchMembers.forEach((m) => {
+    effectiveMembers.forEach((m) => {
       const parsed = parseChildAge(m.age, parseInt(currentYear, 10) || 2018, 'auto');
       let numAge = parsed.age;
       if (numAge === -1 && m.age) {
@@ -143,7 +172,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       }
     });
 
-    const totalMembers = churchMembers.length;
+    const totalMembers = effectiveMembers.length;
 
     return {
       cohorts,
@@ -151,16 +180,17 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       totalMale,
       totalFemale
     };
-  }, [churchMembers, currentYear]);
+  }, [effectiveMembers, currentYear]);
 
-  // Chapel statistics for Church Members (Strictly locked to DEFAULT_CHAPELS)
+  // Chapel statistics for Church Members (Strictly locked to DEFAULT_CHAPELS, or single loggedInChapel)
   const chapelStats = useMemo(() => {
+    const visibleChapels = officialLoggedInChapel ? [officialLoggedInChapel] : DEFAULT_CHAPELS;
     const statsMap: { [chapel: string]: { total: number; childrenCount: number; adultCount: number; male: number; female: number } } = {};
-    DEFAULT_CHAPELS.forEach((ch) => {
+    visibleChapels.forEach((ch) => {
       statsMap[ch] = { total: 0, childrenCount: 0, adultCount: 0, male: 0, female: 0 };
     });
 
-    churchMembers.forEach((m) => {
+    effectiveMembers.forEach((m) => {
       const ch = mapToOfficialChapel(m.chapel || '');
       if (!statsMap[ch]) {
         statsMap[ch] = { total: 0, childrenCount: 0, adultCount: 0, male: 0, female: 0 };
@@ -177,10 +207,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     });
 
     return {
-      chapels: DEFAULT_CHAPELS,
+      chapels: visibleChapels,
       statsMap
     };
-  }, [churchMembers, currentYear]);
+  }, [effectiveMembers, currentYear, officialLoggedInChapel]);
 
   // Sunday School Index for pure name matching regardless of age
   const sundaySchoolIndex: SundaySchoolIndexStructure = useMemo(() => {
@@ -189,7 +219,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
   // Members mapped with Sunday School enrollment status
   const churchMembersWithStatus = useMemo(() => {
-    return churchMembers.map((m) => {
+    return effectiveMembers.map((m) => {
       const match = matchChildNameToSundaySchool(m.name, sundaySchoolIndex);
       const parsed = parseChildAge(m.age, parseInt(currentYear, 10) || 2018, 'auto');
       let numAge = parsed.age;
@@ -211,7 +241,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         studentAge: match?.student?.age ?? null
       };
     });
-  }, [churchMembers, sundaySchoolIndex, currentYear]);
+  }, [effectiveMembers, sundaySchoolIndex, currentYear]);
 
   // Filtered members list
   const filteredMembers = useMemo(() => {
@@ -275,7 +305,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   // Group filtered members by chapel
   const membersGroupedByChapel = useMemo(() => {
     const groups: { [chapel: string]: typeof filteredMembers } = {};
-    DEFAULT_CHAPELS.forEach((ch) => {
+    chapelStats.chapels.forEach((ch) => {
       groups[ch] = [];
     });
     filteredMembers.forEach((m) => {
@@ -284,13 +314,13 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       groups[ch].push(m);
     });
     return groups;
-  }, [filteredMembers]);
+  }, [filteredMembers, chapelStats.chapels]);
 
   // Function to extract 0-14 children from church database to Children Registries
   const handleExtractChildren = () => {
     // Build fallback phone lookup from adult/parent members in case legacy stored rows lack phone
     const memberPhoneByNormName = new Map<string, string>();
-    churchMembers.forEach((m) => {
+    effectiveMembers.forEach((m) => {
       const p = String(m.phone || '').trim();
       const norm = normalizeAmharicSearchText(m.name);
       if (p && norm && !memberPhoneByNormName.has(norm)) {
@@ -300,7 +330,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
     const childrenToExtract: Omit<ChurchChild, 'id'>[] = [];
 
-    churchMembers.forEach((m) => {
+    effectiveMembers.forEach((m) => {
       const parsed = parseChildAge(m.age, parseInt(currentYear, 10) || 2018, 'auto');
       let ageNum = parsed.age;
 
@@ -337,7 +367,11 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     }
 
     onExtractChildrenToChildrenTab(childrenToExtract, 'append');
-    setExtractedSuccessMsg(`✓ ${childrenToExtract.length} ልጆች (ከ0-14 ዕድሜ) ከቤተክርስቲያኒቱ መረጃ ቋት ተለይተው ወደ የልጆች ቋትና ወደ 10ሩም ቻፕሎች የልጆች ቋት በስኬት ገብተዋል!`);
+    setExtractedSuccessMsg(
+      officialLoggedInChapel
+        ? `✓ ${childrenToExtract.length} ልጆች (ከ0-14 ዕድሜ) ወደ ${officialLoggedInChapel} የልጆች ቋት በስኬት ገብተዋል!`
+        : `✓ ${childrenToExtract.length} ልጆች (ከ0-14 ዕድሜ) ከቤተክርስቲያኒቱ መረጃ ቋት ተለይተው ወደ የልጆች ቋትና ወደ 10ሩም ቻፕሎች የልጆች ቋት በስኬት ገብተዋል!`
+    );
     setTimeout(() => setExtractedSuccessMsg(''), 6000);
   };
 
@@ -359,19 +393,28 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
         const parsed = parseChurchWorkbookAllSheets(workbook, parseChildAge, {
           refYear: parseInt(currentYear, 10) || 2018,
-          ageMode: 'auto'
+          ageMode: 'auto',
+          defaultChapelFallback: officialLoggedInChapel || undefined
         });
 
-        const importedMembers = parsed.members;
-        const autoChildrenToExtract = parsed.children;
+        const importedMembers = officialLoggedInChapel
+          ? parsed.members.filter((m) => mapToOfficialChapel(m.chapel || '') === officialLoggedInChapel)
+          : parsed.members;
+        const autoChildrenToExtract = officialLoggedInChapel
+          ? parsed.children.filter((c) => mapToOfficialChapel(c.chapel || '') === officialLoggedInChapel)
+          : parsed.children;
         const sheetCounts = parsed.sheetCounts;
 
         if (importedMembers.length === 0) {
-          alert('በፋይሉ ውስጥ ምንም የመንፈሳዊ ቤተሰብ አባላት መረጃ አልተገኘም!');
+          alert(
+            officialLoggedInChapel
+              ? `በፋይሉ ውስጥ ለ${officialLoggedInChapel} የሚሆን ምንም የአባላት መረጃ አልተገኘም!`
+              : 'በፋይሉ ውስጥ ምንም የመንፈሳዊ ቤተሰብ አባላት መረጃ አልተገኘም!'
+          );
           return;
         }
 
-        // Save imported members to General Church Database
+        // Save imported members to General Church Database (App.tsx scopes replace to loggedInChapel when active)
         onBatchAddMembers(importedMembers, 'replace');
 
         // Automatically extract 0-14 children into Children Registries (deduplicating/updating existing)
@@ -385,7 +428,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         const phoneFilledCount = importedMembers.filter((m) => Boolean(m.phone)).length;
 
         setExtractedSuccessMsg(
-          `✓ ከ${workbook.SheetNames.length} ሺቶች (ከ10ሩም ቻፕሎች) የተሰበሰቡ ${importedMembers.length} አባላት (ስልክ ያላቸው፦ ${phoneFilledCount}) ሙሉ በሙሉ ወደ ቤተክርስቲያኒቱ አጠቃላይ መረጃ ቋት ገብተዋል! [${summaryBreakdown}] በተጨማሪም ${autoChildrenToExtract.length} ልጆች (0-14 ዕድሜ) በቀጥታ ወደ የልጆች ቋት ተልከዋል።`
+          officialLoggedInChapel
+            ? `✓ ለ${officialLoggedInChapel} የተሰበሰቡ ${importedMembers.length} አባላት (ስልክ ያላቸው፦ ${phoneFilledCount}) ወደ ቻፕሉ መረጃ ቋት ገብተዋል! በተጨማሪም ${autoChildrenToExtract.length} ልጆች (0-14 ዕድሜ) ወደ የልጆች ቋት ተልከዋል።`
+            : `✓ ከ${workbook.SheetNames.length} ሺቶች (ከ10ሩም ቻፕሎች) የተሰበሰቡ ${importedMembers.length} አባላት (ስልክ ያላቸው፦ ${phoneFilledCount}) ሙሉ በሙሉ ወደ ቤተክርስቲያኒቱ አጠቃላይ መረጃ ቋት ገብተዋል! [${summaryBreakdown}] በተጨማሪም ${autoChildrenToExtract.length} ልጆች (0-14 ዕድሜ) በቀጥታ ወደ የልጆች ቋት ተልከዋል።`
         );
         setTimeout(() => setExtractedSuccessMsg(''), 10000);
       } catch (err) {
@@ -454,7 +499,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormAge('30');
     setFormEducationLevel('ዲግሪ');
     setFormOccupation('የመንግሥት ሠራተኛ');
-    setFormChapel(DEFAULT_CHAPELS[0]);
+    setFormChapel(officialLoggedInChapel || DEFAULT_CHAPELS[0]);
     setFormParent('');
     setFormPhone('');
     setFormResidence('');
@@ -468,7 +513,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormAge(m.age !== undefined && m.age !== null && String(m.age).trim() !== '' ? String(m.age) : '30');
     setFormEducationLevel(m.educationLevel || 'ዲግሪ');
     setFormOccupation(m.occupation || 'የመንግሥት ሠራተኛ');
-    setFormChapel(mapToOfficialChapel(m.chapel || ''));
+    setFormChapel(officialLoggedInChapel || mapToOfficialChapel(m.chapel || ''));
     setFormParent(m.parentName || '');
     setFormPhone(m.phone || '');
     setFormResidence(m.residence || '');
@@ -482,7 +527,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       return;
     }
 
-    const officialChapel = mapToOfficialChapel(formChapel);
+    const officialChapel = officialLoggedInChapel || mapToOfficialChapel(formChapel);
 
     const parsedFormAge = parseInt(formAge, 10);
     const payload: Omit<ChurchMember, 'id'> = {
@@ -519,17 +564,21 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             <div className="flex items-center gap-2 mb-2">
               <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
                 <Database className="w-3.5 h-3.5" />
-                <span>አጠቃላይ የመረጃ ቋት</span>
+                <span>{officialLoggedInChapel ? `${officialLoggedInChapel} ቋት` : 'አጠቃላይ የመረጃ ቋት'}</span>
               </span>
               <span className="bg-blue-800/80 text-blue-200 text-xs font-bold px-2.5 py-0.5 rounded-full">
-                {churchMembers.length.toLocaleString('am-ET')} አባላት
+                {effectiveMembers.length.toLocaleString('am-ET')} አባላት
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-              የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን - አጠቃላይ የመረጃ ቋት
+              {officialLoggedInChapel
+                ? `${officialLoggedInChapel} - የቻፕል አባላትና ቤተሰብ መረጃ ቋት`
+                : 'የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን - አጠቃላይ የመረጃ ቋት'}
             </h2>
             <p className="text-xs sm:text-sm text-blue-200/90 mt-1 max-w-2xl">
-              የ10ሩም ቻፕሎች ሙሉ የቤተሰብ መረጃ መዝገብ። እስከ 6,000+ በላይ የሚሆኑ አባላትን መረጃ ከ10ሩም ቻፕል ኤክሴል ሺቶች በአንድ ጊዜ ያነባል (በእንግሊዝኛና በአማርኛ የተጻፉ የቻፕል ስሞች በሙሉ ወደ 10ሩ ኦፊሴላዊ ቻፕሎች ብቻ ይመደባሉ)።
+              {officialLoggedInChapel
+                ? `የ${officialLoggedInChapel} ብቻ ሙሉ የቤተሰብና የአባላት መረጃ መዝገብ። ሌሎች ቻፕሎች አይታዩም፤ የራስዎን ቻፕል መረጃ ብቻ ማስገባት፣ ማስተካከልና ማስተዳደር ይችላሉ።`
+                : 'የ10ሩም ቻፕሎች ሙሉ የቤተሰብ መረጃ መዝገብ። እስከ 6,000+ በላይ የሚሆኑ አባላትን መረጃ ከ10ሩም ቻፕል ኤክሴል ሺቶች በአንድ ጊዜ ያነባል (በእንግሊዝኛና በአማርኛ የተጻፉ የቻፕል ስሞች በሙሉ ወደ 10ሩ ኦፊሴላዊ ቻፕሎች ብቻ ይመደባሉ)።'}
             </p>
           </div>
 
@@ -545,10 +594,18 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer border border-emerald-400/40"
-              title="የ10ሩንም ቻፕል ሺቶች የያዘ ኤክሴል ፋይል ጫን (5,300+ አባላት)"
+              title={
+                officialLoggedInChapel
+                  ? `የ${officialLoggedInChapel}ን ኤክሴል ፋይል ጫን`
+                  : 'የ10ሩንም ቻፕል ሺቶች የያዘ ኤክሴል ፋይል ጫን (5,300+ አባላት)'
+              }
             >
               <Upload className="w-4 h-4 text-emerald-200" />
-              <span>📥 ኤክሴል ጫን (የ10ሩንም ቻፕል ሺቶች)</span>
+              <span>
+                {officialLoggedInChapel
+                  ? `📥 ኤክሴል ጫን (${officialLoggedInChapel})`
+                  : '📥 ኤክሴል ጫን (የ10ሩንም ቻፕል ሺቶች)'}
+              </span>
             </button>
 
             <button
@@ -715,25 +772,31 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
               <Church className="w-4 h-4 text-blue-900" />
-              <span>የተመደቡት 10ሩ ቻፕሎች አጠቃላይ የምዕመናን መረጃ ማጠቃለያ</span>
+              <span>
+                {officialLoggedInChapel
+                  ? `የ${officialLoggedInChapel} አጠቃላይ የምዕመናን መረጃ ማጠቃለያ`
+                  : 'የተመደቡት 10ሩ ቻፕሎች አጠቃላይ የምዕመናን መረጃ ማጠቃለያ'}
+              </span>
             </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              በየቻፕሉ ያሉ አባላት፣ ከ0-14 ያሉ ልጆች እና የወላጆች ስልክ መገናኛ (ከተሰጡት 10ሩ ቻፕሎች ውጪ ሌላ ተጨማሪ ቻፕል አይፈጠርም)
+              በየቻፕሉ ያሉ አባላት፣ ከ0-14 ያሉ ልጆች እና የወላጆች ስልክ መገናኛ
             </p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedChapels(chapelStats.chapels);
-                setSelectedChapelFilter('all');
-              }}
-              className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-blue-800" />
-              <span>✓ ሁሉንም 10 ቻፕሎች ምረጥ</span>
-            </button>
+            {!officialLoggedInChapel && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedChapels(chapelStats.chapels);
+                  setSelectedChapelFilter('all');
+                }}
+                className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-blue-800" />
+                <span>✓ ሁሉንም 10 ቻፕሎች ምረጥ</span>
+              </button>
+            )}
 
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button
@@ -760,7 +823,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className={`grid grid-cols-2 sm:grid-cols-3 ${officialLoggedInChapel ? 'lg:grid-cols-1 max-w-sm' : 'lg:grid-cols-5'} gap-3`}>
           {chapelStats.chapels.map((ch) => {
             const st = chapelStats.statsMap[ch];
             const isSelected = selectedChapels.includes(ch) || selectedChapelFilter === ch;
@@ -769,13 +832,14 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               <div
                 key={`master_ch_stat_${ch}`}
                 onClick={() => {
+                  if (officialLoggedInChapel) return;
                   if (selectedChapels.includes(ch)) {
                     setSelectedChapels(selectedChapels.filter((c) => c !== ch));
                   } else {
                     setSelectedChapels([...selectedChapels, ch]);
                   }
                 }}
-                className={`p-3.5 rounded-2xl border cursor-pointer transition-all text-left relative ${
+                className={`p-3.5 rounded-2xl border ${officialLoggedInChapel ? 'cursor-default' : 'cursor-pointer'} transition-all text-left relative ${
                   isSelected
                     ? 'border-blue-800 bg-blue-50/90 ring-2 ring-blue-700/30 shadow-xs'
                     : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50'
@@ -833,13 +897,17 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             <Church className="w-4 h-4 text-slate-400 shrink-0" />
             <select
               value={selectedChapelFilter}
+              disabled={Boolean(officialLoggedInChapel)}
               onChange={(e) => {
+                if (officialLoggedInChapel) return;
                 setSelectedChapelFilter(e.target.value);
                 setSelectedChapels([]);
               }}
-              className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
+              className={`w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                officialLoggedInChapel ? 'bg-slate-100 cursor-not-allowed' : 'bg-white cursor-pointer'
+              }`}
             >
-              <option value="all">ሁሉም 10ሩ ቻፕሎች (አጥቢያዎች)</option>
+              {!officialLoggedInChapel && <option value="all">ሁሉም 10ሩ ቻፕሎች (አጥቢያዎች)</option>}
               {chapelStats.chapels.map((ch) => (
                 <option key={`ch_opt_${ch}`} value={ch}>
                   {ch}
@@ -863,13 +931,15 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
           <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
             <span>የተገኙ አባላት፦ <strong className="text-blue-900 font-extrabold">{filteredMembers.length.toLocaleString('am-ET')}</strong></span>
-            {(searchTerm || selectedChapelFilter !== 'all' || selectedChapels.length > 0 || selectedAgeCohort !== 'all' || sundaySchoolFilter !== 'all') && (
+            {(searchTerm || (!officialLoggedInChapel && (selectedChapelFilter !== 'all' || selectedChapels.length > 0)) || selectedAgeCohort !== 'all' || sundaySchoolFilter !== 'all') && (
               <button
                 type="button"
                 onClick={() => {
                   setSearchTerm('');
-                  setSelectedChapelFilter('all');
-                  setSelectedChapels([]);
+                  if (!officialLoggedInChapel) {
+                    setSelectedChapelFilter('all');
+                    setSelectedChapels([]);
+                  }
                   setSelectedAgeCohort('all');
                   setSundaySchoolFilter('all');
                 }}
@@ -1190,11 +1260,16 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">ቻፕል (አጥቢያ) *</label>
                 <select
-                  value={formChapel}
-                  onChange={(e) => setFormChapel(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-bold"
+                  value={officialLoggedInChapel || formChapel}
+                  disabled={Boolean(officialLoggedInChapel)}
+                  onChange={(e) => {
+                    if (!officialLoggedInChapel) setFormChapel(e.target.value);
+                  }}
+                  className={`w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-bold ${
+                    officialLoggedInChapel ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
+                  }`}
                 >
-                  {DEFAULT_CHAPELS.map((ch) => (
+                  {(officialLoggedInChapel ? [officialLoggedInChapel] : DEFAULT_CHAPELS).map((ch) => (
                     <option key={`m_ch_${ch}`} value={ch}>
                       {ch}
                     </option>
@@ -1269,12 +1344,16 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       <NameCrossReferenceModal
         isOpen={isNameCompareModalOpen}
         onClose={() => setIsNameCompareModalOpen(false)}
-        title="አጠቃላይ የቤተክርስቲያን መዝገብ እና የሰንበት ትምህርት ቤት የስም ማስተያያ ሰንጠረዥ"
-        sourceLabel="የቤተክርስቲያን አጠቃላይ መዝገብ (5,300+ አባላት)"
-        churchItems={churchMembers}
+        title={
+          officialLoggedInChapel
+            ? `${officialLoggedInChapel} እና የሰንበት ትምህርት ቤት የስም ማስተያያ ሰንጠረዥ`
+            : 'አጠቃላይ የቤተክርስቲያን መዝገብ እና የሰንበት ትምህርት ቤት የስም ማስተያያ ሰንጠረዥ'
+        }
+        sourceLabel={officialLoggedInChapel ? `${officialLoggedInChapel} መዝገብ` : 'የቤተክርስቲያን አጠቃላይ መዝገብ (5,300+ አባላት)'}
+        churchItems={effectiveMembers}
         studentsByClass={studentsByClass}
         classList={classList}
-        chapelList={DEFAULT_CHAPELS}
+        chapelList={chapelStats.chapels}
       />
     </div>
   );

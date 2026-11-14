@@ -1,35 +1,50 @@
 import React, { useState } from 'react';
-import { Shield, Users, GraduationCap, ArrowLeft, Church, Check } from 'lucide-react';
+import {
+  Shield,
+  Users,
+  GraduationCap,
+  ArrowLeft,
+  Church,
+  Check,
+  KeyRound,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  Lock
+} from 'lucide-react';
 import { Role, Teacher } from '../types';
-import { DEFAULT_CHAPELS } from '../constants/initialData';
+import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 
 interface LoginPortalProps {
   teachers: Teacher[];
   adminPin?: string;
   leaderPin?: string;
+  chapelPins?: { [chapelName: string]: string };
   chapelList?: string[];
   onLoginSuccess: (role: Role, teacher?: Teacher, chapel?: string) => void;
 }
 
 export const LoginPortal: React.FC<LoginPortalProps> = ({
   teachers,
+  adminPin = '1234',
+  leaderPin = '5678',
+  chapelPins = DEFAULT_CHAPEL_PINS,
   chapelList = DEFAULT_CHAPELS,
   onLoginSuccess
 }) => {
   const [activeRole, setActiveRole] = useState<Role | 'chapel_leader' | null>(null);
   const [selectedTeacherId, setSelectedTeacherId] = useState<number>(teachers[0]?.id || 1);
-  const [selectedChapel, setSelectedChapel] = useState<string>(chapelList[0] || 'ኤልሮኢ ቻፕል');
+  const [selectedChapel, setSelectedChapel] = useState<string>(chapelList[0] || DEFAULT_CHAPELS[0]);
+  const [pinInput, setPinInput] = useState<string>('');
+  const [showPin, setShowPin] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string>('');
 
   const handleSelectRole = (role: Role | 'chapel_leader') => {
-    if (role === 'admin') {
-      onLoginSuccess('admin');
-      return;
-    }
-    if (role === 'leader') {
-      onLoginSuccess('leader');
-      return;
-    }
     setActiveRole(role);
+    setPinInput('');
+    setShowPin(false);
+    setErrorMsg('');
+
     if (role === 'teacher' && teachers.length > 0) {
       setSelectedTeacherId(teachers[0].id);
     }
@@ -40,21 +55,104 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
   const handleBack = () => {
     setActiveRole(null);
+    setPinInput('');
+    setShowPin(false);
+    setErrorMsg('');
   };
 
-  const handleChapelLogin = (chapelName: string) => {
-    onLoginSuccess('leader', undefined, chapelName);
-  };
+  const handleVerifyAndLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const entered = pinInput.trim();
+    if (!entered) {
+      setErrorMsg('እባክዎን የመግቢያ ቁልፍ (PIN) ያስገቡ!');
+      return;
+    }
 
-  const handleTeacherLogin = () => {
-    const teacher = teachers.find((t) => t.id === Number(selectedTeacherId)) || teachers[0];
-    if (teacher) {
-      onLoginSuccess('teacher', teacher);
+    if (activeRole === 'admin') {
+      const expected = String(adminPin || '1234').trim();
+      if (entered === expected) {
+        onLoginSuccess('admin');
+      } else {
+        setErrorMsg('የዋና አስተባባሪ መግቢያ ቁልፍ (PIN) ትክክል አይደለም!');
+      }
+      return;
+    }
+
+    if (activeRole === 'leader') {
+      const expected = String(leaderPin || '5678').trim();
+      if (entered === expected) {
+        onLoginSuccess('leader');
+      } else {
+        setErrorMsg('የቤተክርስቲያን መሪ መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ አስተባባሪውን ይጠይቁ።');
+      }
+      return;
+    }
+
+    if (activeRole === 'chapel_leader') {
+      const expected = String(
+        chapelPins?.[selectedChapel] || DEFAULT_CHAPEL_PINS[selectedChapel] || ''
+      ).trim();
+      if (expected && entered === expected) {
+        onLoginSuccess('leader', undefined, selectedChapel);
+      } else {
+        setErrorMsg(`የ${selectedChapel} መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ የዋና አስተባባሪውን ቁልፍ ይጠይቁ።`);
+      }
+      return;
+    }
+
+    if (activeRole === 'teacher') {
+      const teacher = teachers.find((t) => t.id === Number(selectedTeacherId)) || teachers[0];
+      if (!teacher) {
+        setErrorMsg('እባክዎ መምህር ይምረጡ!');
+        return;
+      }
+      if (entered === String(teacher.pin || '').trim()) {
+        onLoginSuccess('teacher', teacher);
+      } else {
+        setErrorMsg(`የ${teacher.name} የግል መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ አስተባባሪውን ይጠይቁ።`);
+      }
     }
   };
 
+  const getRoleHeader = () => {
+    if (activeRole === 'admin') {
+      return {
+        title: 'የዋና ቤተክርስቲያን አስተባባሪ መግቢያ',
+        subtitle: 'እባክዎን የአስተባባሪውን የመግቢያ ቁልፍ (PIN) ያስገቡ',
+        iconBg: 'bg-blue-50 text-blue-900 border-blue-200',
+        btnBg: 'bg-blue-900 hover:bg-blue-800',
+        icon: <Shield className="w-6 h-6" />
+      };
+    }
+    if (activeRole === 'leader') {
+      return {
+        title: 'የቤተክርስቲያን መሪዎች መግቢያ',
+        subtitle: 'እባክዎን በዋና አስተባባሪ የተሰጠውን የመሪዎች ቁልፍ (PIN) ያስገቡ',
+        iconBg: 'bg-teal-50 text-teal-800 border-teal-200',
+        btnBg: 'bg-teal-800 hover:bg-teal-700',
+        icon: <Users className="w-6 h-6" />
+      };
+    }
+    if (activeRole === 'chapel_leader') {
+      return {
+        title: 'የቻፕል መሪዎችና ተወካዮች መግቢያ',
+        subtitle: 'ቻፕልዎን ይምረጡና የቻፕልዎን የመግቢያ ቁልፍ (PIN) ያስገቡ',
+        iconBg: 'bg-amber-50 text-amber-800 border-amber-200',
+        btnBg: 'bg-amber-600 hover:bg-amber-500',
+        icon: <Church className="w-6 h-6" />
+      };
+    }
+    return {
+      title: 'የመማሪያ ክፍል መምህራን መግቢያ',
+      subtitle: 'ስምዎን ይምረጡና በአስተባባሪ የተሰጠዎትን የግል ቁልፍ (PIN) ያስገቡ',
+      iconBg: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+      btnBg: 'bg-indigo-900 hover:bg-indigo-800',
+      icon: <GraduationCap className="w-6 h-6" />
+    };
+  };
+
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6">
+    <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6 w-full">
       {!activeRole ? (
         <div>
           <div className="text-center mb-8">
@@ -64,8 +162,9 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
             <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
               የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን - የመግቢያ ፖርታል
             </h2>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1.5 max-w-xl mx-auto font-medium">
-              እባክዎን ወደ ስርዓቱ ለመግባት የአገልግሎት ድርሻዎን (ቤተክርስቲያን፣ ቻፕል ወይም የመማሪያ ክፍል) ይምረጡ
+            <p className="text-xs sm:text-sm text-slate-600 mt-1.5 max-w-xl mx-auto font-medium flex items-center justify-center gap-1.5">
+              <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>ሁሉም መግቢያዎች በአስተባባሪ በተመደበ የመግቢያ ቁልፍ (PIN) የተጠበቁ ናቸው</span>
             </p>
           </div>
 
@@ -78,15 +177,15 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 </div>
                 <h3 className="text-lg font-extrabold text-slate-900 mb-1.5">የቤተክርስቲያን አስተባባሪ</h3>
                 <p className="text-slate-600 text-xs leading-relaxed mb-4">
-                  የዋና ቤተክርስቲያን አስተባባሪ ገጽ፦ ሙሉ መቆጣጠሪያ፣ ዓመታዊ ዕቅድና የሩብ ዓመት ሪፖርት።
+                  የዋና አስተባባሪ ገጽ፦ ሙሉ መቆጣጠሪያ፣ ሁሉንም የመግቢያ ቁልፎች (PIN) ማቀናበሪያና የዳታቤዝ ማስተካከያ።
                 </p>
               </div>
               <button
                 onClick={() => handleSelectRole('admin')}
                 className="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-2.5 px-3 text-xs rounded-xl shadow transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                <span>በዋና አስተባባሪነት ግባ</span>
-                <Check className="w-4 h-4 text-amber-300" />
+                <KeyRound className="w-3.5 h-3.5 text-amber-300" />
+                <span>በአስተባባሪ ቁልፍ ግባ</span>
               </button>
             </div>
 
@@ -98,15 +197,15 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 </div>
                 <h3 className="text-lg font-extrabold text-slate-900 mb-1.5">የቤተክርስቲያን መሪዎች</h3>
                 <p className="text-slate-600 text-xs leading-relaxed mb-4">
-                  የዋና ቤተክርስቲያን የልጆች አገልግሎት መሪዎች፦ የሰንበት ት/ቤት፣ መዘምራንና መንፈሳዊ ቡድኖች ማስተባበሪያ።
+                  የዋና ቤተክርስቲያን የልጆች አገልግሎት መሪዎች፦ የሰንበት ት/ቤት፣ የልጆች ቋትና ቡድኖች ማስተባበሪያ።
                 </p>
               </div>
               <button
                 onClick={() => handleSelectRole('leader')}
                 className="w-full bg-teal-800 hover:bg-teal-700 text-white font-bold py-2.5 px-3 text-xs rounded-xl shadow transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                <span>በዋና መሪነት ግባ</span>
-                <Check className="w-4 h-4 text-white" />
+                <KeyRound className="w-3.5 h-3.5 text-teal-200" />
+                <span>በመሪዎች ቁልፍ ግባ</span>
               </button>
             </div>
 
@@ -121,14 +220,15 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 </div>
                 <h3 className="text-lg font-extrabold text-slate-900 mb-1.5">የቻፕሎች መሪዎች / ተወካዮች</h3>
                 <p className="text-slate-600 text-xs leading-relaxed mb-4">
-                  የ10ሩም ቻፕሎች (ኤልሮኢ፣ ሻሎም፣ ቤቴል፣ ያህዌ፣ ኤዴን፣ አቤንኤዘር፣ ርኆቦት፣ ኤልሻዳይ፣ ሩሐማ፣ አዶናይ) መግቢያ።
+                  እያንዳንዱ ቻፕል በራሱ መግቢያ ቁልፍ ገብቶ የራሱን ቻፕል መረጃ ብቻ ያስተዳድራል።
                 </p>
               </div>
               <button
                 onClick={() => handleSelectRole('chapel_leader')}
-                className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-3 text-xs rounded-xl shadow transition duration-200 cursor-pointer"
+                className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-3 text-xs rounded-xl shadow transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                የቻፕል መግቢያ ይምረጡ →
+                <KeyRound className="w-3.5 h-3.5 text-amber-100" />
+                <span>በቻፕል ቁልፍ ግባ →</span>
               </button>
             </div>
 
@@ -140,22 +240,24 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 </div>
                 <h3 className="text-lg font-extrabold text-slate-900 mb-1.5">የመማሪያ ክፍል መምህራን</h3>
                 <p className="text-slate-600 text-xs leading-relaxed mb-4">
-                  ለተመደቡበት ክፍል ውጤትና የተማሪ አተንዳንስ መቆጣጠሪያ መግቢያ።
+                  ለተመደቡበት ክፍል ውጤትና የተማሪ አተንዳንስ በግል መግቢያ ቁልፍ መቆጣጠሪያ።
                 </p>
               </div>
               <button
                 onClick={() => handleSelectRole('teacher')}
-                className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-2.5 px-3 text-xs rounded-xl shadow transition duration-200 cursor-pointer"
+                className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-2.5 px-3 text-xs rounded-xl shadow transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                በመምህርነት ግባ
+                <KeyRound className="w-3.5 h-3.5 text-indigo-200" />
+                <span>በመምህር ቁልፍ ግባ</span>
               </button>
             </div>
           </div>
         </div>
       ) : (
-        /* Direct Role Selection Sub-Card (No PIN entry needed) */
-        <div className="max-w-xl mx-auto bg-white rounded-2xl p-8 border border-slate-200 shadow-xl">
+        /* Role + PIN Entry Card */
+        <div className="max-w-xl mx-auto bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-xl">
           <button
+            type="button"
             onClick={handleBack}
             className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-bold mb-6 transition cursor-pointer"
           >
@@ -163,85 +265,74 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
             ወደ ዋናው መግቢያ ገጽ ተመለስ
           </button>
 
-          <div className="text-center mb-6">
-            <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-50 text-amber-800 flex items-center justify-center mb-3 border border-amber-200 shadow-xs">
-              {activeRole === 'chapel_leader' ? <Church className="w-6 h-6" /> : <GraduationCap className="w-6 h-6" />}
-            </div>
-            <h3 className="text-xl font-extrabold text-slate-900">
-              {activeRole === 'chapel_leader' ? 'የቻፕል መሪዎችና ተወካዮች መግቢያ' : 'የመማሪያ ክፍል መምህራን መግቢያ'}
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              {activeRole === 'chapel_leader'
-                ? 'እባክዎን የሚመሩትን ቻፕል ይምረጡ'
-                : 'እባክዎን ስምዎን መርጠው ይግቡ'}
-            </p>
-          </div>
+          {(() => {
+            const hdr = getRoleHeader();
+            return (
+              <div className="text-center mb-6">
+                <div className={`w-12 h-12 mx-auto rounded-2xl flex items-center justify-center mb-3 border shadow-xs ${hdr.iconBg}`}>
+                  {hdr.icon}
+                </div>
+                <h3 className="text-xl font-extrabold text-slate-900">{hdr.title}</h3>
+                <p className="text-xs text-slate-500 mt-1">{hdr.subtitle}</p>
+              </div>
+            );
+          })()}
 
-          <div className="space-y-4">
-            {/* Chapel Selection Dropdown & Grid for Chapel Leaders */}
+          {errorMsg && (
+            <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleVerifyAndLogin} className="space-y-4">
+            {/* Chapel Selector for Chapel Leaders */}
             {activeRole === 'chapel_leader' && (
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-2">
-                  1) ከታች ካሉት 10ሩ ቻፕሎች አንዱን ጠቅ አድርገው ይግቡ፦
+                  1) የሚመሩትን ቻፕል ይምረጡ፦
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-2 gap-2.5 mb-4">
+                <div className="grid grid-cols-2 gap-2 mb-3">
                   {chapelList.map((ch) => (
                     <button
                       key={`direct_ch_${ch}`}
                       type="button"
-                      onClick={() => handleChapelLogin(ch)}
-                      className={`p-3 rounded-xl border text-left transition font-extrabold text-xs flex items-center justify-between cursor-pointer ${
+                      onClick={() => {
+                        setSelectedChapel(ch);
+                        setErrorMsg('');
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition font-extrabold text-xs flex items-center justify-between cursor-pointer ${
                         selectedChapel === ch
-                          ? 'border-amber-500 bg-amber-50 text-slate-900 shadow-xs'
-                          : 'border-slate-200 hover:border-amber-400 hover:bg-amber-50/40 text-slate-800'
+                          ? 'border-amber-500 bg-amber-50 text-slate-900 ring-2 ring-amber-400/40 shadow-xs'
+                          : 'border-slate-200 hover:border-amber-300 hover:bg-amber-50/40 text-slate-700'
                       }`}
                     >
-                      <span>🏛️ {ch}</span>
-                      <span className="text-[10px] text-amber-800 bg-amber-200/70 font-bold px-2 py-0.5 rounded-full">
-                        ገባ →
-                      </span>
+                      <span className="truncate">🏛️ {ch}</span>
+                      {selectedChapel === ch && (
+                        <Check className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      )}
                     </button>
                   ))}
                 </div>
-
-                <div className="border-t border-slate-100 pt-4">
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    ወይም ከዝርዝር ውስጥ ይምረጡ፦
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedChapel}
-                      onChange={(e) => setSelectedChapel(e.target.value)}
-                      className="flex-1 px-3.5 py-2.5 bg-amber-50/60 border border-amber-300 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 transition"
-                    >
-                      {chapelList.map((ch) => (
-                        <option key={`login_ch_${ch}`} value={ch}>
-                          🏛️ {ch}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => handleChapelLogin(selectedChapel)}
-                      className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-4 text-xs rounded-xl shadow transition cursor-pointer"
-                    >
-                      ወደ {selectedChapel} ግባ
-                    </button>
-                  </div>
-                </div>
+                <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg">
+                  የተመረጠ ቻፕል፦ <strong>{selectedChapel}</strong> (የራሱን ቻፕል መረጃ ብቻ ያስተዳድራል)
+                </p>
               </div>
             )}
 
-            {/* Teacher Selection Dropdown */}
+            {/* Teacher Selector */}
             {activeRole === 'teacher' && (
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  የመምህር ስም ይምረጡ፦
+                  1) የመምህር ስም ይምረጡ፦
                 </label>
                 <select
                   value={selectedTeacherId}
-                  onChange={(e) => setSelectedTeacherId(Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white transition mb-4"
+                  onChange={(e) => {
+                    setSelectedTeacherId(Number(e.target.value));
+                    setErrorMsg('');
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white transition"
                 >
                   {[...teachers]
                     .sort((a, b) => a.name.localeCompare(b.name, 'am'))
@@ -251,18 +342,52 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       </option>
                     ))}
                 </select>
-
-                <button
-                  type="button"
-                  onClick={handleTeacherLogin}
-                  className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-3 px-4 rounded-xl shadow-md transition duration-200 cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>በመምህርነት ግባ</span>
-                  <Check className="w-4 h-4 text-amber-300" />
-                </button>
               </div>
             )}
-          </div>
+
+            {/* PIN Input (Required for ALL roles) */}
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-blue-800" />
+                <span>
+                  {activeRole === 'chapel_leader'
+                    ? `የ${selectedChapel} መግቢያ ቁልፍ (PIN) ያስገቡ፦`
+                    : activeRole === 'teacher'
+                    ? 'የመምህር የግል መግቢያ ቁልፍ (PIN) ያስገቡ፦'
+                    : 'የመግቢያ ቁልፍ (PIN) ያስገቡ፦'}
+                </span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showPin ? 'text' : 'password'}
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value);
+                    if (errorMsg) setErrorMsg('');
+                  }}
+                  placeholder="የመግቢያ ቁልፍ (PIN) ይጻፉ..."
+                  autoFocus
+                  className="w-full px-4 py-3 pr-11 border border-slate-300 rounded-xl text-sm font-mono font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPin(!showPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                  title={showPin ? 'ደብቅ' : 'አሳይ'}
+                >
+                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className={`w-full text-white font-bold py-3 px-4 rounded-xl shadow-md transition duration-200 cursor-pointer flex items-center justify-center gap-2 ${getRoleHeader().btnBg}`}
+            >
+              <span>አረጋግጥና ግባ</span>
+              <Check className="w-4 h-4 text-amber-300" />
+            </button>
+          </form>
         </div>
       )}
     </div>

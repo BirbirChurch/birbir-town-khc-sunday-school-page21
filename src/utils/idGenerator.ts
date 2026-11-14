@@ -4,7 +4,7 @@
  */
 
 import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild } from '../types';
-import { DEFAULT_CHAPELS } from '../constants/initialData';
+import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 
 let _lastUniqueId = Math.max(Date.now(), 1792849000000);
 
@@ -162,12 +162,28 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       })
     : [];
 
+  // 10. Ensure pins & chapel PINs exist
+  const existingChapelPins = data.pins?.chapels || {};
+  const mergedChapelPins: { [chapelName: string]: string } = { ...DEFAULT_CHAPEL_PINS, ...existingChapelPins };
+  const pinsNeedUpdate =
+    !data.pins ||
+    !data.pins.chapels ||
+    DEFAULT_CHAPELS.some((ch) => !existingChapelPins[ch]);
+  if (pinsNeedUpdate) {
+    modified = true;
+  }
+
   if (!modified) {
     return data;
   }
 
   return {
     ...data,
+    pins: {
+      admin: data.pins?.admin || '1234',
+      leader: data.pins?.leader || '5678',
+      chapels: mergedChapelPins
+    },
     weeklyAttendance: data.weeklyAttendance || {},
     weekDates: data.weekDates || {},
     students: sanitizedStudents,

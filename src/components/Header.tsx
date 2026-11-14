@@ -73,14 +73,17 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={onOpenSyncModal}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-md transition-all hover:scale-105 cursor-pointer shadow-sm ${
+                disabled={!onOpenSyncModal}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-md transition-all shadow-sm ${
+                  onOpenSyncModal ? 'hover:scale-105 cursor-pointer' : 'cursor-default opacity-90'
+                } ${
                   syncStatus === 'connected'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                     : syncStatus === 'saving'
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                 }`}
-                title="የዳታቤዝ ሁኔታን ለማየትና ባክአፕ ለማውረድ ይጫኑ"
+                title={onOpenSyncModal ? 'የዳታቤዝ ሁኔታን ለማየትና ባክአፕ ለማውረድ ይጫኑ' : 'የአዲሱ Firebase ግንኙነት ሁኔታ'}
               >
                 <span
                   className={`w-2 h-2 rounded-full ${
@@ -101,14 +104,16 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               </button>
 
-              <button
-                type="button"
-                onClick={onOpenSyncModal}
-                className="bg-blue-800/80 hover:bg-blue-700 text-amber-300 border border-blue-700/60 text-xs px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 shadow"
-                title="የዳታ ባክአፕ ማውረጃና የFirebase ማስተካከያ"
-              >
-                <span>💾 ዳታቤዝ & ባክአፕ</span>
-              </button>
+              {onOpenSyncModal && (
+                <button
+                  type="button"
+                  onClick={onOpenSyncModal}
+                  className="bg-blue-800/80 hover:bg-blue-700 text-amber-300 border border-blue-700/60 text-xs px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
+                  title="የJSON ማስገቢያ፣ ባክአፕ ማውረጃና የFirebase ማስተካከያ"
+                >
+                  <span>💾 ዳታቤዝ & JSON</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
