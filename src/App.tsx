@@ -34,6 +34,7 @@ import {
 import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS } from './constants/initialData';
 import { subscribeToAppData, syncAppDataToFirebase, saveToLocalStorage, countStudentsInData, exportBackupJSON } from './services/firebase';
 import { generateUniqueId, sanitizeAndDeduplicateAppData } from './utils/idGenerator';
+import { normalizeAmharicSearchText } from './utils/churchExcelParser';
 import { Header } from './components/Header';
 import { LoginPortal } from './components/LoginPortal';
 import { ClassesTab } from './components/ClassesTab';
@@ -735,10 +736,6 @@ export default function App() {
     mode: 'append' | 'replace' = 'append'
   ) => {
     if (!children.length) return;
-    const withIds: ChurchChild[] = children.map((c) => ({
-      ...c,
-      id: generateUniqueId()
-    }));
     updateAppData(
       (prev) => {
         const existingChapels = new Set(prev.chapels || DEFAULT_CHAPELS);
@@ -755,10 +752,58 @@ export default function App() {
             ? [...(prev.chapels || DEFAULT_CHAPELS), ...newChapels]
             : prev.chapels || DEFAULT_CHAPELS;
 
+        if (mode === 'replace') {
+          const withIds: ChurchChild[] = children.map((c) => ({
+            ...c,
+            id: generateUniqueId()
+          }));
+          return {
+            ...prev,
+            chapels: updatedChapels,
+            churchChildren: withIds
+          };
+        }
+
+        // Smart merge on append: enrich missing fields (e.g. phone, parentName, residence) on matching children and avoid duplicates
+        const existingList = [...(prev.churchChildren || [])];
+        const keyToIndex = new Map<string, number>();
+        existingList.forEach((item, idx) => {
+          const key = `${normalizeAmharicSearchText(item.name)}|${mapToOfficialChapel(item.chapel || '')}`;
+          if (!keyToIndex.has(key)) keyToIndex.set(key, idx);
+        });
+
+        children.forEach((incoming) => {
+          const key = `${normalizeAmharicSearchText(incoming.name)}|${mapToOfficialChapel(incoming.chapel || '')}`;
+          const existingIdx = keyToIndex.get(key);
+          if (existingIdx !== undefined) {
+            const cur = existingList[existingIdx];
+            existingList[existingIdx] = {
+              ...cur,
+              gender: cur.gender || incoming.gender,
+              age:
+                cur.age !== undefined && cur.age !== null && cur.age !== ''
+                  ? cur.age
+                  : incoming.age,
+              educationLevel: cur.educationLevel || incoming.educationLevel,
+              occupation: cur.occupation || incoming.occupation,
+              parentName: cur.parentName || incoming.parentName,
+              phone: cur.phone || incoming.phone,
+              residence: cur.residence || incoming.residence,
+              fellowshipOrVillage: cur.fellowshipOrVillage || incoming.fellowshipOrVillage
+            };
+          } else {
+            keyToIndex.set(key, existingList.length);
+            existingList.push({
+              ...incoming,
+              id: generateUniqueId()
+            });
+          }
+        });
+
         return {
           ...prev,
           chapels: updatedChapels,
-          churchChildren: mode === 'replace' ? withIds : [...(prev.churchChildren || []), ...withIds]
+          churchChildren: existingList
         };
       },
       { immediate: true }

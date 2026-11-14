@@ -27,6 +27,7 @@ import {
 import { Student, Teacher, ChoirMember, SpiritualMember, Role, ChurchChild } from '../types';
 import { downloadCSV, downloadXLSX } from '../utils/csv';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
+import { matchesAmharicSearch } from '../utils/churchExcelParser';
 
 interface AllStudentsMasterTabProps {
   currentYear: string;
@@ -279,19 +280,20 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
       result = result.filter((s) => (s.chapel || 'ዋናው ማዕከል ቻፕል') === selectedChapelFilter);
     }
 
-    // Search query
+    // Search query (Amharic homophones, multi-word names, phones, class)
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (s) =>
-          (s.name && s.name.toLowerCase().includes(q)) ||
-          (s.className && s.className.toLowerCase().includes(q)) ||
-          (s.teacherName && s.teacherName.toLowerCase().includes(q)) ||
-          (s.chapel && s.chapel.toLowerCase().includes(q)) ||
-          (s.parentPhone && s.parentPhone.toLowerCase().includes(q)) ||
-          (s.parentName && s.parentName.toLowerCase().includes(q)) ||
-          (s.choirGroup && s.choirGroup.toLowerCase().includes(q)) ||
-          (s.spiritualGroup && s.spiritualGroup.toLowerCase().includes(q))
+      result = result.filter((s) =>
+        matchesAmharicSearch(
+          searchQuery,
+          s.name,
+          s.className,
+          s.teacherName,
+          s.chapel,
+          s.parentPhone,
+          s.parentName,
+          s.choirGroup,
+          s.spiritualGroup
+        )
       );
     }
 

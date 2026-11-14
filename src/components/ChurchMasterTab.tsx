@@ -24,10 +24,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ChurchMember, ChurchChild, Role, Student } from '../types';
-import { generateUniqueId } from '../utils/idGenerator';
 import {
   parseChildAge,
-  normalizeHeader,
   mapToOfficialChapel,
   buildSundaySchoolIndex,
   matchChildNameToSundaySchool,
@@ -35,6 +33,11 @@ import {
 } from './ChurchChildrenTab';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { NameCrossReferenceModal } from './NameCrossReferenceModal';
+import {
+  matchesAmharicSearch,
+  normalizeAmharicSearchText,
+  parseChurchWorkbookAllSheets
+} from '../utils/churchExcelParser';
 
 interface ChurchMasterTabProps {
   currentYear: string;
@@ -213,19 +216,21 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   // Filtered members list
   const filteredMembers = useMemo(() => {
     return churchMembersWithStatus.filter((m) => {
-      // Search term
+      // Search term (Amharic homophones, multi-word names, phones, chapels)
       if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        const matchesName = m.name?.toLowerCase().includes(q);
-        const matchesParent = m.parentName?.toLowerCase().includes(q);
-        const matchesPhone = m.phone?.toLowerCase().includes(q);
-        const matchesResidence = m.residence?.toLowerCase().includes(q);
-        const matchesChapel = m.chapel?.toLowerCase().includes(q);
-        const matchesStudent = m.matchedStudent?.name?.toLowerCase().includes(q);
-        const matchesClass = m.enrolledClass?.toLowerCase().includes(q);
-        if (!matchesName && !matchesParent && !matchesPhone && !matchesResidence && !matchesChapel && !matchesStudent && !matchesClass) {
-          return false;
-        }
+        const matchedSearch = matchesAmharicSearch(
+          searchTerm,
+          m.name,
+          m.parentName,
+          m.phone,
+          m.residence,
+          m.chapel,
+          m.matchedStudent?.name,
+          m.enrolledClass,
+          m.educationLevel,
+          m.occupation
+        );
+        if (!matchedSearch) return false;
       }
 
       // Multi-chapel / Chapel filter
@@ -283,19 +288,33 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
   // Function to extract 0-14 children from church database to Children Registries
   const handleExtractChildren = () => {
+    // Build fallback phone lookup from adult/parent members in case legacy stored rows lack phone
+    const memberPhoneByNormName = new Map<string, string>();
+    churchMembers.forEach((m) => {
+      const p = String(m.phone || '').trim();
+      const norm = normalizeAmharicSearchText(m.name);
+      if (p && norm && !memberPhoneByNormName.has(norm)) {
+        memberPhoneByNormName.set(norm, p);
+      }
+    });
+
     const childrenToExtract: Omit<ChurchChild, 'id'>[] = [];
 
     churchMembers.forEach((m) => {
       const parsed = parseChildAge(m.age, parseInt(currentYear, 10) || 2018, 'auto');
       let ageNum = parsed.age;
 
-      if (ageNum === -1 && m.age) {
+      if (ageNum === -1 && m.age !== undefined && m.age !== '') {
         const match = String(m.age).match(/\d+/);
         if (match) ageNum = parseInt(match[0], 10);
       }
 
       if (ageNum >= 0 && ageNum <= 14) {
         const officialChapel = mapToOfficialChapel(m.chapel || '');
+        const resolvedPhone =
+          String(m.phone || '').trim() ||
+          (m.parentName ? memberPhoneByNormName.get(normalizeAmharicSearchText(m.parentName)) || '' : '');
+
         childrenToExtract.push({
           name: m.name,
           gender: m.gender === 'ሴ' || m.gender === 'ሴት' ? 'ሴ' : 'ወ',
@@ -304,7 +323,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
           occupation: m.occupation || (ageNum <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
           chapel: officialChapel,
           parentName: m.parentName || undefined,
-          phone: m.phone || undefined,
+          phone: resolvedPhone || undefined,
           residence: m.residence || undefined,
           fellowshipOrVillage: m.residence || undefined,
           registeredDate: m.registeredDate || new Date().toISOString().split('T')[0]
@@ -322,7 +341,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setTimeout(() => setExtractedSuccessMsg(''), 6000);
   };
 
-  // High-Capacity Multi-Sheet Excel Upload Handler (Handles 5,300+ Rows Completely Across All Sheets)
+  // High-Capacity Multi-Sheet Excel Upload Handler (Handles 5,300+ Rows Completely Across All Sheets with Family Phone Propagation)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -331,376 +350,21 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     reader.onload = (evt) => {
       try {
         const buffer = evt.target?.result;
-        // Parse ArrayBuffer for maximum memory efficiency & speed on large files (5000+ rows)
-        const workbook = XLSX.read(buffer, { type: 'array' });
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
 
         if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
           alert('ፋይሉ ምንም ሺት (Sheet) አልያዘም!');
           return;
         }
 
-        const importedMembers: ChurchMember[] = [];
-        const autoChildrenToExtract: Omit<ChurchChild, 'id'>[] = [];
-        const sheetCounts: Record<string, number> = {};
-
-        // Loop through ALL SHEETS in the Excel workbook
-        workbook.SheetNames.forEach((sheetName, sIdx) => {
-          const worksheet = workbook.Sheets[sheetName];
-          if (!worksheet) return;
-
-          // Crucial fix: Repair and extend worksheet['!ref'] so no rows are clipped
-          if (worksheet['!ref']) {
-            try {
-              const range = XLSX.utils.decode_range(worksheet['!ref']);
-              Object.keys(worksheet).forEach((cellCoord) => {
-                if (cellCoord[0] === '!') return;
-                try {
-                  const decoded = XLSX.utils.decode_cell(cellCoord);
-                  if (decoded.r > range.e.r) range.e.r = decoded.r;
-                  if (decoded.c > range.e.c) range.e.c = decoded.c;
-                } catch {}
-              });
-              worksheet['!ref'] = XLSX.utils.encode_range(range);
-            } catch {}
-          }
-
-          const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-          if (!rawRows || rawRows.length < 1) return;
-
-          // Robust Header Detection: score candidate rows 0 to 20
-          let headerIdx = -1;
-          let highestScore = 0;
-
-          for (let r = 0; r < Math.min(20, rawRows.length); r++) {
-            const row = rawRows[r] || [];
-            let score = 0;
-            row.forEach((col: any) => {
-              const str = normalizeHeader(String(col || ''));
-              if (str.includes('ስም') || str.includes('name')) score += 3;
-              if (str.includes('ጾታ') || str.includes('gender') || str.includes('sex') || str === 'ወ/ሴ' || str === 'm/f') score += 2;
-              if (str.includes('እድሜ') || str.includes('age') || str.includes('ልደት') || str.includes('ትውልድ') || str.includes('ተወለደ')) score += 2;
-              if (str.includes('ስልክ') || str.includes('phone') || str.includes('mobile') || str.includes('tel') || str.includes('cell')) score += 2;
-              if (str.includes('ተ.ቁ') || str.includes('no') || str.includes('#') || str.includes('ቁጥር')) score += 1;
-              if (str.includes('ቻፕል') || str.includes('chapel')) score += 1;
-              if (str.includes('ቀበሌ') || str.includes('መንደር') || str.includes('residence')) score += 1;
-              if (str.includes('ትምህርት') || str.includes('ደረጃ') || str.includes('grade')) score += 1;
-              if (str.includes('ስራ') || str.includes('occupation') || str.includes('job')) score += 1;
-            });
-            if (score > highestScore) {
-              highestScore = score;
-              headerIdx = r;
-            }
-          }
-
-          // If no header row found with keywords, assume row 0 is header or data starts at 0
-          if (highestScore < 2) {
-            headerIdx = 0;
-          }
-
-          let nameIdx = -1;
-          let fatherIdx = -1;
-          let grandfatherIdx = -1;
-          let genderIdx = -1;
-          let ageIdx = -1;
-          let chapelIdx = -1;
-          let eduIdx = -1;
-          let occIdx = -1;
-          let parentIdx = -1;
-          let phoneIdx = -1;
-          let residenceIdx = -1;
-
-          const headerRow = headerIdx >= 0 ? rawRows[headerIdx] || [] : [];
-
-          headerRow.forEach((col: any, idx: number) => {
-            const str = normalizeHeader(String(col || ''));
-            // Name column
-            if (
-              (str.includes('ስም') || str.includes('name') || str.includes('ሙሉስም') || str.includes('fullname')) &&
-              !str.includes('ወላጅ') &&
-              !str.includes('አባት') &&
-              !str.includes('እናት') &&
-              !str.includes('አያት') &&
-              !str.includes('parent') &&
-              !str.includes('father') &&
-              !str.includes('mother')
-            ) {
-              if (nameIdx === -1) nameIdx = idx;
-            }
-            if (str.includes('አባት') || str.includes('father')) {
-              if (fatherIdx === -1 && !str.includes('ወላጅ') && !str.includes('parent')) fatherIdx = idx;
-            }
-            if (str.includes('አያት') || str.includes('grandfather')) {
-              if (grandfatherIdx === -1) grandfatherIdx = idx;
-            }
-            if (str.includes('ጾታ') || str.includes('gender') || str.includes('sex') || str === 'ወ/ሴ' || str === 'm/f') {
-              if (genderIdx === -1) genderIdx = idx;
-            }
-            if (
-              str.includes('እድሜ') ||
-              str.includes('age') ||
-              str.includes('ልደት') ||
-              str.includes('ትውልድ') ||
-              str.includes('ተወለደ') ||
-              str.includes('dob') ||
-              str.includes('birth') ||
-              str.includes('yr')
-            ) {
-              if (ageIdx === -1) ageIdx = idx;
-            }
-            if (str.includes('ትምህርት') || str.includes('education') || str.includes('ደረጃ') || str.includes('grade')) {
-              if (eduIdx === -1) eduIdx = idx;
-            }
-            if (str.includes('ስራ') || str.includes('occupation') || str.includes('ሙያ') || str.includes('job')) {
-              if (occIdx === -1) occIdx = idx;
-            }
-            if (str.includes('ቻፕል') || str.includes('chapel') || str.includes('አጥቢያ') || str.includes('ማዕከል')) {
-              if (chapelIdx === -1) chapelIdx = idx;
-            }
-            if (str.includes('ወላጅ') || str.includes('አሳዳጊ') || str.includes('parent') || str.includes('የቤተሰብመሪ') || str.includes('guardian')) {
-              if (parentIdx === -1) parentIdx = idx;
-            }
-            if (str.includes('ስልክ') || str.includes('phone') || str.includes('mobile') || str.includes('tel') || str.includes('cell')) {
-              if (phoneIdx === -1) phoneIdx = idx;
-            }
-            if (str.includes('ቀበሌ') || str.includes('መንደር') || str.includes('መኖሪያ') || str.includes('residence') || str.includes('አድራሻ')) {
-              if (residenceIdx === -1) residenceIdx = idx;
-            }
-          });
-
-          // Intelligent content-based fallback for nameIdx if header match missed
-          if (nameIdx === -1) {
-            const sampleStart = headerIdx + 1;
-            const sampleEnd = Math.min(rawRows.length, sampleStart + 10);
-            for (let c = 0; c < 5; c++) {
-              let textCount = 0;
-              for (let r = sampleStart; r < sampleEnd; r++) {
-                const cell = String(rawRows[r]?.[c] || '').trim();
-                if (cell && cell.length > 3 && isNaN(Number(cell))) {
-                  textCount++;
-                }
-              }
-              if (textCount >= 4) {
-                nameIdx = c;
-                break;
-              }
-            }
-            if (nameIdx === -1) nameIdx = 1; // Default to Column B (1) as standard in church registries
-          }
-
-          // Content-based fallback for genderIdx if missing
-          if (genderIdx === -1) {
-            const sampleStart = headerIdx + 1;
-            const sampleEnd = Math.min(rawRows.length, sampleStart + 10);
-            for (let c = 0; c < 8; c++) {
-              let genderMatch = 0;
-              for (let r = sampleStart; r < sampleEnd; r++) {
-                const cell = String(rawRows[r]?.[c] || '').trim().toLowerCase();
-                if (cell === 'ወ' || cell === 'ሴ' || cell === 'm' || cell === 'f' || cell === 'ወንድ' || cell === 'ሴት') {
-                  genderMatch++;
-                }
-              }
-              if (genderMatch >= 3) {
-                genderIdx = c;
-                break;
-              }
-            }
-          }
-
-          // Content-based fallback for ageIdx if missing
-          if (ageIdx === -1) {
-            const sampleStart = headerIdx + 1;
-            const sampleEnd = Math.min(rawRows.length, sampleStart + 10);
-            for (let c = 0; c < 8; c++) {
-              if (c === nameIdx) continue;
-              let ageMatch = 0;
-              for (let r = sampleStart; r < sampleEnd; r++) {
-                const cell = rawRows[r]?.[c];
-                const p = parseChildAge(cell, parseInt(currentYear, 10) || 2018, 'auto');
-                if (p.age >= 0 && p.age <= 110) {
-                  ageMatch++;
-                }
-              }
-              if (ageMatch >= 3) {
-                ageIdx = c;
-                break;
-              }
-            }
-          }
-
-          // Infer chapel from sheet name using strict mapToOfficialChapel with sheet index fallback!
-          const defaultSheetChapel = mapToOfficialChapel(sheetName, sIdx);
-          let sheetMemberCount = 0;
-
-          // Parse ALL rows completely without stopping early!
-          const startRow = headerIdx >= 0 ? headerIdx + 1 : 0;
-          for (let i = startRow; i < rawRows.length; i++) {
-            const row = rawRows[i];
-            if (!row || row.length === 0) continue;
-
-            let rawName = String(nameIdx !== -1 ? row[nameIdx] || '' : '').trim();
-
-            // If name cell was empty, check if adjacent column or col 0/1 has name
-            if (!rawName) {
-              if (row[nameIdx + 1] && isNaN(Number(row[nameIdx + 1]))) {
-                rawName = String(row[nameIdx + 1]).trim();
-              } else if (row[0] && isNaN(Number(row[0]))) {
-                rawName = String(row[0]).trim();
-              } else if (row[1] && isNaN(Number(row[1]))) {
-                rawName = String(row[1]).trim();
-              }
-            }
-
-            if (!rawName) continue;
-
-            // Skip exact header words repeated or total/summary rows
-            const lowerName = rawName.toLowerCase();
-            if (
-              rawName === 'ተ.ቁ' ||
-              rawName === 'ተ/ቁ' ||
-              rawName === 'ስም' ||
-              rawName === 'ሙሉ ስም' ||
-              rawName === 'የአባሉ ስም' ||
-              rawName === 'የአባል ስም' ||
-              lowerName === 'name' ||
-              lowerName === 'full name' ||
-              lowerName === 'fullname' ||
-              rawName === 'ድምር' ||
-              rawName === 'ጠቅላላ' ||
-              rawName === 'ጠቅላላ ድምር' ||
-              lowerName === 'total' ||
-              lowerName === 'sum' ||
-              lowerName === 'grand total'
-            ) {
-              continue;
-            }
-
-            // If rawName is purely digits (like row number 1, 2, 3), check if next column has the name!
-            if (/^\d+$/.test(rawName)) {
-              if (row[nameIdx + 1] && isNaN(Number(row[nameIdx + 1]))) {
-                rawName = String(row[nameIdx + 1]).trim();
-              } else {
-                continue; // pure row number, skip
-              }
-            }
-
-            // Clean leading numbers (e.g. "1. አበበ ከበደ" -> "አበበ ከበደ")
-            rawName = rawName.replace(/^\d+[\.\/\-\)\s]+\s*/, '').trim();
-
-            // Concatenate separate father or grandfather columns
-            if (fatherIdx !== -1 && row[fatherIdx]) {
-              const f = String(row[fatherIdx]).trim();
-              if (f && !rawName.includes(f) && isNaN(Number(f))) rawName += ` ${f}`;
-            }
-            if (grandfatherIdx !== -1 && row[grandfatherIdx]) {
-              const gf = String(row[grandfatherIdx]).trim();
-              if (gf && !rawName.includes(gf) && isNaN(Number(gf))) rawName += ` ${gf}`;
-            }
-
-            // Gender detection
-            const rawGender = String(genderIdx !== -1 ? row[genderIdx] || '' : '').trim();
-            const gender =
-              rawGender.startsWith('ሴ') ||
-              rawGender.toLowerCase().startsWith('f') ||
-              rawGender.toLowerCase().includes('female') ||
-              rawGender.includes('ሴት')
-                ? 'ሴ'
-                : 'ወ';
-
-            // Age detection
-            const rawAgeVal = ageIdx !== -1 ? row[ageIdx] : undefined;
-            const parsedAge = parseChildAge(rawAgeVal, parseInt(currentYear, 10) || 2018, 'auto');
-            let ageNum = parsedAge.age !== -1 ? parsedAge.age : 30;
-
-            // Education & Occupation detection
-            const edu = eduIdx !== -1 && row[eduIdx] ? String(row[eduIdx]).trim() : undefined;
-            const occ = occIdx !== -1 && row[occIdx] ? String(row[occIdx]).trim() : undefined;
-
-            // Fallback heuristics for children age if blank
-            if (parsedAge.age === -1) {
-              if (edu?.includes('KG') || edu?.includes('መዋዕለ') || edu?.includes('ኬጂ') || edu?.includes('ጨቅላ')) ageNum = 4;
-              else if (edu?.includes('1ኛ')) ageNum = 7;
-              else if (edu?.includes('2ኛ')) ageNum = 8;
-              else if (edu?.includes('3ኛ')) ageNum = 9;
-              else if (edu?.includes('4ኛ')) ageNum = 10;
-              else if (edu?.includes('5ኛ')) ageNum = 11;
-              else if (edu?.includes('6ኛ')) ageNum = 12;
-              else if (edu?.includes('7ኛ')) ageNum = 13;
-              else if (edu?.includes('8ኛ')) ageNum = 14;
-              else if (occ?.includes('ተማሪ') && (parentIdx !== -1 || phoneIdx !== -1)) ageNum = 10;
-            }
-
-            // Chapel detection: strictly map to official 10 chapels!
-            const chapelRaw = chapelIdx !== -1 && row[chapelIdx] ? String(row[chapelIdx]).trim() : defaultSheetChapel;
-            const officialChapel = mapToOfficialChapel(chapelRaw, sIdx);
-
-            // Parent extraction
-            let parentName = parentIdx !== -1 && row[parentIdx] ? String(row[parentIdx]).trim() : undefined;
-            if (!parentName) {
-              const parts = rawName.split(' ').filter(Boolean);
-              if (parts.length >= 2) parentName = parts.slice(1).join(' ');
-            }
-
-            // Phone extraction & Ethiopian number standardization
-            let phone = phoneIdx !== -1 && row[phoneIdx] ? String(row[phoneIdx]).trim() : undefined;
-            if (!phone) {
-              for (let c = 0; c < row.length; c++) {
-                if (c === nameIdx || c === ageIdx) continue;
-                const val = String(row[c] || '').trim();
-                const clean = val.replace(/[\s\-\(\)]/g, '');
-                if (/^(\+?251|0)?[97]\d{8}$/.test(clean)) {
-                  phone = val;
-                  break;
-                }
-              }
-            }
-            if (phone) {
-              let cleanDigits = phone.replace(/[\s\-\(\)]/g, '');
-              if (cleanDigits.startsWith('+251')) cleanDigits = '0' + cleanDigits.substring(4);
-              else if (cleanDigits.startsWith('251')) cleanDigits = '0' + cleanDigits.substring(3);
-              else if (cleanDigits.length === 9 && (cleanDigits.startsWith('9') || cleanDigits.startsWith('7'))) cleanDigits = '0' + cleanDigits;
-              phone = cleanDigits;
-            }
-
-            const residence = residenceIdx !== -1 && row[residenceIdx] ? String(row[residenceIdx]).trim() : undefined;
-
-            const memberObj: ChurchMember = {
-              id: generateUniqueId(),
-              name: rawName,
-              gender,
-              age: ageNum,
-              educationLevel: edu,
-              occupation: occ,
-              chapel: officialChapel,
-              parentName,
-              phone,
-              residence,
-              sheetName,
-              registeredDate: new Date().toISOString().split('T')[0]
-            };
-
-            importedMembers.push(memberObj);
-            sheetMemberCount++;
-
-            // If child 0-14, prepare for automatic extraction to Children Registries
-            if (ageNum >= 0 && ageNum <= 14) {
-              autoChildrenToExtract.push({
-                name: rawName,
-                gender,
-                age: ageNum,
-                educationLevel: edu || (ageNum <= 3 ? 'ጨቅላ' : ageNum <= 6 ? 'መዋዕለ ሕፃናት' : `${ageNum - 6}ኛ ክፍል`),
-                occupation: occ || (ageNum <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
-                chapel: officialChapel,
-                parentName,
-                phone,
-                residence,
-                fellowshipOrVillage: residence,
-                registeredDate: new Date().toISOString().split('T')[0]
-              });
-            }
-          }
-
-          sheetCounts[sheetName] = sheetMemberCount;
+        const parsed = parseChurchWorkbookAllSheets(workbook, parseChildAge, {
+          refYear: parseInt(currentYear, 10) || 2018,
+          ageMode: 'auto'
         });
+
+        const importedMembers = parsed.members;
+        const autoChildrenToExtract = parsed.children;
+        const sheetCounts = parsed.sheetCounts;
 
         if (importedMembers.length === 0) {
           alert('በፋይሉ ውስጥ ምንም የመንፈሳዊ ቤተሰብ አባላት መረጃ አልተገኘም!');
@@ -710,7 +374,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         // Save imported members to General Church Database
         onBatchAddMembers(importedMembers, 'replace');
 
-        // Automatically extract 0-14 children into Children Registries
+        // Automatically extract 0-14 children into Children Registries (deduplicating/updating existing)
         if (autoChildrenToExtract.length > 0) {
           onExtractChildrenToChildrenTab(autoChildrenToExtract, 'append');
         }
@@ -718,9 +382,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         const summaryBreakdown = Object.entries(sheetCounts)
           .map(([sh, cnt]) => `${sh}: ${cnt}`)
           .join(' | ');
+        const phoneFilledCount = importedMembers.filter((m) => Boolean(m.phone)).length;
 
         setExtractedSuccessMsg(
-          `✓ ከ${workbook.SheetNames.length} ሺቶች (ከ10ሩም ቻፕሎች) የተሰበሰቡ ${importedMembers.length} አባላት ሙሉ በሙሉ ወደ ቤተክርስቲያኒቱ አጠቃላይ መረጃ ቋት ገብተዋል! [${summaryBreakdown}] በተጨማሪም ${autoChildrenToExtract.length} ልጆች (0-14 ዕድሜ) በቀጥታ ወደ የልጆች ቋት ተልከዋል።`
+          `✓ ከ${workbook.SheetNames.length} ሺቶች (ከ10ሩም ቻፕሎች) የተሰበሰቡ ${importedMembers.length} አባላት (ስልክ ያላቸው፦ ${phoneFilledCount}) ሙሉ በሙሉ ወደ ቤተክርስቲያኒቱ አጠቃላይ መረጃ ቋት ገብተዋል! [${summaryBreakdown}] በተጨማሪም ${autoChildrenToExtract.length} ልጆች (0-14 ዕድሜ) በቀጥታ ወደ የልጆች ቋት ተልከዋል።`
         );
         setTimeout(() => setExtractedSuccessMsg(''), 10000);
       } catch (err) {
@@ -750,17 +415,20 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     ];
 
     const rows = filteredMembers.map((m, idx) => {
-      const numAge = parseInt(String(m.age || '0'), 10) || 0;
+      const parsedNum = parseInt(String(m.age ?? ''), 10);
+      const numAge = isNaN(parsedNum) ? 0 : parsedNum;
       let ageGroup = '60+ አረጋውያን';
       if (numAge <= 14) ageGroup = 'ከ0-14 (ልጅ)';
       else if (numAge <= 29) ageGroup = 'ከ15-29 (ወጣት)';
       else if (numAge <= 59) ageGroup = 'ከ30-59 (ጎልማሳ/ወላጅ)';
 
+      const ageDisplay = m.age !== undefined && m.age !== null && String(m.age).trim() !== '' ? m.age : '-';
+
       return [
         idx + 1,
         m.name,
         m.gender || '-',
-        m.age || '-',
+        ageDisplay,
         ageGroup,
         m.educationLevel || '-',
         m.occupation || '-',
@@ -797,7 +465,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setEditingMember(m);
     setFormName(m.name);
     setFormGender(m.gender || 'ወ');
-    setFormAge(String(m.age || '30'));
+    setFormAge(m.age !== undefined && m.age !== null && String(m.age).trim() !== '' ? String(m.age) : '30');
     setFormEducationLevel(m.educationLevel || 'ዲግሪ');
     setFormOccupation(m.occupation || 'የመንግሥት ሠራተኛ');
     setFormChapel(mapToOfficialChapel(m.chapel || ''));
@@ -816,10 +484,11 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
     const officialChapel = mapToOfficialChapel(formChapel);
 
+    const parsedFormAge = parseInt(formAge, 10);
     const payload: Omit<ChurchMember, 'id'> = {
       name: formName.trim(),
       gender: formGender,
-      age: parseInt(formAge, 10) || 30,
+      age: isNaN(parsedFormAge) ? 30 : Math.max(0, parsedFormAge),
       educationLevel: formEducationLevel.trim() || undefined,
       occupation: formOccupation.trim() || undefined,
       chapel: officialChapel,
@@ -1143,11 +812,21 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="በስም፣ ወላጅ፣ ስልክ፣ ቻፕል ወይም ቀበሌ ፈልግ..."
+              placeholder="የልጅ ወይም አባል ስም፣ ወላጅ፣ ስልክ ፈልግ..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white"
+              className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="ፍለጋውን አጽዳ"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -1269,7 +948,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                                 )}
                               </td>
                               <td className="py-2 px-3 text-center font-bold">{m.gender || '-'}</td>
-                              <td className="py-2 px-3 text-center font-bold text-slate-800">{m.age ? `${m.age} ዓመት` : '-'}</td>
+                              <td className="py-2 px-3 text-center font-bold text-slate-800">
+                                {m.age !== undefined && m.age !== null && m.age !== '' ? `${m.age} ዓመት` : '-'}
+                              </td>
                               <td className="py-2 px-3 text-slate-700">{m.educationLevel || '-'}</td>
                               <td className="py-2 px-3 text-slate-700">{m.occupation || '-'}</td>
                               <td className="py-2 px-3 text-slate-700">{m.parentName || '-'}</td>
@@ -1352,7 +1033,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                         </td>
                         <td className="py-2.5 px-3 font-bold text-blue-900">{m.chapel || '-'}</td>
                         <td className="py-2.5 px-3 text-center font-bold">{m.gender || '-'}</td>
-                        <td className="py-2.5 px-3 text-center font-bold tabular-nums">{m.age ? `${m.age} ዓመት` : '-'}</td>
+                        <td className="py-2.5 px-3 text-center font-bold tabular-nums">
+                          {m.age !== undefined && m.age !== null && m.age !== '' ? `${m.age} ዓመት` : '-'}
+                        </td>
                         <td className="py-2.5 px-3 text-slate-700">{m.educationLevel || '-'}</td>
                         <td className="py-2.5 px-3 text-slate-700">{m.occupation || '-'}</td>
                         <td className="py-2.5 px-3">

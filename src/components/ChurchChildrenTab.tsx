@@ -33,10 +33,14 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ChurchChild, Student, Role } from '../types';
-import { generateUniqueId } from '../utils/idGenerator';
 import { downloadXLSX } from '../utils/csv';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { NameCrossReferenceModal } from './NameCrossReferenceModal';
+import {
+  matchesAmharicSearch,
+  parseChurchWorkbookAllSheets,
+  SheetRowOverrideMapping
+} from '../utils/churchExcelParser';
 
 interface ChurchChildrenTabProps {
   currentYear: string;
@@ -572,6 +576,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   // Import preview state (General church database 0-14 filter)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importFileName, setImportFileName] = useState<string>('');
+  const [importWorkbookRef, setImportWorkbookRef] = useState<XLSX.WorkBook | null>(null);
   const [importRawRows, setImportRawRows] = useState<any[][]>([]);
   const [importHeaderCols, setImportHeaderCols] = useState<{ index: number; label: string }[]>([]);
   const [importHeaderRowIdx, setImportHeaderRowIdx] = useState<number>(0);
@@ -586,7 +591,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   const [importColParent, setImportColParent] = useState<number>(-1);
   const [importColPhone, setImportColPhone] = useState<number>(-1);
   const [importColResidence, setImportColResidence] = useState<number>(-1);
-  const [importDefaultChapel, setImportDefaultChapel] = useState<string>(chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+  const [importDefaultChapel, setImportDefaultChapel] = useState<string>(chapelList[0] || 'ኤልሮኢ ቻፕል');
   const [importRefYear, setImportRefYear] = useState<number>(parseInt(currentYear, 10) || 2018);
   const [importAgeMode, setImportAgeMode] = useState<'auto' | 'direct' | 'birthyear'>('auto');
   const [isColumnMappingOpen, setIsColumnMappingOpen] = useState<boolean>(false);
@@ -700,7 +705,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     let totalNotEnrolled = 0;
 
     churchChildrenWithStatus.forEach((child) => {
-      const numAge = parseInt(String(child.age || '0'), 10) || 0;
+      const parsedAgeNum = parseInt(String(child.age ?? '0'), 10);
+      const numAge = isNaN(parsedAgeNum) ? 0 : parsedAgeNum;
       const isMale = child.gender === 'ወ';
       const isFemale = child.gender === 'ሴ';
 
@@ -746,18 +752,22 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   // 6. Filtered Church Children
   const filteredChildren = useMemo(() => {
     return churchChildrenWithStatus.filter((child) => {
-      // 1. Search term (Name, Parent, Phone, Residence, Chapel)
+      // 1. Search term (Amharic homophones, multi-word child names, parent, phone, chapel, Sunday school class)
       if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        const matchesName = child.name?.toLowerCase().includes(q);
-        const matchesParent = child.parentName?.toLowerCase().includes(q);
-        const matchesPhone = child.phone?.toLowerCase().includes(q);
-        const matchesResidence = child.residence?.toLowerCase().includes(q);
-        const matchesChapel = child.chapel?.toLowerCase().includes(q);
-        const matchesVillage = child.fellowshipOrVillage?.toLowerCase().includes(q);
-        if (!matchesName && !matchesParent && !matchesPhone && !matchesResidence && !matchesChapel && !matchesVillage) {
-          return false;
-        }
+        const matchedSearch = matchesAmharicSearch(
+          searchTerm,
+          child.name,
+          child.parentName,
+          child.phone,
+          child.residence,
+          child.chapel,
+          child.fellowshipOrVillage,
+          child.enrolledClass,
+          child.matchedStudent?.name,
+          child.educationLevel,
+          child.occupation
+        );
+        if (!matchedSearch) return false;
       }
 
       // 2. View filter (enrolled / not_enrolled)
@@ -805,6 +815,21 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       return true;
     });
   }, [churchChildrenWithStatus, searchTerm, viewFilter, selectedChapels, selectedChapelFilter, genderFilter, ageFilter]);
+
+  // Filtered missing Sunday School students when searching by name
+  const filteredMissingFromChurchChildren = useMemo(() => {
+    if (!searchTerm.trim()) return missingFromChurchChildren;
+    return missingFromChurchChildren.filter((item) =>
+      matchesAmharicSearch(
+        searchTerm,
+        item.student.name,
+        item.className,
+        item.student.chapel,
+        item.student.phone,
+        item.student.parentName
+      )
+    );
+  }, [missingFromChurchChildren, searchTerm]);
 
   // 7. Group filtered children by Chapel for Multi-Chapel All-in-One View
   const childrenGroupedByChapel = useMemo(() => {
@@ -868,10 +893,11 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       return;
     }
 
+    const parsedFormAge = parseInt(formAge, 10);
     const payload: Omit<ChurchChild, 'id'> = {
       name: formName.trim(),
       gender: formGender || 'ወ',
-      age: parseInt(formAge, 10) || 5,
+      age: isNaN(parsedFormAge) ? 5 : Math.max(0, parsedFormAge),
       educationLevel: formEducationLevel.trim() || undefined,
       occupation: formOccupation.trim() || undefined,
       chapel: formChapel.trim() || undefined,
@@ -1050,211 +1076,57 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     downloadXLSX([headers, ...sampleRows], 'የልጆች_መረጃ_መሙያ_ናሙና.xlsx', 'የልጆች መረጃ');
   };
 
-  // Core processing function for Excel rows with active column mapping
-  const executeExcelProcessing = (
-    rows: any[][],
-    hIdx: number,
-    mapping: {
-      nameIdx: number;
-      fatherIdx: number;
-      grandfatherIdx: number;
-      genderIdx: number;
-      ageIdx: number;
-      chapelIdx: number;
-      educationIdx: number;
-      occupationIdx: number;
-      parentIdx: number;
-      phoneIdx: number;
-      residenceIdx: number;
-    },
+  // Apply parsed workbook output into Import Preview state
+  const applyParsedWorkbookToPreview = (
+    workbook: XLSX.WorkBook,
     refYear: number,
     ageMode: 'auto' | 'direct' | 'birthyear',
-    defChapel: string
+    defChapel: string,
+    overrideFirst?: SheetRowOverrideMapping
   ) => {
-    const childrenList: Omit<ChurchChild, 'id'>[] = [];
-    const adultsList: { name: string; age: number; gender: string; reason: string }[] = [];
-    let totalProcessed = 0;
+    const parsed = parseChurchWorkbookAllSheets(workbook, parseChildAge, {
+      refYear,
+      ageMode,
+      defaultChapelFallback: defChapel,
+      firstSheetOverride: overrideFirst
+    });
 
-    for (let i = hIdx + 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || row.length === 0) continue;
-
-      let rawName = String(mapping.nameIdx !== -1 ? row[mapping.nameIdx] || '' : '').trim();
-      if (!rawName || rawName === 'ተ.ቁ' || rawName === 'ስም' || rawName.includes('ድምር') || rawName.includes('ጠቅላላ')) continue;
-
-      // Concatenate separate father or grandfather name if available
-      if (mapping.fatherIdx !== -1 && row[mapping.fatherIdx]) {
-        const father = String(row[mapping.fatherIdx]).trim();
-        if (father && !rawName.includes(father)) {
-          rawName += ` ${father}`;
-        }
+    if (parsed.firstSheetCols) {
+      const c = parsed.firstSheetCols;
+      if (!overrideFirst) {
+        setImportHeaderCols(c.headerCols);
+        setImportHeaderRowIdx(c.headerIdx);
+        setImportColName(c.nameIdx);
+        setImportColFather(c.fatherIdx);
+        setImportColGrandfather(c.grandfatherIdx);
+        setImportColGender(c.genderIdx);
+        setImportColAge(c.ageIdx);
+        setImportColChapel(c.chapelIdx);
+        setImportColEducation(c.educationIdx);
+        setImportColOccupation(c.occupationIdx);
+        setImportColParent(c.parentIdx);
+        setImportColPhone(c.phoneIdx);
+        setImportColResidence(c.residenceIdx);
       }
-      if (mapping.grandfatherIdx !== -1 && row[mapping.grandfatherIdx]) {
-        const gf = String(row[mapping.grandfatherIdx]).trim();
-        if (gf && !rawName.includes(gf)) {
-          rawName += ` ${gf}`;
-        }
-      }
-
-      totalProcessed++;
-
-      // 1. Gender detection
-      const rawGender = String(mapping.genderIdx !== -1 ? row[mapping.genderIdx] || '' : '').trim();
-      const gender =
-        rawGender.startsWith('ሴ') ||
-        rawGender.toLowerCase().startsWith('f') ||
-        rawGender.toLowerCase().includes('female')
-          ? 'ሴ'
-          : 'ወ';
-
-      // 2. Age parsing & detection (handles 0-14 direct, 4-digit Ethiopian years 2004-2018, DD/MM/YYYY dates, infant months, etc.)
-      const rawAgeVal = mapping.ageIdx !== -1 ? row[mapping.ageIdx] : undefined;
-      const parsed = parseChildAge(rawAgeVal, refYear, ageMode);
-      let calculatedAge = parsed.age;
-
-      // Fallback heuristics if age was blank or not found
-      const rawEdu = mapping.educationIdx !== -1 && row[mapping.educationIdx] ? String(row[mapping.educationIdx]).trim() : '';
-      const rawOcc = mapping.occupationIdx !== -1 && row[mapping.occupationIdx] ? String(row[mapping.occupationIdx]).trim() : '';
-
-      if (calculatedAge === -1) {
-        if (rawEdu.includes('KG') || rawEdu.includes('መዋዕለ') || rawEdu.includes('ኬጂ') || rawEdu.includes('ጨቅላ')) {
-          calculatedAge = 4;
-        } else if (rawEdu.includes('1ኛ')) {
-          calculatedAge = 7;
-        } else if (rawEdu.includes('2ኛ')) {
-          calculatedAge = 8;
-        } else if (rawEdu.includes('3ኛ')) {
-          calculatedAge = 9;
-        } else if (rawEdu.includes('4ኛ')) {
-          calculatedAge = 10;
-        } else if (rawEdu.includes('5ኛ')) {
-          calculatedAge = 11;
-        } else if (rawEdu.includes('6ኛ')) {
-          calculatedAge = 12;
-        } else if (rawEdu.includes('7ኛ')) {
-          calculatedAge = 13;
-        } else if (rawEdu.includes('8ኛ')) {
-          calculatedAge = 14;
-        } else if (rawOcc.includes('ተማሪ') && (mapping.parentIdx !== -1 || mapping.phoneIdx !== -1)) {
-          calculatedAge = 10;
-        } else {
-          calculatedAge = 25; // default adult
-        }
-      }
-
-      // 3. Strict 0-14 filter (Only take children 0-14 years old)
-      if (calculatedAge > 14 || calculatedAge < 0) {
-        adultsList.push({
-          name: rawName,
-          gender,
-          age: calculatedAge,
-          reason:
-            calculatedAge > 14
-              ? `ዕድሜው ${calculatedAge} ዓመት (ከ14 ዓመት በላይ በመሆኑ ተዘልሏል)`
-              : 'ዕድሜ አልተገለጸም'
-        });
-        continue;
-      }
-
-      const validAge = Math.max(0, Math.min(14, calculatedAge));
-
-      // Education Level formatting
-      let educationLevel = rawEdu;
-      if (!educationLevel) {
-        if (validAge <= 3) educationLevel = 'ጨቅላ/ያልጀመረ';
-        else if (validAge <= 6) educationLevel = `መዋዕለ ሕፃናት (KG ${Math.min(3, validAge - 3 || 1)})`;
-        else if (validAge <= 14) educationLevel = `${validAge - 6}ኛ ክፍል`;
-      }
-
-      // Occupation formatting
-      let occupation = rawOcc;
-      if (!occupation) {
-        if (validAge <= 3) occupation = 'የቤት ውስጥ';
-        else occupation = 'ተማሪ';
-      }
-
-      // Chapel detection & strict mapping to official 10 chapels
-      const chapelRaw = mapping.chapelIdx !== -1 && row[mapping.chapelIdx] ? String(row[mapping.chapelIdx]).trim() : defChapel;
-      const chapel = mapToOfficialChapel(chapelRaw);
-
-      // Parent extraction heuristics (Header match -> Father column -> Child's 2nd/3rd name fallback)
-      let parentName: string | undefined = undefined;
-      if (mapping.parentIdx !== -1 && row[mapping.parentIdx]) {
-        parentName = String(row[mapping.parentIdx]).trim();
-      }
-      if (!parentName && mapping.fatherIdx !== -1 && row[mapping.fatherIdx]) {
-        const father = String(row[mapping.fatherIdx]).trim();
-        const gf = mapping.grandfatherIdx !== -1 && row[mapping.grandfatherIdx] ? String(row[mapping.grandfatherIdx]).trim() : '';
-        parentName = gf ? `${father} ${gf}` : father;
-      }
-      if (!parentName) {
-        const nameParts = rawName.split(' ').filter(Boolean);
-        if (nameParts.length >= 2) {
-          parentName = nameParts.slice(1).join(' ');
-        }
-      }
-
-      // Phone extraction & Ethiopian number standardization
-      let phone: string | undefined = undefined;
-      if (mapping.phoneIdx !== -1 && row[mapping.phoneIdx]) {
-        phone = String(row[mapping.phoneIdx]).trim();
-      }
-      if (!phone) {
-        // Fallback: scan row cells for Ethiopian phone digits (09..., 07..., +251...)
-        for (let c = 0; c < row.length; c++) {
-          if (c === mapping.nameIdx || c === mapping.ageIdx || c === mapping.genderIdx) continue;
-          const val = String(row[c] || '').trim();
-          const clean = val.replace(/[\s\-\(\)]/g, '');
-          if (/^(\+?251|0)?[97]\d{8}$/.test(clean)) {
-            phone = val;
-            break;
-          }
-        }
-      }
-      if (phone) {
-        let cleanDigits = phone.replace(/[\s\-\(\)]/g, '');
-        if (cleanDigits.startsWith('+251')) {
-          cleanDigits = '0' + cleanDigits.substring(4);
-        } else if (cleanDigits.startsWith('251')) {
-          cleanDigits = '0' + cleanDigits.substring(3);
-        } else if (cleanDigits.length === 9 && (cleanDigits.startsWith('9') || cleanDigits.startsWith('7'))) {
-          cleanDigits = '0' + cleanDigits;
-        }
-        phone = cleanDigits;
-      }
-
-      const residence = mapping.residenceIdx !== -1 && row[mapping.residenceIdx] ? String(row[mapping.residenceIdx]).trim() : undefined;
-
-      childrenList.push({
-        name: rawName,
-        gender,
-        age: validAge,
-        educationLevel,
-        occupation,
-        chapel,
-        parentName,
-        phone,
-        residence,
-        fellowshipOrVillage: residence,
-        registeredDate: new Date().toISOString().split('T')[0]
-      });
+    }
+    if (parsed.firstSheetRawRows) {
+      setImportRawRows(parsed.firstSheetRawRows);
     }
 
-    setImportTotalRows(totalProcessed);
-    setImportChildrenPreview(childrenList);
-    setImportAdultsSkipped(adultsList);
+    setImportTotalRows(parsed.members.length);
+    setImportChildrenPreview(parsed.children);
+    setImportAdultsSkipped(parsed.adultsSkipped);
 
-    // Collect all distinct chapels found and initialize multi-selection with all of them
     const chapelsMap: Record<string, number> = {};
-    childrenList.forEach((c) => {
-      const ch = c.chapel || defChapel;
-      chapelsMap[ch] = (chapelsMap[ch] || 0) + 1;
+    parsed.children.forEach((ch) => {
+      const name = ch.chapel || defChapel;
+      chapelsMap[name] = (chapelsMap[name] || 0) + 1;
     });
     setImportSelectedChapels(Object.keys(chapelsMap));
     setImportActiveTab('children');
   };
 
-  // Handle File Upload from General Church Database with 0-14 Child Filter
+  // Handle File Upload from General Church Database with 0-14 Child Filter (ALL Sheets + Family Phone Propagation)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1265,193 +1137,22 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     reader.onload = (evt) => {
       try {
         const buffer = evt.target?.result;
-        const workbook = XLSX.read(buffer, { type: 'binary' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
 
-        if (!rawRows || rawRows.length < 2) {
-          alert('ፋይሉ ምንም የመረጃ መስመር አልያዘም!');
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          alert('ፋይሉ ምንም ሺት (Sheet) አልያዘም!');
           return;
         }
 
-        // Search for header row among first 10 rows
-        let headerRowIndex = 0;
-        let nameIdx = -1;
-        let fatherIdx = -1;
-        let grandfatherIdx = -1;
-        let genderIdx = -1;
-        let ageIdx = -1;
-        let chapelIdx = -1;
-        let educationIdx = -1;
-        let occupationIdx = -1;
-        let parentIdx = -1;
-        let phoneIdx = -1;
-        let residenceIdx = -1;
-
-        for (let r = 0; r < Math.min(10, rawRows.length); r++) {
-          const row = rawRows[r] || [];
-          let matches = 0;
-          row.forEach((col: any) => {
-            const str = normalizeHeader(String(col || ''));
-            if (str.includes('ስም') || str.includes('name')) matches++;
-            if (str.includes('ጾታ') || str.includes('gender') || str.includes('sex') || str.includes('ወንድ') || str === 'ወ/ሴ') matches++;
-            if (str.includes('እድሜ') || str.includes('age') || str.includes('ትውልድ') || str.includes('ልደት') || str.includes('ተወለደ')) matches++;
-            if (str.includes('ትምህርት') || str.includes('ደረጃ') || str.includes('grade') || str.includes('education')) matches++;
-            if (str.includes('ስራ') || str.includes('occupation') || str.includes('job') || str.includes('ሙያ')) matches++;
-            if (str.includes('ቻፕል') || str.includes('chapel') || str.includes('አጥቢያ') || str.includes('ማዕከል') || str.includes('ቅርንጫፍ')) matches++;
-            if (str.includes('ስልክ') || str.includes('phone') || str.includes('mobile')) matches++;
-          });
-          if (matches >= 2) {
-            headerRowIndex = r;
-            break;
-          }
-        }
-
-        const headerRow = rawRows[headerRowIndex] || [];
-        const headerCols = headerRow.map((col: any, idx: number) => ({
-          index: idx,
-          label: String(col || `አምድ ${idx + 1}`).trim()
-        }));
-
-        headerRow.forEach((col: any, idx: number) => {
-          const str = normalizeHeader(String(col || ''));
-          // Name detection
-          if ((str.includes('ስም') || str.includes('name')) && !str.includes('ወላጅ') && !str.includes('አባት') && !str.includes('እናት') && !str.includes('አያት') && !str.includes('parent')) {
-            if (nameIdx === -1) nameIdx = idx;
-          }
-          if (str.includes('አባት') || str.includes('father')) {
-            if (fatherIdx === -1 && !str.includes('ወላጅ')) fatherIdx = idx;
-          }
-          if (str.includes('አያት') || str.includes('grandfather')) {
-            if (grandfatherIdx === -1) grandfatherIdx = idx;
-          }
-
-          // Gender detection
-          if (str.includes('ጾታ') || str.includes('gender') || str.includes('sex') || str === 'ወ/ሴ' || str === 'ወንድ/ሴት') {
-            if (genderIdx === -1) genderIdx = idx;
-          }
-
-          // Age & Birth year detection (matches both ዕድሜ and እድሜ via normalizeHeader!)
-          if (str.includes('እድሜ') || str.includes('age') || str.includes('ትውልድ') || str.includes('ልደት') || str.includes('ተወለደ') || str.includes('dob') || str.includes('birth')) {
-            if (ageIdx === -1) ageIdx = idx;
-          }
-
-          // Education detection
-          if (str.includes('ትምህርት') || str.includes('ደረጃ') || str.includes('education') || str.includes('grade') || str.includes('level') || str.includes('የት/ደረጃ')) {
-            if (educationIdx === -1) educationIdx = idx;
-          }
-
-          // Occupation detection
-          if (str.includes('ስራ') || str.includes('occupation') || str.includes('job') || str.includes('profession') || str.includes('work') || str.includes('ሙያ')) {
-            if (occupationIdx === -1) occupationIdx = idx;
-          }
-
-          // Chapel detection (handles ቻፕል, አጥቢያ, ማዕከል, ቅርንጫፍ, etc.)
-          if (str.includes('ቻፕል') || str.includes('chapel') || str.includes('አጥቢያ') || str.includes('ማዕከል') || str.includes('ቅርንጫፍ') || str.includes('branch') || str.includes('center') || str.includes('የሚሰበሰቡበት') || str.includes('የሚገኙበት') || str.includes('ቤተክርስቲያን')) {
-            if (chapelIdx === -1) chapelIdx = idx;
-          }
-
-          // Parent detection
-          if (str.includes('ወላጅ') || str.includes('አባት') || str.includes('እናት') || str.includes('አሳዳጊ') || str.includes('parent') || str.includes('guardian') || str.includes('father')) {
-            if (parentIdx === -1) parentIdx = idx;
-          }
-
-          // Phone detection
-          if (str.includes('ስልክ') || str.includes('phone') || str.includes('mobile') || str.includes('tel') || str.includes('cell') || str.includes('ሞባይል') || str.includes('ቁጥር') || str.includes('contact')) {
-            if (phoneIdx === -1 && !str.includes('ተ.ቁ') && !str.includes('ተቁ')) phoneIdx = idx;
-          }
-
-          // Residence detection
-          if (str.includes('መኖሪያ') || str.includes('ቀበሌ') || str.includes('አካባቢ') || str.includes('residence') || str.includes('መንደር') || str.includes('ህብረት') || str.includes('ሰፈር') || str.includes('village')) {
-            if (residenceIdx === -1) residenceIdx = idx;
-          }
-        });
-
-        // Smart fallbacks if header index wasn't identified
-        if (nameIdx === -1) nameIdx = 0;
-        if (genderIdx === -1) genderIdx = Math.min(1, headerRow.length - 1);
-        if (parentIdx === -1 && fatherIdx !== -1) parentIdx = fatherIdx;
-
-        if (phoneIdx === -1) {
-          // Scan sample rows for Ethiopian phone numbers in any column
-          for (let c = 0; c < headerRow.length; c++) {
-            if (c === nameIdx || c === ageIdx || c === genderIdx) continue;
-            let phoneMatchCount = 0;
-            for (let r = headerRowIndex + 1; r < Math.min(headerRowIndex + 8, rawRows.length); r++) {
-              const val = String(rawRows[r]?.[c] || '').trim().replace(/[\s\-\(\)]/g, '');
-              if (/^(\+?251|0)?[97]\d{8}$/.test(val)) {
-                phoneMatchCount++;
-              }
-            }
-            if (phoneMatchCount >= 1) {
-              phoneIdx = c;
-              break;
-            }
-          }
-        }
-        if (ageIdx === -1) {
-          // Look for column with numeric values or birth years in sample rows
-          for (let c = 0; c < headerRow.length; c++) {
-            if (c === nameIdx || c === genderIdx) continue;
-            let numCount = 0;
-            for (let r = headerRowIndex + 1; r < Math.min(headerRowIndex + 6, rawRows.length); r++) {
-              const val = rawRows[r]?.[c];
-              if (parseChildAge(val, importRefYear, importAgeMode).age !== -1) {
-                numCount++;
-              }
-            }
-            if (numCount >= 2) {
-              ageIdx = c;
-              break;
-            }
-          }
-          if (ageIdx === -1) ageIdx = Math.min(2, headerRow.length - 1);
-        }
-
-        setImportRawRows(rawRows);
-        setImportHeaderCols(headerCols);
-        setImportHeaderRowIdx(headerRowIndex);
-        setImportColName(nameIdx);
-        setImportColFather(fatherIdx);
-        setImportColGrandfather(grandfatherIdx);
-        setImportColGender(genderIdx);
-        setImportColAge(ageIdx);
-        setImportColChapel(chapelIdx);
-        setImportColEducation(educationIdx);
-        setImportColOccupation(occupationIdx);
-        setImportColParent(parentIdx);
-        setImportColPhone(phoneIdx);
-        setImportColResidence(residenceIdx);
-
-        // Run processing
-        executeExcelProcessing(
-          rawRows,
-          headerRowIndex,
-          {
-            nameIdx,
-            fatherIdx,
-            grandfatherIdx,
-            genderIdx,
-            ageIdx,
-            chapelIdx,
-            educationIdx,
-            occupationIdx,
-            parentIdx,
-            phoneIdx,
-            residenceIdx
-          },
-          importRefYear,
-          importAgeMode,
-          importDefaultChapel
-        );
+        setImportWorkbookRef(workbook);
+        applyParsedWorkbookToPreview(workbook, importRefYear, importAgeMode, importDefaultChapel);
       } catch (err) {
         console.error('Error parsing excel file', err);
         alert('ፋይሉን ማንበብ አልተቻለም። እባክዎ ትክክለኛ Excel ወይም CSV ፋይል መሆኑን ያረጋግጡ።');
       }
     };
 
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   // Re-run processing whenever user alters column mappings or age settings
@@ -1473,8 +1174,9 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     updatedMode?: 'auto' | 'direct' | 'birthyear',
     updatedDefChapel?: string
   ) => {
-    if (!importRawRows.length) return;
-    const mapping = {
+    if (!importWorkbookRef) return;
+    const overrideFirst: SheetRowOverrideMapping = {
+      headerIdx: importHeaderRowIdx,
       nameIdx: updatedMapping?.nameIdx ?? importColName,
       fatherIdx: updatedMapping?.fatherIdx ?? importColFather,
       grandfatherIdx: updatedMapping?.grandfatherIdx ?? importColGrandfather,
@@ -1491,7 +1193,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     const mode = updatedMode ?? importAgeMode;
     const defCh = updatedDefChapel ?? importDefaultChapel;
 
-    executeExcelProcessing(importRawRows, importHeaderRowIdx, mapping, refY, mode, defCh);
+    applyParsedWorkbookToPreview(importWorkbookRef, refY, mode, defCh, overrideFirst);
   };
 
   // Distinct Chapels in the uploaded Excel file with child counts
@@ -2113,92 +1815,147 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         </div>
       </div>
 
-      {/* Search and Column Filter Strip (for church children views) */}
-      {viewFilter !== 'missing_from_church' && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm print:hidden">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="በልጅ ስም፣ ወላጅ፣ ስልክ፣ ቻፕል..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white"
-              />
-            </div>
-
-            {/* Chapel Filter Dropdown */}
-            <div className="flex items-center gap-1.5">
-              <Church className="w-4 h-4 text-slate-400 shrink-0" />
-              <select
-                value={selectedChapelFilter}
-                onChange={(e) => setSelectedChapelFilter(e.target.value)}
-                className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
+      {/* Search and Column Filter Strip (shown across all views so searching by child's name always works) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm print:hidden">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="የልጅ ስም ጽፈው ይፈልጉ (ወይም ወላጅ፣ ስልክ)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white font-medium text-slate-900"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="ፍለጋውን አጽዳ"
               >
-                <option value="all">ሁሉም ቻፕሎች (አጥቢያዎች)</option>
-                {chapelStats.chapels.map((ch) => (
-                  <option key={`opt_ch_${ch}`} value={ch}>
-                    {ch}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
 
-            {/* Age Filter */}
-            <div className="flex items-center gap-1.5">
-              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-              <select
-                value={ageFilter}
-                onChange={(e) => setAgeFilter(e.target.value as AgeFilter)}
-                className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-600"
-              >
-                <option value="all">ሁሉም የዕድሜ ምድቦች</option>
-                <option value="0-3">ከ0 - 3 ዓመት (ጨቅላና ህፃናት)</option>
-                <option value="4-6">ከ4 - 6 ዓመት (ጀማሪ ህፃናት)</option>
-                <option value="7-9">ከ7 - 9 ዓመት (መካከለኛ ህፃናት)</option>
-                <option value="10-12">ከ10 - 12 ዓመት (ታዳጊዎች)</option>
-                <option value="13-14">ከ13 - 14 ዓመት (ታዳጊ ወጣቶች)</option>
-                <option value="15+">ከ15 ዓመት በላይ</option>
-              </select>
-            </div>
-
-            {/* Gender Filter */}
-            <div className="flex items-center gap-1.5">
-              <User className="w-4 h-4 text-slate-400 shrink-0" />
-              <select
-                value={genderFilter}
-                onChange={(e) => setGenderFilter(e.target.value)}
-                className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-600"
-              >
-                <option value="all">ሁሉም ጾታ (ወንድና ሴት)</option>
-                <option value="ወ">ወንድ ብቻ</option>
-                <option value="ሴ">ሴት ብቻ</option>
-              </select>
-            </div>
-
-            {/* Reset / Count Indicator */}
-            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-600">
-              <span>የተገኙ፦ <strong className="text-blue-900 font-extrabold">{filteredChildren.length}</strong></span>
-              {(searchTerm || ageFilter !== 'all' || genderFilter !== 'all' || selectedChapelFilter !== 'all') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setAgeFilter('all');
-                    setGenderFilter('all');
-                    setSelectedChapelFilter('all');
+          {viewFilter !== 'missing_from_church' && (
+            <>
+              {/* Chapel Filter Dropdown */}
+              <div className="flex items-center gap-1.5">
+                <Church className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={selectedChapelFilter}
+                  onChange={(e) => {
+                    setSelectedChapelFilter(e.target.value);
+                    setSelectedChapels([]);
                   }}
-                  className="text-rose-600 hover:text-rose-800 hover:underline font-bold"
+                  className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
                 >
-                  አጽዳ
-                </button>
-              )}
-            </div>
+                  <option value="all">ሁሉም ቻፕሎች (አጥቢያዎች)</option>
+                  {chapelStats.chapels.map((ch) => (
+                    <option key={`opt_ch_${ch}`} value={ch}>
+                      {ch}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Age Filter */}
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={ageFilter}
+                  onChange={(e) => setAgeFilter(e.target.value as AgeFilter)}
+                  className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="all">ሁሉም የዕድሜ ምድቦች</option>
+                  <option value="0-3">ከ0 - 3 ዓመት (ጨቅላና ህፃናት)</option>
+                  <option value="4-6">ከ4 - 6 ዓመት (ጀማሪ ህፃናት)</option>
+                  <option value="7-9">ከ7 - 9 ዓመት (መካከለኛ ህፃናት)</option>
+                  <option value="10-12">ከ10 - 12 ዓመት (ታዳጊዎች)</option>
+                  <option value="13-14">ከ13 - 14 ዓመት (ታዳጊ ወጣቶች)</option>
+                  <option value="15+">ከ15 ዓመት በላይ</option>
+                </select>
+              </div>
+
+              {/* Gender Filter */}
+              <div className="flex items-center gap-1.5">
+                <User className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={genderFilter}
+                  onChange={(e) => setGenderFilter(e.target.value)}
+                  className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="all">ሁሉም ጾታ (ወንድና ሴት)</option>
+                  <option value="ወ">ወንድ ብቻ</option>
+                  <option value="ሴ">ሴት ብቻ</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Reset / Count Indicator */}
+          <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-600">
+            <span>
+              የተገኙ፦{' '}
+              <strong className="text-blue-900 font-extrabold">
+                {viewFilter === 'missing_from_church'
+                  ? filteredMissingFromChurchChildren.length
+                  : filteredChildren.length}
+              </strong>
+            </span>
+            {(searchTerm ||
+              ageFilter !== 'all' ||
+              genderFilter !== 'all' ||
+              selectedChapelFilter !== 'all' ||
+              selectedChapels.length > 0) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  setAgeFilter('all');
+                  setGenderFilter('all');
+                  setSelectedChapelFilter('all');
+                  setSelectedChapels([]);
+                }}
+                className="text-rose-600 hover:text-rose-800 hover:underline font-bold cursor-pointer"
+              >
+                ሁሉንም አጽዳ
+              </button>
+            )}
           </div>
         </div>
-      )}
+
+        {/* Helpful reminder if searching yields 0 while chapel/age/view filters restrict results */}
+        {searchTerm.trim() &&
+          viewFilter !== 'missing_from_church' &&
+          filteredChildren.length === 0 &&
+          churchChildrenWithStatus.length > 0 &&
+          (selectedChapelFilter !== 'all' ||
+            selectedChapels.length > 0 ||
+            ageFilter !== 'all' ||
+            genderFilter !== 'all' ||
+            viewFilter !== 'all') && (
+            <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-amber-800 bg-amber-50/70 px-3 py-1.5 rounded-xl">
+              <span>በአሁኑ ማጣሪያ (ቻፕል/ዕድሜ/ሁኔታ) ውስጥ አልተገኘም። በሁሉም ቋት ውስጥ መፈለግ ይፈልጋሉ?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewFilter('all');
+                  setSelectedChapelFilter('all');
+                  setSelectedChapels([]);
+                  setAgeFilter('all');
+                  setGenderFilter('all');
+                }}
+                className="font-extrabold text-blue-900 underline ml-2 cursor-pointer"
+              >
+                በሁሉም ቋት ውስጥ ፈልግ
+              </button>
+            </div>
+          )}
+      </div>
 
       {/* Main Table or Grouped Chapels View */}
       {viewFilter !== 'missing_from_church' ? (
@@ -2292,7 +2049,9 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                                     {isMale ? 'ወንድ' : isFemale ? 'ሴት' : '-'}
                                   </span>
                                 </td>
-                                <td className="py-2 px-3 text-center font-bold text-slate-800">{child.age ? `${child.age} ዓመት` : '-'}</td>
+                                <td className="py-2 px-3 text-center font-bold text-slate-800">
+                                  {child.age !== undefined && child.age !== null && child.age !== '' ? `${child.age} ዓመት` : '-'}
+                                </td>
                                 <td className="py-2 px-3 text-slate-700">{child.educationLevel || '-'}</td>
                                 <td className="py-2 px-3">
                                   {child.isEnrolled ? (
@@ -2419,7 +2178,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
                           {/* Age */}
                           <td className="py-2.5 px-3 text-center font-bold text-slate-800 tabular-nums">
-                            {child.age ? `${child.age} ዓመት` : '-'}
+                            {child.age !== undefined && child.age !== null && child.age !== '' ? `${child.age} ዓመት` : '-'}
                           </td>
 
                           {/* Education Level */}
@@ -2578,16 +2337,20 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {missingFromChurchChildren.length === 0 ? (
+                {filteredMissingFromChurchChildren.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-slate-500">
                       <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-                      <p className="font-bold text-sm text-slate-800">ሁሉም የሰንበት ት/ቤት ተማሪዎች በቋቱ ተካተዋል!</p>
-                      <p className="text-xs text-slate-400 mt-1">በሰንበት ት/ቤት ካሉት ተማሪዎች በቋቱ ያልተመዘገበ የለም።</p>
+                      <p className="font-bold text-sm text-slate-800">
+                        {searchTerm.trim() ? 'በተጻፈው ስም የተገኘ ተማሪ የለም!' : 'ሁሉም የሰንበት ት/ቤት ተማሪዎች በቋቱ ተካተዋል!'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {searchTerm.trim() ? 'የፍለጋ ቃሉን ይቀይሩ ወይም ያጽዱ።' : 'በሰንበት ት/ቤት ካሉት ተማሪዎች በቋቱ ያልተመዘገበ የለም።'}
+                      </p>
                     </td>
                   </tr>
                 ) : (
-                  missingFromChurchChildren.map((item, idx) => (
+                  filteredMissingFromChurchChildren.map((item, idx) => (
                     <tr key={`missing_${item.className}_${item.student.id}`} className="hover:bg-purple-50/30 transition">
                       <td className="py-2.5 px-3 text-center font-bold text-slate-500 bg-slate-50">
                         {idx + 1}
@@ -2604,7 +2367,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                         {item.student.gender || '-'}
                       </td>
                       <td className="py-2.5 px-3 text-center font-bold tabular-nums">
-                        {item.student.age ? `${item.student.age} ዓመት` : '-'}
+                        {item.student.age !== undefined && item.student.age !== null && item.student.age !== '' ? `${item.student.age} ዓመት` : '-'}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <button

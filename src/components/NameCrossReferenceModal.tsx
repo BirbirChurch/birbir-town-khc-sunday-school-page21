@@ -24,6 +24,7 @@ import {
   matchChildNameToSundaySchool
 } from './ChurchChildrenTab';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
+import { matchesAmharicSearch } from '../utils/churchExcelParser';
 
 export interface ChurchComparableItem {
   id?: number | string;
@@ -144,19 +145,18 @@ export const NameCrossReferenceModal: React.FC<NameCrossReferenceModalProps> = (
         if (!itemCh.includes(fCh) && !fCh.includes(itemCh)) return false;
       }
 
-      // Search term
+      // Search term (Amharic homophones & token matching)
       if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        const matchesChild = row.item.name?.toLowerCase().includes(q);
-        const matchesParent = row.item.parentName?.toLowerCase().includes(q);
-        const matchesPhone = row.item.phone?.toLowerCase().includes(q);
-        const matchesChapel = row.item.chapel?.toLowerCase().includes(q);
-        const matchesStudent = row.matchedStudent?.name?.toLowerCase().includes(q);
-        const matchesClass = row.enrolledClass?.toLowerCase().includes(q);
-
-        if (!matchesChild && !matchesParent && !matchesPhone && !matchesChapel && !matchesStudent && !matchesClass) {
-          return false;
-        }
+        const matched = matchesAmharicSearch(
+          searchTerm,
+          row.item.name,
+          row.item.parentName,
+          row.item.phone,
+          row.item.chapel,
+          row.matchedStudent?.name,
+          row.enrolledClass
+        );
+        if (!matched) return false;
       }
 
       return true;

@@ -40,6 +40,7 @@ import {
   readExcelOrCSVWorkbook,
   parseCleanStudentLine
 } from '../utils/csv';
+import { matchesAmharicSearch } from '../utils/churchExcelParser';
 
 interface AttendanceTabProps {
   currentYear: string;
@@ -165,8 +166,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
   const filteredClassStudents = useMemo(() => {
     if (!searchStudent.trim()) return classStudents;
-    const q = searchStudent.trim().toLowerCase();
-    return classStudents.filter((s) => s.name.toLowerCase().includes(q));
+    return classStudents.filter((s) => matchesAmharicSearch(searchStudent, s.name));
   }, [classStudents, searchStudent]);
 
   // Current class attendance map: studentId -> { [week]: 'P' | 'A' | 'E' }

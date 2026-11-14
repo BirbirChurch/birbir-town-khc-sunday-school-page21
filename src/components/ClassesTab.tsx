@@ -30,6 +30,7 @@ import {
   matchClassName,
   parseCleanStudentLine
 } from '../utils/csv';
+import { matchesAmharicSearch } from '../utils/churchExcelParser';
 
 interface ClassesTabProps {
   currentYear: string;
@@ -172,8 +173,7 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
 
   const filteredStudents = useMemo(() => {
     if (!searchQuery.trim()) return rankedStudents;
-    const q = searchQuery.toLowerCase();
-    return rankedStudents.filter((s) => s.name.toLowerCase().includes(q));
+    return rankedStudents.filter((s) => matchesAmharicSearch(searchQuery, s.name));
   }, [rankedStudents, searchQuery]);
 
   // When printing/exporting to PDF, ensure ALL students of the class are included
