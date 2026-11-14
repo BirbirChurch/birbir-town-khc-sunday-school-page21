@@ -33,6 +33,8 @@ import {
 } from './ChurchChildrenTab';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { NameCrossReferenceModal } from './NameCrossReferenceModal';
+import { AnnualAgeIncrementModal } from './AnnualAgeIncrementModal';
+import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
 import {
   matchesAmharicSearch,
   normalizeAmharicSearchText,
@@ -41,23 +43,26 @@ import {
 
 interface ChurchMasterTabProps {
   currentYear: string;
+  ageReferenceYear?: number;
   churchMembers?: ChurchMember[];
   chapelList?: string[];
   churchChildren?: ChurchChild[];
   studentsByClass?: { [className: string]: Student[] };
   classList?: string[];
-  onBatchAddMembers: (members: ChurchMember[], mode?: 'append' | 'replace') => void;
+  onBatchAddMembers: (members: ChurchMember[], mode?: 'append' | 'replace', baselineYear?: number) => void;
   onAddMember: (member: Omit<ChurchMember, 'id'>) => void;
   onUpdateMember: (member: ChurchMember) => void;
   onDeleteMember: (id: number) => void;
   onClearChurchMembers: () => void;
   onExtractChildrenToChildrenTab: (children: Omit<ChurchChild, 'id'>[], mode?: 'append' | 'replace') => void;
+  onBulkIncrementAges?: (options: Omit<BulkAgeIncrementOptions, 'targetAcademicYear'>) => BulkAgeIncrementStats | null;
   currentUserRole: Role | null;
   loggedInChapel?: string | null;
 }
 
 export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   currentYear,
+  ageReferenceYear = 2017,
   churchMembers = [],
   chapelList = DEFAULT_CHAPELS,
   churchChildren = [],
@@ -69,6 +74,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   onDeleteMember,
   onClearChurchMembers,
   onExtractChildrenToChildrenTab,
+  onBulkIncrementAges,
   currentUserRole,
   loggedInChapel
 }) => {
@@ -95,6 +101,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const [selectedAgeCohort, setSelectedAgeCohort] = useState<string>('all');
   const [sundaySchoolFilter, setSundaySchoolFilter] = useState<'all' | 'enrolled' | 'not_enrolled_children'>('all');
   const [isNameCompareModalOpen, setIsNameCompareModalOpen] = useState<boolean>(false);
+  const [isAgeModalOpen, setIsAgeModalOpen] = useState<boolean>(false);
+  const [excelBaselineYear, setExcelBaselineYear] = useState<number>(2017);
 
   // Pagination for high capacity (5,300+ members)
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -392,7 +400,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         }
 
         const parsed = parseChurchWorkbookAllSheets(workbook, parseChildAge, {
-          refYear: parseInt(currentYear, 10) || 2018,
+          refYear: excelBaselineYear || 2017,
           ageMode: 'auto',
           defaultChapelFallback: officialLoggedInChapel || undefined
         });
@@ -415,7 +423,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         }
 
         // Save imported members to General Church Database (App.tsx scopes replace to loggedInChapel when active)
-        onBatchAddMembers(importedMembers, 'replace');
+        onBatchAddMembers(importedMembers, 'replace', excelBaselineYear);
 
         // Automatically extract 0-14 children into Children Registries (deduplicating/updating existing)
         if (autoChildrenToExtract.length > 0) {
@@ -583,6 +591,22 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {!officialLoggedInChapel && (
+              <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 rounded-xl px-2.5 py-1.5 text-[11px]">
+                <span className="text-slate-300 font-semibold">የኤክሴል መነሻ፦</span>
+                <select
+                  value={excelBaselineYear}
+                  onChange={(e) => setExcelBaselineYear(Number(e.target.value))}
+                  className="bg-transparent text-amber-300 font-black focus:outline-none cursor-pointer"
+                  title="የኤክሴል መረጃው የተዘጋጀበት ዓ/ም"
+                >
+                  <option value={2017} className="text-slate-900">2017 ዓ/ም</option>
+                  <option value={2018} className="text-slate-900">2018 ዓ/ም</option>
+                  <option value={2019} className="text-slate-900">2019 ዓ/ም</option>
+                </select>
+              </div>
+            )}
+
             <input
               type="file"
               ref={fileInputRef}
@@ -607,6 +631,18 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                   : '📥 ኤክሴል ጫን (የ10ሩንም ቻፕል ሺቶች)'}
               </span>
             </button>
+
+            {onBulkIncrementAges && !officialLoggedInChapel && (
+              <button
+                type="button"
+                onClick={() => setIsAgeModalOpen(true)}
+                className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer border border-amber-200"
+                title="የ2017 ዓ/ም የአባላት መረጃ ላይ በየዓመቱ ዕድሜን በአንዴ መጨመሪያ"
+              >
+                <Calendar className="w-4 h-4 text-slate-900" />
+                <span>📅 ዓመታዊ ዕድሜ ጨምር ({ageReferenceYear} ዓ/ም)</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -1355,6 +1391,18 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         classList={classList}
         chapelList={chapelStats.chapels}
       />
+
+      {onBulkIncrementAges && (
+        <AnnualAgeIncrementModal
+          isOpen={isAgeModalOpen}
+          onClose={() => setIsAgeModalOpen(false)}
+          currentYear={currentYear}
+          ageReferenceYear={ageReferenceYear}
+          totalMembersCount={churchMembers.length}
+          totalChildrenCount={churchChildren.length}
+          onApplyBulkIncrement={onBulkIncrementAges}
+        />
+      )}
     </div>
   );
 };

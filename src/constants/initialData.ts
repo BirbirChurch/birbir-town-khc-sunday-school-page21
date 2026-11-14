@@ -147,7 +147,8 @@ export const INITIAL_CHURCH_CHILDREN: ChurchChild[] = [
 ];
 
 export const INITIAL_APP_DATA: AppData = {
-  years: ["2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "2028", "2029", "2030"],
+  years: ["2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "2028", "2029", "2030"],
+  ageReferenceYear: 2017,
   pins: {
     admin: "1234",
     leader: "5678",

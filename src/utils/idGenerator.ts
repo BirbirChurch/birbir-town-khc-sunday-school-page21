@@ -173,12 +173,37 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     modified = true;
   }
 
+  // 11. Ensure every teacher has a non-empty PIN (since teachers log in solely by PIN)
+  const usedTeacherPins = new Set<string>(
+    sanitizedTeachers.map((t) => String(t?.pin || '').trim()).filter(Boolean)
+  );
+  const ensuredTeachers = sanitizedTeachers.map((t) => {
+    const curPin = String(t?.pin || '').trim();
+    if (curPin) return t;
+    let candidate = String(Math.floor(1000 + Math.random() * 9000));
+    while (usedTeacherPins.has(candidate)) {
+      candidate = String(Math.floor(1000 + Math.random() * 9000));
+    }
+    usedTeacherPins.add(candidate);
+    modified = true;
+    return { ...t, pin: candidate };
+  });
+
+  // 12. Ensure baseline ageReferenceYear (default 2017 E.C.) and years include 2017-2018
+  const existingYears = Array.isArray(data.years) ? data.years : [];
+  const mergedYears = Array.from(new Set(['2017', '2018', ...existingYears])).sort();
+  if (mergedYears.length !== existingYears.length || !data.ageReferenceYear) {
+    modified = true;
+  }
+
   if (!modified) {
     return data;
   }
 
   return {
     ...data,
+    years: mergedYears,
+    ageReferenceYear: typeof data.ageReferenceYear === 'number' && data.ageReferenceYear > 1990 ? data.ageReferenceYear : 2017,
     pins: {
       admin: data.pins?.admin || '1234',
       leader: data.pins?.leader || '5678',
@@ -190,7 +215,7 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     attendance: sanitizedAttendance,
     choirMembers: sanitizedChoir,
     spiritualMembers: sanitizedSpiritual,
-    teachers: sanitizedTeachers,
+    teachers: ensuredTeachers,
     plans: sanitizedPlans,
     chapels: DEFAULT_CHAPELS,
     churchChildren: sanitizedChurchChildren,

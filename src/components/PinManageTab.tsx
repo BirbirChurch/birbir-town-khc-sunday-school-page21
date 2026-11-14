@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   KeyRound,
   Shield,
@@ -9,7 +9,8 @@ import {
   Church,
   GraduationCap,
   RefreshCw,
-  Search
+  Search,
+  AlertTriangle
 } from 'lucide-react';
 import { Teacher } from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
@@ -43,6 +44,22 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     return initial;
   });
 
+  useEffect(() => {
+    setNewAdminPin(adminPin);
+  }, [adminPin]);
+
+  useEffect(() => {
+    setNewLeaderPin(leaderPin);
+  }, [leaderPin]);
+
+  useEffect(() => {
+    const next: { [k: string]: string } = {};
+    chapelList.forEach((ch, idx) => {
+      next[ch] = chapelPins?.[ch] || DEFAULT_CHAPEL_PINS[ch] || String(2001 + idx);
+    });
+    setEditedChapelPins(next);
+  }, [chapelPins, chapelList]);
+
   const [showAdminPin, setShowAdminPin] = useState(false);
   const [showLeaderPin, setShowLeaderPin] = useState(false);
   const [showChapelPins, setShowChapelPins] = useState(true);
@@ -62,7 +79,52 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
       );
   }, [teachers, teacherSearch]);
 
-  const generateRandomPin = () => String(Math.floor(1000 + Math.random() * 9000));
+  const duplicateTeacherPins = useMemo(() => {
+    const counts = new Map<string, number>();
+    teachers.forEach((t) => {
+      const p = String(t.pin || '').trim();
+      if (p) counts.set(p, (counts.get(p) || 0) + 1);
+    });
+    const dups = new Set<string>();
+    counts.forEach((c, p) => {
+      if (c > 1) dups.add(p);
+    });
+    return dups;
+  }, [teachers]);
+
+  const generateUniquePin = (exclude?: Set<string>) => {
+    const used = new Set<string>(exclude || []);
+    teachers.forEach((t) => {
+      const p = String(t.pin || '').trim();
+      if (p) used.add(p);
+    });
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const candidate = String(Math.floor(1000 + Math.random() * 9000));
+      if (!used.has(candidate)) return candidate;
+    }
+    return String(Math.floor(10000 + Math.random() * 90000));
+  };
+
+  const handleFixDuplicateTeacherPins = () => {
+    if (!onUpdateTeacher) return;
+    const seen = new Set<string>();
+    let fixedCount = 0;
+    teachers.forEach((t) => {
+      const p = String(t.pin || '').trim();
+      if (!p || seen.has(p)) {
+        const fresh = generateUniquePin(seen);
+        seen.add(fresh);
+        onUpdateTeacher({ ...t, pin: fresh });
+        fixedCount++;
+      } else {
+        seen.add(p);
+      }
+    });
+    if (fixedCount > 0) {
+      setSavedSuccess(`✓ ${fixedCount} የተደጋገሙ ወይም ባዶ የመምህራን PINs በልዩ ቁጥር ተስተካክለዋል!`);
+      setTimeout(() => setSavedSuccess(''), 4000);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,8 +150,11 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
 
   const handleRegenerateAllChapelPins = () => {
     const next: { [k: string]: string } = {};
+    const used = new Set<string>();
     chapelList.forEach((ch) => {
-      next[ch] = generateRandomPin();
+      const p = generateUniquePin(used);
+      used.add(p);
+      next[ch] = p;
     });
     setEditedChapelPins(next);
   };
@@ -240,7 +305,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                     onClick={() =>
                       setEditedChapelPins((prev) => ({
                         ...prev,
-                        [chapelName]: generateRandomPin()
+                        [chapelName]: generateUniquePin(new Set(Object.values(prev)))
                       }))
                     }
                     className="p-1.5 text-slate-500 hover:text-amber-700 hover:bg-amber-100 rounded-lg transition cursor-pointer"
@@ -275,11 +340,11 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                 <span>3. የሁሉም መምህራን መግቢያ ቁልፎች (Teacher PINs - {teachers.length})</span>
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                የመምህራንን የመግቢያ ቁልፍ ሲቀይሩ ወዲያውኑ ይመዘገባል
+                መምህራን በምስጥር ቁጥር (PIN) ብቻ ስለሚገቡ የእያንዳንዱ መምህር PIN የተለየ መሆን አለበት
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -301,34 +366,62 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-96 overflow-y-auto pr-1">
-            {filteredTeachers.map((t) => (
-              <div
-                key={`admin_tpin_${t.id}`}
-                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200"
-              >
-                <div className="min-w-0">
-                  <div className="font-bold text-xs text-slate-900 truncate">{t.name}</div>
-                  <div className="text-[10px] text-slate-500 truncate">{t.assignedClass}</div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <input
-                    type={showTeacherPins ? 'text' : 'password'}
-                    value={t.pin}
-                    onChange={(e) => onUpdateTeacher({ ...t, pin: e.target.value.trim() })}
-                    className="w-20 text-center px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => onUpdateTeacher({ ...t, pin: generateRandomPin() })}
-                    className="p-1 text-slate-400 hover:text-indigo-700 hover:bg-indigo-50 rounded transition cursor-pointer"
-                    title="አዲስ PIN ፍጠር"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+          {duplicateTeacherPins.size > 0 && (
+            <div className="mb-4 p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-bold">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  ማስጠንቀቂያ፦ አንድ ዓይነት የተደጋገመ PIN ({Array.from(duplicateTeacherPins).join(', ')}) ተገኝቷል! መምህራን በPIN ብቻ ስለሚገቡ ሁሉም የተለየ ቁጥር ሊኖራቸው ይገባል።
+                </span>
               </div>
-            ))}
+              <button
+                type="button"
+                onClick={handleFixDuplicateTeacherPins}
+                className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition cursor-pointer shrink-0"
+              >
+                🔄 የተደጋገሙ PINs በራሱ አስተካክል
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-96 overflow-y-auto pr-1">
+            {filteredTeachers.map((t) => {
+              const isDup = duplicateTeacherPins.has(String(t.pin || '').trim()) || !String(t.pin || '').trim();
+              return (
+                <div
+                  key={`admin_tpin_${t.id}`}
+                  className={`flex items-center justify-between gap-2 p-3 rounded-xl border ${
+                    isDup ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="font-bold text-xs text-slate-900 truncate">{t.name}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{t.assignedClass}</div>
+                    {isDup && (
+                      <div className="text-[10px] font-bold text-rose-700">የተደጋገመ/ባዶ PIN!</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <input
+                      type={showTeacherPins ? 'text' : 'password'}
+                      value={t.pin}
+                      onChange={(e) => onUpdateTeacher({ ...t, pin: e.target.value.trim() })}
+                      className={`w-20 text-center px-2 py-1 bg-white border rounded-lg text-xs font-mono font-bold focus:outline-none focus:ring-2 ${
+                        isDup ? 'border-rose-400 focus:ring-rose-500 text-rose-800' : 'border-slate-300 focus:ring-indigo-500'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onUpdateTeacher({ ...t, pin: generateUniquePin() })}
+                      className="p-1 text-slate-400 hover:text-indigo-700 hover:bg-indigo-50 rounded transition cursor-pointer"
+                      title="አዲስ ልዩ PIN ፍጠር"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

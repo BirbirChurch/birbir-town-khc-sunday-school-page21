@@ -16,7 +16,8 @@ import {
   KeyRound,
   Users,
   HeartHandshake,
-  Database
+  Database,
+  Calendar
 } from 'lucide-react';
 import {
   Role,
@@ -35,6 +36,11 @@ import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS }
 import { subscribeToAppData, syncAppDataToFirebase, saveToLocalStorage, countStudentsInData, exportBackupJSON, importBackupJSON } from './services/firebase';
 import { generateUniqueId, sanitizeAndDeduplicateAppData } from './utils/idGenerator';
 import { normalizeAmharicSearchText } from './utils/churchExcelParser';
+import {
+  applyBulkAgeIncrementToAppData,
+  BulkAgeIncrementOptions,
+  BulkAgeIncrementStats
+} from './utils/ageUpdater';
 import { Header } from './components/Header';
 import { LoginPortal } from './components/LoginPortal';
 import { ClassesTab } from './components/ClassesTab';
@@ -60,6 +66,8 @@ export default function App() {
   const [selectedClass, setSelectedClass] = useState<string>(CLASS_LIST[3]); // 1ኛ ክፍል ሀ
   const [activeTab, setActiveTab] = useState<string>('classesTab');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const [dismissedAgeBannerYear, setDismissedAgeBannerYear] = useState<string | null>(null);
+  const [ageSyncFeedback, setAgeSyncFeedback] = useState<string>('');
 
   // Connect to Firebase Realtime Database and Firestore
   useEffect(() => {
@@ -929,7 +937,11 @@ export default function App() {
   };
 
   // General Church Members handlers (strictly locked to 10 official chapels & scoped when loggedInChapel is active)
-  const handleBatchAddChurchMembers = (members: ChurchMember[], mode: 'append' | 'replace' = 'append') => {
+  const handleBatchAddChurchMembers = (
+    members: ChurchMember[],
+    mode: 'append' | 'replace' = 'append',
+    baselineYear?: number
+  ) => {
     if (!members.length) return;
     const targetChapel = loggedInChapel ? mapToOfficialChapel(loggedInChapel) : null;
     const sanitizedMembers = members
@@ -957,6 +969,7 @@ export default function App() {
           return {
             ...prev,
             chapels: DEFAULT_CHAPELS,
+            ageReferenceYear: baselineYear ?? prev.ageReferenceYear ?? 2017,
             churchMembers: sanitizedMembers
           };
         }
@@ -969,6 +982,35 @@ export default function App() {
       { immediate: true }
     );
   };
+
+  // Annual bulk age increment across all members/children (baseline 2017 E.C.)
+  const handleBulkIncrementAges = useCallback(
+    (options: Omit<BulkAgeIncrementOptions, 'targetAcademicYear'>): BulkAgeIncrementStats | null => {
+      const currentSnapshot = latestDataRef.current || appData;
+      if (!currentSnapshot) return null;
+
+      const { stats } = applyBulkAgeIncrementToAppData(currentSnapshot, {
+        ...options,
+        targetAcademicYear: currentYear
+      });
+
+      updateAppData(
+        (prev) =>
+          applyBulkAgeIncrementToAppData(prev, {
+            ...options,
+            targetAcademicYear: currentYear
+          }).updatedData,
+        { immediate: true }
+      );
+
+      setAgeSyncFeedback(
+        `✓ የሁሉም አባላት ዕድሜ ከ${stats.fromYear} ወደ ${stats.toYear} ዓ/ም (${stats.deltaYears > 0 ? `+${stats.deltaYears}` : stats.deltaYears} ዓመት) በአንዴ ዘምኗል! (አባላት፦ ${stats.membersUpdated}፣ ልጆች፦ ${stats.childrenUpdated})`
+      );
+      setTimeout(() => setAgeSyncFeedback(''), 8000);
+      return stats;
+    },
+    [appData, currentYear, updateAppData]
+  );
 
   const handleAddChurchMember = (newMember: Omit<ChurchMember, 'id'>) => {
     const enforcedChapel = loggedInChapel
@@ -1299,8 +1341,63 @@ export default function App() {
                   {quickJsonFeedback}
                 </div>
               )}
+              {ageSyncFeedback && (
+                <div className="max-w-7xl mx-auto mt-2 bg-amber-500/95 border border-amber-300 text-slate-950 px-3 py-1.5 rounded-lg font-extrabold text-[11px]">
+                  {ageSyncFeedback}
+                </div>
+              )}
             </div>
           )}
+
+          {/* Annual Age Increment Banner (shown to Admin/Leader when currentYear > ageReferenceYear, e.g. 2017 -> 2019) */}
+          {appData &&
+            !loggedInChapel &&
+            (currentUserRole === 'admin' || currentUserRole === 'leader') &&
+            (parseInt(currentYear, 10) || 0) > (appData.ageReferenceYear || 2017) &&
+            dismissedAgeBannerYear !== currentYear && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 print:hidden text-xs">
+                <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-amber-950 font-bold">
+                    <Calendar className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>
+                      የአባላት ዕድሜ በ<strong>{appData.ageReferenceYear || 2017} ዓ/ም</strong> መረጃ ላይ ነው ያለው። ወደ{' '}
+                      <strong>{currentYear} ዓ/ም</strong> ለማዘመን (+
+                      {(parseInt(currentYear, 10) || 2019) - (appData.ageReferenceYear || 2017)} ዓመት) በሁሉም አባላት ላይ በአንድ ጊዜ መጨመር ይችላሉ።
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const refYear = appData.ageReferenceYear || 2017;
+                        const targetYr = parseInt(currentYear, 10) || refYear;
+                        const delta = targetYr - refYear;
+                        if (delta > 0) {
+                          handleBulkIncrementAges({
+                            deltaYears: delta,
+                            targetReferenceYear: targetYr,
+                            includeChurchMembers: true,
+                            includeChurchChildren: true,
+                            includeStudents: true,
+                            includeChoirAndSpiritual: true
+                          });
+                        }
+                      }}
+                      className="bg-amber-600 hover:bg-amber-500 text-white font-black text-[11px] px-3 py-1.5 rounded-lg shadow-xs transition cursor-pointer"
+                    >
+                      ⚡ +{(parseInt(currentYear, 10) || 2019) - (appData.ageReferenceYear || 2017)} ዓመት አሁን ጨምር
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDismissedAgeBannerYear(currentYear)}
+                      className="text-amber-800 hover:text-amber-950 font-bold text-[11px] px-2 py-1 rounded hover:bg-amber-100 transition cursor-pointer"
+                    >
+                      በኋላ
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:max-w-none print:w-full print:p-0 print:m-0">
             <div className="space-y-6 print:space-y-0">
@@ -1381,6 +1478,7 @@ export default function App() {
               {activeTab === 'churchMasterTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
                 <ChurchMasterTab
                   currentYear={currentYear}
+                  ageReferenceYear={appData.ageReferenceYear || 2017}
                   churchMembers={appData.churchMembers || []}
                   chapelList={appData.chapels || DEFAULT_CHAPELS}
                   churchChildren={appData.churchChildren || []}
@@ -1392,6 +1490,7 @@ export default function App() {
                   onDeleteMember={handleDeleteChurchMember}
                   onClearChurchMembers={handleClearChurchMembers}
                   onExtractChildrenToChildrenTab={handleBatchAddChurchChildren}
+                  onBulkIncrementAges={!loggedInChapel ? handleBulkIncrementAges : undefined}
                   currentUserRole={currentUserRole}
                   loggedInChapel={loggedInChapel}
                 />
@@ -1400,6 +1499,7 @@ export default function App() {
               {activeTab === 'churchChildrenTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
                 <ChurchChildrenTab
                   currentYear={currentYear}
+                  ageReferenceYear={appData.ageReferenceYear || 2017}
                   classList={CLASS_LIST}
                   churchChildren={appData.churchChildren || []}
                   chapelList={appData.chapels || DEFAULT_CHAPELS}
@@ -1411,6 +1511,7 @@ export default function App() {
                   onBatchAddChildren={handleBatchAddChurchChildren}
                   onEnrollToSundaySchool={handleEnrollChildToSundaySchool}
                   onImportMissingStudentsToChurchChildren={handleImportMissingStudentsToChurchChildren}
+                  onBulkIncrementAges={!loggedInChapel ? handleBulkIncrementAges : undefined}
                   currentUserRole={currentUserRole}
                   loggedInChapel={loggedInChapel}
                   onDeleteChapel={handleDeleteChapel}

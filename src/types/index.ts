@@ -156,6 +156,7 @@ export interface AppData {
   chapels?: string[];
   churchChildren?: ChurchChild[];
   churchMembers?: ChurchMember[];
+  ageReferenceYear?: number; // የአባላት ዕድሜ የተዘጋጀበት መነሻ ዓ/ም (ለምሳሌ 2017)
 }
 
 

@@ -750,6 +750,10 @@ export const mergeImportedSundaySchoolData = (
     ...INITIAL_APP_DATA,
     ...currentData,
     years: mergedYears,
+    ageReferenceYear:
+      typeof source.ageReferenceYear === 'number'
+        ? source.ageReferenceYear
+        : currentData.ageReferenceYear || 2017,
     pins: {
       admin: source.pins?.admin || currentData.pins?.admin || INITIAL_APP_DATA.pins.admin,
       leader: source.pins?.leader || currentData.pins?.leader || INITIAL_APP_DATA.pins.leader,

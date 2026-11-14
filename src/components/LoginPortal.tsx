@@ -33,7 +33,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   onLoginSuccess
 }) => {
   const [activeRole, setActiveRole] = useState<Role | 'chapel_leader' | null>(null);
-  const [selectedTeacherId, setSelectedTeacherId] = useState<number>(teachers[0]?.id || 1);
   const [selectedChapel, setSelectedChapel] = useState<string>(chapelList[0] || DEFAULT_CHAPELS[0]);
   const [pinInput, setPinInput] = useState<string>('');
   const [showPin, setShowPin] = useState<boolean>(false);
@@ -45,9 +44,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     setShowPin(false);
     setErrorMsg('');
 
-    if (role === 'teacher' && teachers.length > 0) {
-      setSelectedTeacherId(teachers[0].id);
-    }
     if (role === 'chapel_leader' && chapelList.length > 0) {
       setSelectedChapel(chapelList[0]);
     }
@@ -101,15 +97,13 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     }
 
     if (activeRole === 'teacher') {
-      const teacher = teachers.find((t) => t.id === Number(selectedTeacherId)) || teachers[0];
-      if (!teacher) {
-        setErrorMsg('እባክዎ መምህር ይምረጡ!');
-        return;
-      }
-      if (entered === String(teacher.pin || '').trim()) {
-        onLoginSuccess('teacher', teacher);
+      const matchedTeacher = teachers.find(
+        (t) => String(t.pin || '').trim() !== '' && String(t.pin || '').trim() === entered
+      );
+      if (matchedTeacher) {
+        onLoginSuccess('teacher', matchedTeacher);
       } else {
-        setErrorMsg(`የ${teacher.name} የግል መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ አስተባባሪውን ይጠይቁ።`);
+        setErrorMsg('ያስገቡት የመምህር የምስጥር ቁጥር (PIN) ትክክል አይደለም! እባክዎ ትክክለኛውን ቁልፍ ያስገቡ ወይም አስተባባሪውን ይጠይቁ።');
       }
     }
   };
@@ -144,7 +138,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     }
     return {
       title: 'የመማሪያ ክፍል መምህራን መግቢያ',
-      subtitle: 'ስምዎን ይምረጡና በአስተባባሪ የተሰጠዎትን የግል ቁልፍ (PIN) ያስገቡ',
+      subtitle: 'ስም መምረጥ ሳያስፈልግ በአስተባባሪ የተሰጠዎትን የግል ምስጥር ቁጥር (PIN) ብቻ ያስገቡ',
       iconBg: 'bg-indigo-50 text-indigo-800 border-indigo-200',
       btnBg: 'bg-indigo-900 hover:bg-indigo-800',
       icon: <GraduationCap className="w-6 h-6" />
@@ -240,7 +234,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 </div>
                 <h3 className="text-lg font-extrabold text-slate-900 mb-1.5">የመማሪያ ክፍል መምህራን</h3>
                 <p className="text-slate-600 text-xs leading-relaxed mb-4">
-                  ለተመደቡበት ክፍል ውጤትና የተማሪ አተንዳንስ በግል መግቢያ ቁልፍ መቆጣጠሪያ።
+                  ስም መምረጥ ሳያስፈልግ የራስዎን የግል ምስጥር ቁጥር (PIN) በማስገባት ብቻ የክፍልዎን መረጃ ያስተዳድሩ።
                 </p>
               </div>
               <button
@@ -248,7 +242,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-2.5 px-3 text-xs rounded-xl shadow transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <KeyRound className="w-3.5 h-3.5 text-indigo-200" />
-                <span>በመምህር ቁልፍ ግባ</span>
+                <span>በምስጥር ቁጥር (PIN) ግባ</span>
               </button>
             </div>
           </div>
@@ -320,32 +314,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               </div>
             )}
 
-            {/* Teacher Selector */}
-            {activeRole === 'teacher' && (
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  1) የመምህር ስም ይምረጡ፦
-                </label>
-                <select
-                  value={selectedTeacherId}
-                  onChange={(e) => {
-                    setSelectedTeacherId(Number(e.target.value));
-                    setErrorMsg('');
-                  }}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white transition"
-                >
-                  {[...teachers]
-                    .sort((a, b) => a.name.localeCompare(b.name, 'am'))
-                    .map((t, idx) => (
-                      <option key={`teach_opt_${t.id}_${idx}`} value={t.id}>
-                        {t.name} ({t.assignedClass}{t.assignedSubject ? ` - ${t.assignedSubject}` : ''})
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
-
-            {/* PIN Input (Required for ALL roles) */}
+            {/* PIN Input (Required for ALL roles; Teachers log in strictly via personal PIN) */}
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-blue-800" />
@@ -353,7 +322,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                   {activeRole === 'chapel_leader'
                     ? `የ${selectedChapel} መግቢያ ቁልፍ (PIN) ያስገቡ፦`
                     : activeRole === 'teacher'
-                    ? 'የመምህር የግል መግቢያ ቁልፍ (PIN) ያስገቡ፦'
+                    ? 'የመምህር የግል ምስጥር ቁጥር (PIN) ያስገቡ፦'
                     : 'የመግቢያ ቁልፍ (PIN) ያስገቡ፦'}
                 </span>
               </label>
@@ -365,7 +334,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     setPinInput(e.target.value);
                     if (errorMsg) setErrorMsg('');
                   }}
-                  placeholder="የመግቢያ ቁልፍ (PIN) ይጻፉ..."
+                  placeholder={activeRole === 'teacher' ? 'የግል ምስጥር ቁጥር (PIN) ያስገቡ...' : 'የመግቢያ ቁልፍ (PIN) ይጻፉ...'}
                   autoFocus
                   className="w-full px-4 py-3 pr-11 border border-slate-300 rounded-xl text-sm font-mono font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white"
                 />
@@ -378,6 +347,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                   {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              {activeRole === 'teacher' && (
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  ምስጥር ቁጥርዎን ሲያስገቡ ወደ ተመደቡበት ክፍል በቀጥታ ይገባሉ።
+                </p>
+              )}
             </div>
 
             <button

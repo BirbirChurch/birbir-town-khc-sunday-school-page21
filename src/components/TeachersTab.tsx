@@ -77,6 +77,32 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     (t.assignedSubject && t.assignedSubject.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  const duplicateTeacherPins = useMemo(() => {
+    const counts = new Map<string, number>();
+    teachers.forEach((t) => {
+      const p = String(t.pin || '').trim();
+      if (p) counts.set(p, (counts.get(p) || 0) + 1);
+    });
+    const dups = new Set<string>();
+    counts.forEach((c, p) => {
+      if (c > 1) dups.add(p);
+    });
+    return dups;
+  }, [teachers]);
+
+  const generateUniqueTeacherPin = (extraUsed?: Set<string>) => {
+    const used = new Set<string>(extraUsed || []);
+    teachers.forEach((t) => {
+      const p = String(t.pin || '').trim();
+      if (p) used.add(p);
+    });
+    for (let i = 0; i < 100; i++) {
+      const candidate = String(Math.floor(1000 + Math.random() * 9000));
+      if (!used.has(candidate)) return candidate;
+    }
+    return String(Math.floor(10000 + Math.random() * 90000));
+  };
+
   const handleNameBlur = (teacher: Teacher, newName: string) => {
     if (newName.trim() && newName !== teacher.name) {
       onUpdateTeacher({ ...teacher, name: newName.trim() });
@@ -119,7 +145,12 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       alert('እባክዎን የመምህሩን ሙሉ ስም ያስገቡ!');
       return;
     }
-    const finalPin = pin.trim() || Math.floor(1000 + Math.random() * 9000).toString();
+    const candidatePin = pin.trim();
+    if (candidatePin && teachers.some((t) => String(t.pin || '').trim() === candidatePin)) {
+      alert(`ይህ PIN (${candidatePin}) ለሌላ መምህር ተሰጥቷል! መምህራን በPIN ብቻ ስለሚገቡ እባክዎን የተለየ ቁጥር ያስገቡ።`);
+      return;
+    }
+    const finalPin = candidatePin || generateUniqueTeacherPin();
     onAddTeacher({
       name: name.trim(),
       assignedClass,
@@ -154,6 +185,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
 
       let count = 0;
       const startIdx = (rows[0][0]?.includes('ተ.ቁ') || rows[0][1]?.includes('ስም')) ? 1 : 0;
+      const assignedPins = new Set<string>();
 
       for (let i = startIdx; i < rows.length; i++) {
         const cols = rows[i];
@@ -163,7 +195,12 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
         const classVal = cols[2] || classList[0];
         const subjectVal = cols[3] || 'አጠቃላይ';
         const phoneVal = cols[4] || '';
-        const pinVal = cols[5] || Math.floor(1000 + Math.random() * 9000).toString();
+        const rawPin = (cols[5] || '').trim();
+        const pinVal =
+          rawPin && !assignedPins.has(rawPin) && !teachers.some((t) => String(t.pin || '').trim() === rawPin)
+            ? rawPin
+            : generateUniqueTeacherPin(assignedPins);
+        assignedPins.add(pinVal);
 
         if (nameVal.trim()) {
           onAddTeacher({
@@ -171,7 +208,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
             assignedClass: classVal.trim(),
             assignedSubject: subjectVal.trim(),
             phone: phoneVal.trim(),
-            pin: pinVal.trim(),
+            pin: pinVal,
             order: teachers.length + count + 1
           });
           count++;
@@ -382,12 +419,23 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                     {/* PIN */}
                     <td className="py-2.5 px-3 border-r border-slate-200 font-mono">
                       {isAdmin ? (
-                        <input
-                          type={showPins ? 'text' : 'password'}
-                          value={t.pin}
-                          onChange={(e) => handlePinChange(t, e.target.value)}
-                          className="w-20 text-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-teal-600"
-                        />
+                        <div className="flex flex-col items-center gap-0.5">
+                          <input
+                            type={showPins ? 'text' : 'password'}
+                            value={t.pin}
+                            onChange={(e) => handlePinChange(t, e.target.value)}
+                            className={`w-20 text-center bg-slate-50 border rounded-lg px-2 py-1 text-xs font-mono font-bold focus:outline-none focus:ring-1 ${
+                              duplicateTeacherPins.has(String(t.pin || '').trim()) || !String(t.pin || '').trim()
+                                ? 'border-rose-400 bg-rose-50 text-rose-800 focus:ring-rose-500'
+                                : 'border-slate-200 focus:ring-teal-600'
+                            }`}
+                          />
+                          {(duplicateTeacherPins.has(String(t.pin || '').trim()) || !String(t.pin || '').trim()) && (
+                            <span className="text-[9px] font-sans font-bold text-rose-700">
+                              የተደጋገመ/ባዶ!
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-slate-400">••••</span>
                       )}

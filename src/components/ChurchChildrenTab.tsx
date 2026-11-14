@@ -36,6 +36,8 @@ import { ChurchChild, Student, Role } from '../types';
 import { downloadXLSX } from '../utils/csv';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { NameCrossReferenceModal } from './NameCrossReferenceModal';
+import { AnnualAgeIncrementModal } from './AnnualAgeIncrementModal';
+import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
 import {
   matchesAmharicSearch,
   parseChurchWorkbookAllSheets,
@@ -44,6 +46,7 @@ import {
 
 interface ChurchChildrenTabProps {
   currentYear: string;
+  ageReferenceYear?: number;
   classList: string[];
   churchChildren: ChurchChild[];
   chapelList?: string[];
@@ -57,6 +60,7 @@ interface ChurchChildrenTabProps {
   onImportMissingStudentsToChurchChildren: (
     students: { name: string; gender: string; age: number | string; className: string; chapel?: string; phone?: string }[]
   ) => void;
+  onBulkIncrementAges?: (options: Omit<BulkAgeIncrementOptions, 'targetAcademicYear'>) => BulkAgeIncrementStats | null;
   currentUserRole: Role | null;
   loggedInChapel?: string | null;
   onDeleteChapel?: (chapelName: string) => void;
@@ -515,6 +519,7 @@ type AgeFilter = 'all' | '0-3' | '4-6' | '7-9' | '10-12' | '13-14' | '15+';
 
 export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   currentYear,
+  ageReferenceYear = 2017,
   classList,
   churchChildren = [],
   chapelList = DEFAULT_CHAPELS,
@@ -526,6 +531,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   onBatchAddChildren,
   onEnrollToSundaySchool,
   onImportMissingStudentsToChurchChildren,
+  onBulkIncrementAges,
   currentUserRole,
   loggedInChapel,
   onDeleteChapel
@@ -563,6 +569,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   const [selectedEnrollClass, setSelectedEnrollClass] = useState<string>(classList[0] || 'ማቆያ ክፍል');
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState<boolean>(false);
+  const [isAgeModalOpen, setIsAgeModalOpen] = useState<boolean>(false);
   const [clearScope, setClearScope] = useState<'all' | 'selected'>(officialLoggedInChapel ? 'selected' : 'all');
   const [clearSelectedChapels, setClearSelectedChapels] = useState<string[]>(
     officialLoggedInChapel ? [officialLoggedInChapel] : []
@@ -612,7 +619,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   const [importColPhone, setImportColPhone] = useState<number>(-1);
   const [importColResidence, setImportColResidence] = useState<number>(-1);
   const [importDefaultChapel, setImportDefaultChapel] = useState<string>(chapelList[0] || 'ኤልሮኢ ቻፕል');
-  const [importRefYear, setImportRefYear] = useState<number>(parseInt(currentYear, 10) || 2018);
+  const [importRefYear, setImportRefYear] = useState<number>(ageReferenceYear || parseInt(currentYear, 10) || 2017);
   const [importAgeMode, setImportAgeMode] = useState<'auto' | 'direct' | 'birthyear'>('auto');
   const [isColumnMappingOpen, setIsColumnMappingOpen] = useState<boolean>(false);
 
@@ -1402,6 +1409,18 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               <GraduationCap className="w-4 h-4 text-indigo-300" />
               <span>⚖️ በስም አስተያይ (ማመሳሰያ)</span>
             </button>
+
+            {onBulkIncrementAges && !officialLoggedInChapel && (
+              <button
+                type="button"
+                onClick={() => setIsAgeModalOpen(true)}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm border border-amber-300 cursor-pointer"
+                title="የ2017 ዓ/ም ልጆች እና አባላት ላይ በየዓመቱ ዕድሜ በአንዴ መጨመሪያ"
+              >
+                <Calendar className="w-4 h-4 text-slate-900" />
+                <span>📅 ዓመታዊ ዕድሜ ጨምር ({ageReferenceYear} ዓ/ም)</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -3509,6 +3528,17 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
           onEnrollToSundaySchool(item as ChurchChild, targetClass);
         }}
       />
+
+      {onBulkIncrementAges && (
+        <AnnualAgeIncrementModal
+          isOpen={isAgeModalOpen}
+          onClose={() => setIsAgeModalOpen(false)}
+          currentYear={currentYear}
+          ageReferenceYear={ageReferenceYear}
+          totalChildrenCount={churchChildren.length}
+          onApplyBulkIncrement={onBulkIncrementAges}
+        />
+      )}
     </div>
   );
 };
