@@ -36,6 +36,7 @@ import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS }
 import { subscribeToAppData, syncAppDataToFirebase, saveToLocalStorage, countStudentsInData, exportBackupJSON, importBackupJSON } from './services/firebase';
 import { generateUniqueId, sanitizeAndDeduplicateAppData } from './utils/idGenerator';
 import { normalizeAmharicSearchText } from './utils/churchExcelParser';
+import { assignSequentialCodesAndSortMembers, getNextMemberCodeForChapel } from './utils/memberCodeGenerator';
 import {
   applyBulkAgeIncrementToAppData,
   BulkAgeIncrementOptions,
@@ -796,6 +797,8 @@ export default function App() {
             const cur = existingList[existingIdx];
             existingList[existingIdx] = {
               ...cur,
+              memberCode: cur.memberCode || incoming.memberCode,
+              familyCode: cur.familyCode || incoming.familyCode,
               gender: cur.gender || incoming.gender,
               age:
                 cur.age !== undefined && cur.age !== null && cur.age !== ''
@@ -936,7 +939,7 @@ export default function App() {
     );
   };
 
-  // General Church Members handlers (strictly locked to 10 official chapels & scoped when loggedInChapel is active)
+  // General Church Members handlers (strictly locked to 10 official chapels, auto-coded & chapel-ordered)
   const handleBatchAddChurchMembers = (
     members: ChurchMember[],
     mode: 'append' | 'replace' = 'append',
@@ -960,23 +963,24 @@ export default function App() {
             const others = (prev.churchMembers || []).filter(
               (m) => mapToOfficialChapel(m.chapel || '') !== targetChapel
             );
+            const combined = assignSequentialCodesAndSortMembers([...others, ...sanitizedMembers]);
             return {
               ...prev,
               chapels: DEFAULT_CHAPELS,
-              churchMembers: [...others, ...sanitizedMembers]
+              churchMembers: combined
             };
           }
           return {
             ...prev,
             chapels: DEFAULT_CHAPELS,
             ageReferenceYear: baselineYear ?? prev.ageReferenceYear ?? 2017,
-            churchMembers: sanitizedMembers
+            churchMembers: assignSequentialCodesAndSortMembers(sanitizedMembers)
           };
         }
         return {
           ...prev,
           chapels: DEFAULT_CHAPELS,
-          churchMembers: [...(prev.churchMembers || []), ...sanitizedMembers]
+          churchMembers: assignSequentialCodesAndSortMembers([...(prev.churchMembers || []), ...sanitizedMembers])
         };
       },
       { immediate: true }
@@ -1012,18 +1016,31 @@ export default function App() {
     [appData, currentYear, updateAppData]
   );
 
-  const handleAddChurchMember = (newMember: Omit<ChurchMember, 'id'>) => {
+  const handleAddChurchMember = (newMember: Omit<ChurchMember, 'id'>): ChurchMember => {
     const enforcedChapel = loggedInChapel
       ? mapToOfficialChapel(loggedInChapel)
       : mapToOfficialChapel(newMember.chapel || '');
-    const mWithId: ChurchMember = { ...newMember, chapel: enforcedChapel, id: generateUniqueId() };
+    const currentList = (latestDataRef.current || appData)?.churchMembers || [];
+    const assignedCode =
+      (newMember.memberCode && newMember.memberCode.trim()) ||
+      getNextMemberCodeForChapel(currentList, enforcedChapel);
+
+    const mWithId: ChurchMember = {
+      ...newMember,
+      memberCode: assignedCode,
+      chapel: enforcedChapel,
+      id: generateUniqueId()
+    };
+
     updateAppData(
       (prev) => ({
         ...prev,
-        churchMembers: [...(prev.churchMembers || []), mWithId]
+        churchMembers: assignSequentialCodesAndSortMembers([...(prev.churchMembers || []), mWithId])
       }),
       { immediate: true }
     );
+
+    return mWithId;
   };
 
   const handleUpdateChurchMember = (updatedMember: ChurchMember) => {
@@ -1033,13 +1050,20 @@ export default function App() {
 
     updateAppData((prev) => ({
       ...prev,
-      churchMembers: (prev.churchMembers || []).map((m) => {
-        if (m.id !== updatedMember.id) return m;
-        if (loggedInChapel && mapToOfficialChapel(m.chapel || '') !== enforcedChapel) {
-          return m;
-        }
-        return { ...updatedMember, chapel: enforcedChapel };
-      })
+      churchMembers: assignSequentialCodesAndSortMembers(
+        (prev.churchMembers || []).map((m) => {
+          if (m.id !== updatedMember.id) return m;
+          if (loggedInChapel && mapToOfficialChapel(m.chapel || '') !== enforcedChapel) {
+            return m;
+          }
+          const chapelChanged = mapToOfficialChapel(m.chapel || '') !== enforcedChapel;
+          return {
+            ...updatedMember,
+            chapel: enforcedChapel,
+            memberCode: chapelChanged ? undefined : (updatedMember.memberCode || m.memberCode)
+          };
+        })
+      )
     }));
   };
 
@@ -1259,6 +1283,8 @@ export default function App() {
             leaderPin={appData.pins?.leader || '5678'}
             chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
             chapelList={appData.chapels || DEFAULT_CHAPELS}
+            churchMembers={appData.churchMembers || []}
+            onAddChurchMember={handleAddChurchMember}
             onLoginSuccess={handleLoginSuccess}
           />
         </div>

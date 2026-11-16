@@ -5,6 +5,7 @@
 
 import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild } from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
+import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
 
 let _lastUniqueId = Math.max(Date.now(), 1792849000000);
 
@@ -150,8 +151,8 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       })
     : [];
 
-  // 9. Sanitize churchMembers
-  const sanitizedChurchMembers = Array.isArray(data.churchMembers)
+  // 9. Sanitize churchMembers (unique IDs + sequential chapel codes & chapel ordering)
+  let sanitizedChurchMembers = Array.isArray(data.churchMembers)
     ? data.churchMembers.map((m) => {
         const checkedId = ensureUniqueId(m?.id);
         if (checkedId !== m?.id) {
@@ -161,6 +162,11 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
         return m;
       })
     : [];
+
+  if (membersNeedCodeOrOrderSync(sanitizedChurchMembers)) {
+    sanitizedChurchMembers = assignSequentialCodesAndSortMembers(sanitizedChurchMembers);
+    modified = true;
+  }
 
   // 10. Ensure pins & chapel PINs exist
   const existingChapelPins = data.pins?.chapels || {};

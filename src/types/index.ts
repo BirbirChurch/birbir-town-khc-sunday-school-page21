@@ -97,6 +97,8 @@ export interface WeekDatesData {
 
 export interface ChurchChild {
   id: number;
+  memberCode?: string; // የአባል መለያ ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001)
+  familyCode?: string; // የቤተሰብ መለያ ኮድ
   name: string; // የልጁ ሙሉ ስም
   gender: 'ወ' | 'ሴ' | string; // ጾታ
   age: number | string; // ዕድሜ
@@ -114,6 +116,8 @@ export interface ChurchChild {
 
 export interface ChurchMember {
   id: number;
+  memberCode?: string; // የአባል መለያ ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001)
+  familyCode?: string; // የቤተሰብ መለያ ኮድ (በኮዱ የገቡ የቤተሰብ አባላትን ለማገናኘት)
   name: string; // የአባል/የቤተሰብ ሙሉ ስም
   gender?: string; // ጾታ
   age?: number | string; // ዕድሜ

@@ -20,7 +20,10 @@ import {
   Filter,
   Check,
   GraduationCap,
-  AlertCircle
+  AlertCircle,
+  KeyRound,
+  Copy,
+  Hash
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ChurchMember, ChurchChild, Role, Student } from '../types';
@@ -40,6 +43,11 @@ import {
   normalizeAmharicSearchText,
   parseChurchWorkbookAllSheets
 } from '../utils/churchExcelParser';
+import {
+  findMemberByEnteredCode,
+  getNextMemberCodeForChapel,
+  normalizeCodeForLookup
+} from '../utils/memberCodeGenerator';
 
 interface ChurchMasterTabProps {
   currentYear: string;
@@ -50,7 +58,7 @@ interface ChurchMasterTabProps {
   studentsByClass?: { [className: string]: Student[] };
   classList?: string[];
   onBatchAddMembers: (members: ChurchMember[], mode?: 'append' | 'replace', baselineYear?: number) => void;
-  onAddMember: (member: Omit<ChurchMember, 'id'>) => void;
+  onAddMember: (member: Omit<ChurchMember, 'id'>) => ChurchMember | void;
   onUpdateMember: (member: ChurchMember) => void;
   onDeleteMember: (id: number) => void;
   onClearChurchMembers: () => void;
@@ -110,6 +118,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
   // Add / Edit Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [addMode, setAddMode] = useState<'new' | 'by_code'>('new');
+  const [lookupCodeInput, setLookupCodeInput] = useState<string>('');
   const [editingMember, setEditingMember] = useState<ChurchMember | null>(null);
   const [formName, setFormName] = useState<string>('');
   const [formGender, setFormGender] = useState<string>('ወ');
@@ -120,6 +130,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const [formParent, setFormParent] = useState<string>('');
   const [formPhone, setFormPhone] = useState<string>('');
   const [formResidence, setFormResidence] = useState<string>('');
+  const [formRelation, setFormRelation] = useState<string>('');
+  const [formFamilyCode, setFormFamilyCode] = useState<string>('');
+  const [copiedCodeId, setCopiedCodeId] = useState<number | null>(null);
 
   React.useEffect(() => {
     if (officialLoggedInChapel) {
@@ -258,11 +271,14 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       if (searchTerm.trim()) {
         const matchedSearch = matchesAmharicSearch(
           searchTerm,
+          m.memberCode,
+          m.familyCode,
           m.name,
           m.parentName,
           m.phone,
           m.residence,
           m.chapel,
+          m.relationToHead,
           m.matchedStudent?.name,
           m.enrolledClass,
           m.educationLevel,
@@ -354,6 +370,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
           (m.parentName ? memberPhoneByNormName.get(normalizeAmharicSearchText(m.parentName)) || '' : '');
 
         childrenToExtract.push({
+          memberCode: m.memberCode || undefined,
+          familyCode: m.familyCode || undefined,
           name: m.name,
           gender: m.gender === 'ሴ' || m.gender === 'ሴት' ? 'ሴ' : 'ወ',
           age: ageNum,
@@ -454,6 +472,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const handleExportExcel = () => {
     const headers = [
       'ተ.ቁ',
+      'መለያ ኮድ',
+      'የቤተሰብ ኮድ',
       'የአባሉ/የልጁ ሙሉ ስም',
       'ጾታ',
       'ዕድሜ',
@@ -479,6 +499,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
       return [
         idx + 1,
+        m.memberCode || '-',
+        m.familyCode || '-',
         m.name,
         m.gender || '-',
         ageDisplay,
@@ -500,8 +522,67 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     XLSX.writeFile(wb, `የብርብር_ቤተክርስቲያን_አጠቃላይ_መረጃ_ቋት_${currentYear}.xlsx`);
   };
 
+  const matchedCodeMember = useMemo(() => {
+    if (!lookupCodeInput.trim()) return null;
+    return findMemberByEnteredCode(effectiveMembers, lookupCodeInput, officialLoggedInChapel);
+  }, [effectiveMembers, lookupCodeInput, officialLoggedInChapel]);
+
+  const matchedFamilyMembers = useMemo(() => {
+    if (!matchedCodeMember) return [];
+    const targetFamilyKey = normalizeCodeForLookup(matchedCodeMember.familyCode || matchedCodeMember.memberCode);
+    if (!targetFamilyKey) return [matchedCodeMember];
+    return effectiveMembers.filter(
+      (m) =>
+        normalizeCodeForLookup(m.familyCode) === targetFamilyKey ||
+        normalizeCodeForLookup(m.memberCode) === targetFamilyKey
+    );
+  }, [matchedCodeMember, effectiveMembers]);
+
+  const codeLookupSuggestions = useMemo(() => {
+    const q = lookupCodeInput.trim();
+    if (!q || matchedCodeMember) return [];
+    const normQ = normalizeCodeForLookup(q);
+    return effectiveMembers
+      .filter(
+        (m) =>
+          (m.memberCode && normalizeCodeForLookup(m.memberCode).includes(normQ)) ||
+          matchesAmharicSearch(q, m.name)
+      )
+      .slice(0, 6);
+  }, [effectiveMembers, lookupCodeInput, matchedCodeMember]);
+
+  const activeTargetChapelForForm = useMemo(() => {
+    if (officialLoggedInChapel) return officialLoggedInChapel;
+    if (!editingMember && addMode === 'by_code' && matchedCodeMember) {
+      return mapToOfficialChapel(matchedCodeMember.chapel || '');
+    }
+    return mapToOfficialChapel(formChapel);
+  }, [officialLoggedInChapel, editingMember, addMode, matchedCodeMember, formChapel]);
+
+  const nextAutoCodePreview = useMemo(() => {
+    return getNextMemberCodeForChapel(churchMembers, activeTargetChapelForForm);
+  }, [churchMembers, activeTargetChapelForForm]);
+
+  const handleCopyMemberCode = (id: number, code: string) => {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 1800);
+  };
+
+  const applyMatchedFamilyToForm = (matched: ChurchMember) => {
+    const officialCh = officialLoggedInChapel || mapToOfficialChapel(matched.chapel || '');
+    setFormChapel(officialCh);
+    setFormParent(matched.parentName || matched.name || '');
+    setFormPhone(matched.phone || '');
+    setFormResidence(matched.residence || '');
+    setFormFamilyCode(matched.familyCode || matched.memberCode || '');
+  };
+
   const handleOpenAddModal = () => {
     setEditingMember(null);
+    setAddMode('new');
+    setLookupCodeInput('');
     setFormName('');
     setFormGender('ወ');
     setFormAge('30');
@@ -511,11 +592,44 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormParent('');
     setFormPhone('');
     setFormResidence('');
+    setFormRelation('');
+    setFormFamilyCode('');
+    setIsAddModalOpen(true);
+  };
+
+  const handleOpenAddByCodeModal = (initialCode?: string) => {
+    setEditingMember(null);
+    setAddMode('by_code');
+    const codeStr = (initialCode || '').trim();
+    setLookupCodeInput(codeStr);
+    setFormName('');
+    setFormGender('ወ');
+    setFormAge('20');
+    setFormEducationLevel('');
+    setFormOccupation('');
+    setFormChapel(officialLoggedInChapel || DEFAULT_CHAPELS[0]);
+    setFormParent('');
+    setFormPhone('');
+    setFormResidence('');
+    setFormRelation('የቤተሰብ አባል');
+    setFormFamilyCode('');
+    if (codeStr) {
+      const matched = findMemberByEnteredCode(effectiveMembers, codeStr, officialLoggedInChapel);
+      if (matched) {
+        setFormChapel(officialLoggedInChapel || mapToOfficialChapel(matched.chapel || ''));
+        setFormParent(matched.parentName || matched.name || '');
+        setFormPhone(matched.phone || '');
+        setFormResidence(matched.residence || '');
+        setFormFamilyCode(matched.familyCode || matched.memberCode || '');
+      }
+    }
     setIsAddModalOpen(true);
   };
 
   const handleOpenEditModal = (m: ChurchMember) => {
     setEditingMember(m);
+    setAddMode('new');
+    setLookupCodeInput('');
     setFormName(m.name);
     setFormGender(m.gender || 'ወ');
     setFormAge(m.age !== undefined && m.age !== null && String(m.age).trim() !== '' ? String(m.age) : '30');
@@ -525,6 +639,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormParent(m.parentName || '');
     setFormPhone(m.phone || '');
     setFormResidence(m.residence || '');
+    setFormRelation(m.relationToHead || '');
+    setFormFamilyCode(m.familyCode || '');
     setIsAddModalOpen(true);
   };
 
@@ -535,7 +651,38 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       return;
     }
 
-    const officialChapel = officialLoggedInChapel || mapToOfficialChapel(formChapel);
+    if (!editingMember && addMode === 'by_code' && !matchedCodeMember) {
+      alert('እባክዎን ትክክለኛ የነባር አባል/ቤተሰብ ኮድ (ለምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001) ያስገቡና ቤተሰቡ መገኘቱን ያረጋግጡ!');
+      return;
+    }
+
+    const officialChapel =
+      officialLoggedInChapel ||
+      (!editingMember && addMode === 'by_code' && matchedCodeMember
+        ? mapToOfficialChapel(matchedCodeMember.chapel || '')
+        : mapToOfficialChapel(formChapel));
+
+    const resolvedFamilyCode =
+      !editingMember && addMode === 'by_code' && matchedCodeMember
+        ? matchedCodeMember.familyCode || matchedCodeMember.memberCode
+        : formFamilyCode.trim() || undefined;
+
+    const resolvedParent =
+      formParent.trim() ||
+      (!editingMember && addMode === 'by_code' && matchedCodeMember
+        ? matchedCodeMember.parentName || matchedCodeMember.name
+        : '') ||
+      undefined;
+
+    const resolvedPhone =
+      formPhone.trim() ||
+      (!editingMember && addMode === 'by_code' && matchedCodeMember ? matchedCodeMember.phone || '' : '') ||
+      undefined;
+
+    const resolvedResidence =
+      formResidence.trim() ||
+      (!editingMember && addMode === 'by_code' && matchedCodeMember ? matchedCodeMember.residence || '' : '') ||
+      undefined;
 
     const parsedFormAge = parseInt(formAge, 10);
     const payload: Omit<ChurchMember, 'id'> = {
@@ -545,9 +692,12 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       educationLevel: formEducationLevel.trim() || undefined,
       occupation: formOccupation.trim() || undefined,
       chapel: officialChapel,
-      parentName: formParent.trim() || undefined,
-      phone: formPhone.trim() || undefined,
-      residence: formResidence.trim() || undefined,
+      parentName: resolvedParent,
+      phone: resolvedPhone,
+      residence: resolvedResidence,
+      relationToHead: formRelation.trim() || undefined,
+      familyCode: resolvedFamilyCode,
+      memberCode: editingMember?.memberCode,
       registeredDate: editingMember?.registeredDate || new Date().toISOString().split('T')[0]
     };
 
@@ -557,7 +707,16 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         id: editingMember.id
       });
     } else {
-      onAddMember(payload);
+      const created = onAddMember(payload);
+      const assignedCode =
+        (created && 'memberCode' in created && created.memberCode) ||
+        getNextMemberCodeForChapel(churchMembers, officialChapel);
+      setExtractedSuccessMsg(
+        `✓ "${payload.name}" በስኬት ተመዝግቧል! የተሰጠው ኮድ፦ ${assignedCode}${
+          resolvedFamilyCode ? ` (የቤተሰብ ኮድ፦ ${resolvedFamilyCode})` : ''
+        }`
+      );
+      setTimeout(() => setExtractedSuccessMsg(''), 8000);
     }
 
     setIsAddModalOpen(false);
@@ -662,6 +821,16 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             >
               <GraduationCap className="w-4 h-4 text-indigo-200" />
               <span>⚖️ በስም አስተያይ (ማመሳሰያ)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleOpenAddByCodeModal()}
+              className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs px-3.5 py-2.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm border border-cyan-300"
+              title="በነባር አባል/ቤተሰብ ኮድ ገብቶ አዲስ የቤተሰብ አባል መጨመሪያ"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>🔑 በኮድ የቤተሰብ አባል ጨምር</span>
             </button>
 
             <button
@@ -912,7 +1081,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="የልጅ ወይም አባል ስም፣ ወላጅ፣ ስልክ ፈልግ..."
+              placeholder="በኮድ (ብከቃሕቤክ...)፣ በስም፣ ወላጅ፣ ስልክ ፈልግ..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white"
@@ -1019,6 +1188,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                     <thead>
                       <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
                         <th className="py-2.5 px-3 text-center w-10">ተ.ቁ</th>
+                        <th className="py-2.5 px-3 min-w-[165px]">መለያ ኮድ</th>
                         <th className="py-2.5 px-4 font-extrabold text-[12pt] text-slate-900 min-w-[180px]">ሙሉ ስም</th>
                         <th className="py-2.5 px-3 text-center w-14">ጾታ</th>
                         <th className="py-2.5 px-3 text-center w-14">ዕድሜ</th>
@@ -1026,13 +1196,13 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                         <th className="py-2.5 px-3 min-w-[110px]">የስራ ዓይነት</th>
                         <th className="py-2.5 px-3 min-w-[130px]">የወላጅ/አሳዳጊ ስም</th>
                         <th className="py-2.5 px-3 min-w-[130px]">የወላጅ/አባል ስልክ</th>
-                        <th className="py-2.5 px-3 text-center w-20">እርምጃዎች</th>
+                        <th className="py-2.5 px-3 text-center w-28">እርምጃዎች</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {chMembers.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="py-6 text-center text-slate-400 font-medium">
+                          <td colSpan={10} className="py-6 text-center text-slate-400 font-medium">
                             በዚህ ቻፕል እስካሁን የተመዘገበ አባል የለም።
                           </td>
                         </tr>
@@ -1045,13 +1215,46 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                           return (
                             <tr key={`grp_mem_${m.id}`} className="hover:bg-blue-50/30 transition-colors">
                               <td className="py-2 px-3 text-center font-bold text-slate-500 bg-slate-50">{idx + 1}</td>
-                              <td className="py-2 px-4 font-bold text-[12pt] text-slate-900 flex items-center gap-1.5">
-                                <span>{m.name}</span>
-                                {isChild && (
-                                  <span className="bg-amber-100 text-amber-900 font-black text-[9px] px-1.5 py-0.2 rounded-full border border-amber-300">
-                                    ልጅ (0-14)
-                                  </span>
+                              <td className="py-2 px-3 font-mono text-[11px]">
+                                {m.memberCode ? (
+                                  <div className="flex flex-col gap-0.5 items-start">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyMemberCode(m.id, m.memberCode!)}
+                                      className="inline-flex items-center gap-1 font-bold text-indigo-950 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200 hover:bg-indigo-100 transition cursor-pointer"
+                                      title="ኮዱን ለመቅዳት ይጫኑ"
+                                    >
+                                      <span>{m.memberCode}</span>
+                                      {copiedCodeId === m.id ? (
+                                        <Check className="w-3 h-3 text-emerald-600" />
+                                      ) : (
+                                        <Copy className="w-3 h-3 text-indigo-400" />
+                                      )}
+                                    </button>
+                                    {m.familyCode && m.familyCode !== m.memberCode && (
+                                      <span className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 px-1.5 py-0.2 rounded border border-cyan-200">
+                                        ቤተሰብ፦ {m.familyCode}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
                                 )}
+                              </td>
+                              <td className="py-2 px-4 font-bold text-[12pt] text-slate-900">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span>{m.name}</span>
+                                  {isChild && (
+                                    <span className="bg-amber-100 text-amber-900 font-black text-[9px] px-1.5 py-0.2 rounded-full border border-amber-300">
+                                      ልጅ (0-14)
+                                    </span>
+                                  )}
+                                  {m.relationToHead && (
+                                    <span className="bg-slate-100 text-slate-700 font-semibold text-[9px] px-1.5 py-0.2 rounded border border-slate-200">
+                                      {m.relationToHead}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="py-2 px-3 text-center font-bold">{m.gender || '-'}</td>
                               <td className="py-2 px-3 text-center font-bold text-slate-800">
@@ -1072,10 +1275,20 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                               </td>
                               <td className="py-2 px-3 text-center">
                                 <div className="flex items-center justify-center gap-1">
-                                  <button type="button" onClick={() => handleOpenEditModal(m)} className="p-1 text-slate-600 hover:bg-slate-100 rounded" title="አስተካክል">
+                                  {m.memberCode && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAddByCodeModal(m.memberCode)}
+                                      className="px-2 py-1 text-[10px] font-bold bg-cyan-50 text-cyan-900 hover:bg-cyan-100 rounded border border-cyan-200 cursor-pointer whitespace-nowrap"
+                                      title="በዚህ ኮድ አዲስ የቤተሰብ አባል ጨምር"
+                                    >
+                                      + ቤተሰብ
+                                    </button>
+                                  )}
+                                  <button type="button" onClick={() => handleOpenEditModal(m)} className="p-1 text-slate-600 hover:bg-slate-100 rounded cursor-pointer" title="አስተካክል">
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
-                                  <button type="button" onClick={() => { if (window.confirm(`"${m.name}" ይሰረዝ?`)) onDeleteMember(m.id); }} className="p-1 text-rose-500 hover:bg-rose-50 rounded" title="ሰርዝ">
+                                  <button type="button" onClick={() => { if (window.confirm(`"${m.name}" ይሰረዝ?`)) onDeleteMember(m.id); }} className="p-1 text-rose-500 hover:bg-rose-50 rounded cursor-pointer" title="ሰርዝ">
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
@@ -1098,6 +1311,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               <thead>
                 <tr className="bg-slate-900 text-white uppercase text-[11px] tracking-wider">
                   <th className="py-3 px-3 text-center w-12 font-bold">ተ.ቁ</th>
+                  <th className="py-3 px-3 font-bold min-w-[175px]">መለያ ኮድ</th>
                   <th className="py-3 px-4 font-extrabold text-[13pt] text-white min-w-[200px]">አባል/ልጅ ሙሉ ስም</th>
                   <th className="py-3 px-3 font-bold min-w-[130px]">ቻፕል (አጥቢያ)</th>
                   <th className="py-3 px-3 text-center font-bold w-16">ጾታ</th>
@@ -1107,13 +1321,13 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                   <th className="py-3 px-3 font-bold min-w-[150px]">የሰንበት ት/ቤት ሁኔታ</th>
                   <th className="py-3 px-3 font-bold min-w-[140px]">የወላጅ/የቤተሰብ መሪ ስም</th>
                   <th className="py-3 px-3 font-bold min-w-[140px]">የወላጅ/አባል ስልክ ቁጥር</th>
-                  <th className="py-3 px-3 text-center font-bold w-24">እርምጃዎች</th>
+                  <th className="py-3 px-3 text-center font-bold w-28">እርምጃዎች</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {paginatedMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-12 text-center text-slate-500">
+                    <td colSpan={12} className="py-12 text-center text-slate-500">
                       <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                       <p className="font-semibold text-sm">በአጠቃላይ መረጃ ቋቱ የተመዘገበ አባል የለም!</p>
                       <p className="text-xs text-slate-400 mt-1">የ10ሩንም ቻፕል ኤክሴል ፋይል በመጫን መረጃዎችን ያስገቡ።</p>
@@ -1129,13 +1343,46 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                     return (
                       <tr key={`master_mem_${m.id}`} className="hover:bg-blue-50/40 transition-colors">
                         <td className="py-2.5 px-3 text-center font-bold text-slate-500 bg-slate-50">{globalIdx}</td>
-                        <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 flex items-center gap-2">
-                          <span>{m.name}</span>
-                          {isChild && (
-                            <span className="bg-amber-100 text-amber-900 font-black text-[9px] px-2 py-0.5 rounded-full border border-amber-300">
-                              ልጅ (0-14)
-                            </span>
+                        <td className="py-2.5 px-3 font-mono text-[11px]">
+                          {m.memberCode ? (
+                            <div className="flex flex-col gap-0.5 items-start">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyMemberCode(m.id, m.memberCode!)}
+                                className="inline-flex items-center gap-1 font-bold text-indigo-950 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200 hover:bg-indigo-100 transition cursor-pointer whitespace-nowrap"
+                                title="ኮዱን ለመቅዳት ይጫኑ"
+                              >
+                                <span>{m.memberCode}</span>
+                                {copiedCodeId === m.id ? (
+                                  <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                                ) : (
+                                  <Copy className="w-3 h-3 text-indigo-400 shrink-0" />
+                                )}
+                              </button>
+                              {m.familyCode && m.familyCode !== m.memberCode && (
+                                <span className="text-[10px] font-semibold text-cyan-800 bg-cyan-50 px-1.5 py-0.2 rounded border border-cyan-200 whitespace-nowrap">
+                                  ቤተሰብ፦ {m.familyCode}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">-</span>
                           )}
+                        </td>
+                        <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span>{m.name}</span>
+                            {isChild && (
+                              <span className="bg-amber-100 text-amber-900 font-black text-[9px] px-2 py-0.5 rounded-full border border-amber-300">
+                                ልጅ (0-14)
+                              </span>
+                            )}
+                            {m.relationToHead && (
+                              <span className="bg-slate-100 text-slate-700 font-semibold text-[10px] px-1.5 py-0.5 rounded border border-slate-200">
+                                {m.relationToHead}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2.5 px-3 font-bold text-blue-900">{m.chapel || '-'}</td>
                         <td className="py-2.5 px-3 text-center font-bold">{m.gender || '-'}</td>
@@ -1172,6 +1419,16 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <div className="flex items-center justify-center gap-1">
+                            {m.memberCode && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAddByCodeModal(m.memberCode)}
+                                className="px-2 py-1 text-[10px] font-bold bg-cyan-50 text-cyan-900 hover:bg-cyan-100 rounded-lg border border-cyan-200 transition cursor-pointer whitespace-nowrap"
+                                title="በዚህ ኮድ አዲስ የቤተሰብ አባል ጨምር"
+                              >
+                                + ቤተሰብ
+                              </button>
+                            )}
                             <button type="button" onClick={() => handleOpenEditModal(m)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer" title="አስተካክል">
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -1245,18 +1502,156 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       {/* Add / Edit Member Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-blue-900" />
-                <span>{editingMember ? 'የአባል መረጃ ማስተካከያ' : 'አዲስ አባል መመዝገቢያ'}</span>
+                {addMode === 'by_code' && !editingMember ? (
+                  <KeyRound className="w-5 h-5 text-cyan-700" />
+                ) : (
+                  <UserPlus className="w-5 h-5 text-blue-900" />
+                )}
+                <span>
+                  {editingMember
+                    ? 'የአባል መረጃ ማስተካከያ'
+                    : addMode === 'by_code'
+                    ? 'በነባር ኮድ አዲስ የቤተሰብ አባል መጨመሪያ'
+                    : 'አዲስ አባል መመዝገቢያ (ቀጣይ ኮድ በራሱ ይሰጠዋል)'}
+                </span>
               </h3>
-              <button type="button" onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button type="button" onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            {!editingMember && (
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl mt-3 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setAddMode('new')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                    addMode === 'new'
+                      ? 'bg-blue-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🆕 አዲስ አባል (ያለ ኮድ)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddMode('by_code')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                    addMode === 'by_code'
+                      ? 'bg-cyan-700 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🔑 በነባር ኮድ የቤተሰብ አባል
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSaveMember} className="space-y-3.5 mt-4">
+              {/* Lookup existing member by Code when in 'by_code' mode */}
+              {!editingMember && addMode === 'by_code' && (
+                <div className="bg-cyan-50/70 border border-cyan-200 rounded-xl p-3.5 space-y-2.5">
+                  <label className="block text-xs font-extrabold text-cyan-950">
+                    1) የነባር አባል/ቤተሰብ ኮድ ያስገቡ *
+                  </label>
+                  <div className="relative">
+                    <Hash className="w-4 h-4 text-cyan-700 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001"
+                      value={lookupCodeInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setLookupCodeInput(val);
+                        const found = findMemberByEnteredCode(effectiveMembers, val, officialLoggedInChapel);
+                        if (found) {
+                          applyMatchedFamilyToForm(found);
+                        }
+                      }}
+                      className="w-full pl-9 pr-8 py-2 text-xs border border-cyan-300 rounded-xl font-mono font-bold bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                    />
+                    {lookupCodeInput && (
+                      <button
+                        type="button"
+                        onClick={() => setLookupCodeInput('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {codeLookupSuggestions.length > 0 && (
+                    <div className="bg-white border border-cyan-200 rounded-lg divide-y divide-slate-100 max-h-36 overflow-y-auto">
+                      {codeLookupSuggestions.map((s) => (
+                        <button
+                          key={`sug_${s.id}`}
+                          type="button"
+                          onClick={() => {
+                            setLookupCodeInput(s.memberCode || '');
+                            applyMatchedFamilyToForm(s);
+                          }}
+                          className="w-full text-left px-3 py-1.5 hover:bg-cyan-50 text-xs flex items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <span className="font-bold text-slate-900 truncate">{s.name}</span>
+                          <span className="font-mono text-[11px] font-bold text-indigo-800 shrink-0">{s.memberCode}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {matchedCodeMember ? (
+                    <div className="bg-white border border-emerald-300 rounded-xl p-3 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-black text-emerald-800 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          ቤተሰቡ ተገኝቷል!
+                        </span>
+                        <span className="font-mono text-[11px] font-extrabold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                          {matchedCodeMember.memberCode}
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-900">
+                        መሪ/ነባር አባል፦ {matchedCodeMember.name}
+                      </p>
+                      <p className="text-[11px] text-slate-600">
+                        ቻፕል፦ <strong>{mapToOfficialChapel(matchedCodeMember.chapel || '')}</strong>
+                        {matchedCodeMember.phone ? ` | ስልክ፦ ${matchedCodeMember.phone}` : ''}
+                      </p>
+                      {matchedFamilyMembers.length > 1 && (
+                        <p className="text-[10px] text-cyan-800 font-semibold pt-1 border-t border-slate-100">
+                          በዚህ ቤተሰብ ኮድ ውስጥ ያሉ አባላት ({matchedFamilyMembers.length})፦{' '}
+                          {matchedFamilyMembers.map((fm) => fm.name).slice(0, 4).join('፣ ')}
+                          {matchedFamilyMembers.length > 4 ? '...' : ''}
+                        </p>
+                      )}
+                    </div>
+                  ) : lookupCodeInput.trim() ? (
+                    <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>ይህ ኮድ አልተገኘም! እባክዎ ትክክለኛውን የቻፕል ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001) ያስገቡ።</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-cyan-900">
+                      ነባሩን የቤተሰብ መሪ ኮድ ሲያስገቡ ቻፕሉ፣ ወላጅ ስምና ስልክ በራሱ ይሞላል፤ ለአዲሱ አባልም ቀጣዩ ተከታታይ ኮድ ይሰጠዋል።
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Auto-generated Code Preview Badge */}
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+                <div className="text-[11px] font-bold text-indigo-950">
+                  {editingMember ? 'የተመደበ መለያ ኮድ፦' : 'ሲመዘገብ በራሱ የሚሰጠው ቀጣይ ኮድ፦'}
+                </div>
+                <span className="font-mono text-xs font-black text-indigo-900 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs">
+                  {editingMember?.memberCode || nextAutoCodePreview}
+                </span>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">ሙሉ ስም *</label>
                 <input
@@ -1293,24 +1688,45 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">ቻፕል (አጥቢያ) *</label>
-                <select
-                  value={officialLoggedInChapel || formChapel}
-                  disabled={Boolean(officialLoggedInChapel)}
-                  onChange={(e) => {
-                    if (!officialLoggedInChapel) setFormChapel(e.target.value);
-                  }}
-                  className={`w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-bold ${
-                    officialLoggedInChapel ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {(officialLoggedInChapel ? [officialLoggedInChapel] : DEFAULT_CHAPELS).map((ch) => (
-                    <option key={`m_ch_${ch}`} value={ch}>
-                      {ch}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ቻፕል (አጥቢያ) *</label>
+                  <select
+                    value={activeTargetChapelForForm}
+                    disabled={Boolean(officialLoggedInChapel) || (!editingMember && addMode === 'by_code' && Boolean(matchedCodeMember))}
+                    onChange={(e) => {
+                      if (!officialLoggedInChapel) setFormChapel(e.target.value);
+                    }}
+                    className={`w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-bold ${
+                      officialLoggedInChapel || (!editingMember && addMode === 'by_code' && matchedCodeMember)
+                        ? 'bg-slate-100 text-slate-600 cursor-not-allowed'
+                        : ''
+                    }`}
+                  >
+                    {(officialLoggedInChapel ? [officialLoggedInChapel] : DEFAULT_CHAPELS).map((ch) => (
+                      <option key={`m_ch_${ch}`} value={ch}>
+                        {ch}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">በቤተሰቡ ውስጥ ያለው ዝምድና</label>
+                  <select
+                    value={formRelation}
+                    onChange={(e) => setFormRelation(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-bold bg-white"
+                  >
+                    <option value="">ይምረጡ (አማራጭ)</option>
+                    <option value="የቤተሰብ መሪ">የቤተሰብ መሪ</option>
+                    <option value="ባለቤት / ሚስት">ባለቤት / ሚስት</option>
+                    <option value="ልጅ">ልጅ</option>
+                    <option value="እናት / አባት">እናት / አባት</option>
+                    <option value="ወንድም / እህት">ወንድም / እህት</option>
+                    <option value="ሌላ የቤተሰብ አባል">ሌላ የቤተሰብ አባል</option>
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -1323,15 +1739,28 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">የወላጅ/አባል ስልክ ቁጥር</label>
-                <input
-                  type="text"
-                  placeholder="0911223344"
-                  value={formPhone}
-                  onChange={(e) => setFormPhone(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-mono"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">የወላጅ/አባል ስልክ ቁጥር</label>
+                  <input
+                    type="text"
+                    placeholder="0911223344"
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">መኖሪያ ቀበሌ/መንደር</label>
+                  <input
+                    type="text"
+                    placeholder="ቀበሌ 01..."
+                    value={formResidence}
+                    onChange={(e) => setFormResidence(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1360,15 +1789,16 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
                   ሰርዝ
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-xl shadow-md cursor-pointer"
+                  disabled={!editingMember && addMode === 'by_code' && !matchedCodeMember}
+                  className="px-5 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 disabled:opacity-50 disabled:pointer-events-none rounded-xl shadow-md cursor-pointer"
                 >
-                  መዝግብ
+                  {editingMember ? 'ለውጡን አስቀምጥ' : 'መዝግብና ኮድ ስጥ'}
                 </button>
               </div>
             </form>

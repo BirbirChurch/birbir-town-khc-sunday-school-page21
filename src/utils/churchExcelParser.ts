@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { ChurchChild, ChurchMember } from '../types';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { generateUniqueId } from './idGenerator';
+import { assignSequentialCodesAndSortMembers } from './memberCodeGenerator';
 
 /**
  * Comprehensive Amharic text & homophone normalization for accurate search and matching.
@@ -363,6 +364,8 @@ export interface DetectedSheetColumns {
   genderIdx: number;
   ageIdx: number;
   chapelIdx: number;
+  codeIdx: number;
+  familyCodeIdx: number;
   educationIdx: number;
   occupationIdx: number;
   relationIdx: number;
@@ -421,6 +424,8 @@ export const detectChurchSheetColumns = (
   let genderIdx = -1;
   let ageIdx = -1;
   let chapelIdx = -1;
+  let codeIdx = -1;
+  let familyCodeIdx = -1;
   let educationIdx = -1;
   let occupationIdx = -1;
   let relationIdx = -1;
@@ -491,6 +496,15 @@ export const detectChurchSheetColumns = (
       str.includes('ማእከል') || str.includes('ቅርንጫፍ') || str.includes('branch')
     ) {
       if (chapelIdx === -1) chapelIdx = idx;
+    }
+
+    if (str.includes('የቤተሰብኮድ') || str.includes('familycode')) {
+      if (familyCodeIdx === -1) familyCodeIdx = idx;
+    } else if (
+      (str.includes('መለያኮድ') || str === 'ኮድ' || str === 'code' || str === 'membercode' || str.includes('የአባልኮድ')) &&
+      !str.includes('ተ.ቁ') && !str.includes('ተ/ቁ')
+    ) {
+      if (codeIdx === -1) codeIdx = idx;
     }
 
     if (
@@ -611,6 +625,8 @@ export const detectChurchSheetColumns = (
     genderIdx,
     ageIdx,
     chapelIdx,
+    codeIdx,
+    familyCodeIdx,
     educationIdx,
     occupationIdx,
     relationIdx,
@@ -773,6 +789,8 @@ export const parseChurchWorkbookAllSheets = (
     const genderIdx = ov?.genderIdx ?? detected.genderIdx;
     const ageIdx = ov?.ageIdx ?? detected.ageIdx;
     const chapelIdx = ov?.chapelIdx ?? detected.chapelIdx;
+    const codeIdx = detected.codeIdx;
+    const familyCodeIdx = detected.familyCodeIdx;
     const educationIdx = ov?.educationIdx ?? detected.educationIdx;
     const occupationIdx = ov?.occupationIdx ?? detected.occupationIdx;
     const relationIdx = detected.relationIdx;
@@ -1073,8 +1091,15 @@ export const parseChurchWorkbookAllSheets = (
         }
       }
 
+      const existingMemberCode =
+        codeIdx !== -1 && row[codeIdx] ? String(row[codeIdx]).trim() : undefined;
+      const existingFamilyCode =
+        familyCodeIdx !== -1 && row[familyCodeIdx] ? String(row[familyCodeIdx]).trim() : undefined;
+
       sheetMembers.push({
         id: generateUniqueId(),
+        memberCode: existingMemberCode || undefined,
+        familyCode: existingFamilyCode || undefined,
         name: rawName,
         gender,
         age: ageNum,
@@ -1084,6 +1109,7 @@ export const parseChurchWorkbookAllSheets = (
         parentName,
         phone: directPhone,
         residence,
+        relationToHead: rel || undefined,
         sheetName,
         registeredDate: todayStr,
         _parsedAgeWasKnown: parsedAgeWasKnown,
@@ -1117,10 +1143,19 @@ export const parseChurchWorkbookAllSheets = (
         }
       }
     }
+  }
 
+  // Pass 3: Assign sequential chapel codes (e.g. ብከቃሕቤክኤልሮኢ 0001) and order members by all 10 chapels sequentially
+  const cleanMembers = allMembers.map(({ _parsedAgeWasKnown, _rel, ...rest }) => rest);
+  const codedSortedMembers = assignSequentialCodesAndSortMembers(cleanMembers);
+
+  // Pass 4: Extract 0-14 children preserving their assigned chapel memberCode
+  for (const m of codedSortedMembers) {
     const ageNum = typeof m.age === 'number' ? m.age : parseInt(String(m.age ?? '30'), 10);
     if (ageNum >= 0 && ageNum <= 14) {
       allChildren.push({
+        memberCode: m.memberCode,
+        familyCode: m.familyCode,
         name: m.name,
         gender: m.gender === 'ሴ' ? 'ሴ' : 'ወ',
         age: ageNum,
@@ -1153,7 +1188,7 @@ export const parseChurchWorkbookAllSheets = (
   }
 
   return {
-    members: allMembers.map(({ _parsedAgeWasKnown, _rel, ...rest }) => rest),
+    members: codedSortedMembers,
     children: allChildren,
     adultsSkipped: allAdultsSkipped,
     sheetCounts,

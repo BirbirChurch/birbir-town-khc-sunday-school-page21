@@ -790,6 +790,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       if (searchTerm.trim()) {
         const matchedSearch = matchesAmharicSearch(
           searchTerm,
+          child.memberCode,
+          child.familyCode,
           child.name,
           child.parentName,
           child.phone,
@@ -1000,6 +1002,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     // Sheet 1: Children list (0-14 years)
     const headers = [
       'ተ.ቁ',
+      'መለያ ኮድ',
       'የልጁ ሙሉ ስም',
       'ጾታ',
       'ዕድሜ',
@@ -1028,6 +1031,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
       return [
         idx + 1,
+        c.memberCode || '-',
         c.name,
         c.gender === 'ወ' ? 'ወንድ' : c.gender === 'ሴ' ? 'ሴት' : '-',
         c.age || '-',
@@ -2124,7 +2128,14 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                             return (
                               <tr key={`grp_ch_${child.id}`} className="hover:bg-blue-50/30 transition-colors">
                                 <td className="py-2 px-3 text-center font-bold text-slate-500 bg-slate-50/50">{idx + 1}</td>
-                                <td className="py-2 px-4 font-bold text-[12pt] text-slate-900">{child.name}</td>
+                                <td className="py-2 px-4 font-bold text-[12pt] text-slate-900">
+                                  <div>{child.name}</div>
+                                  {child.memberCode && (
+                                    <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                      {child.memberCode}
+                                    </span>
+                                  )}
+                                </td>
                                 <td className="py-2 px-3 text-center">
                                   <span className={`inline-block px-2 py-0.5 rounded font-bold text-[10px] ${isMale ? 'bg-blue-100 text-blue-800' : isFemale ? 'bg-rose-100 text-rose-800' : 'text-slate-400'}`}>
                                     {isMale ? 'ወንድ' : isFemale ? 'ሴት' : '-'}
@@ -2231,7 +2242,12 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
                           {/* Child Name (13pt Bold) */}
                           <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[200px] leading-normal">
-                            <span>{child.name}</span>
+                            <div>{child.name}</div>
+                            {child.memberCode && (
+                              <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                {child.memberCode}
+                              </span>
+                            )}
                           </td>
 
                           {/* Chapel */}

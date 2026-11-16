@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Shield,
   Users,
@@ -10,10 +10,20 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
-  Lock
+  Lock,
+  UserPlus,
+  Hash,
+  CheckCircle2,
+  X,
+  Copy
 } from 'lucide-react';
-import { Role, Teacher } from '../types';
+import { ChurchMember, Role, Teacher } from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
+import {
+  findMemberByEnteredCode,
+  getNextMemberCodeForChapel,
+  resolveOfficialChapel
+} from '../utils/memberCodeGenerator';
 
 interface LoginPortalProps {
   teachers: Teacher[];
@@ -21,8 +31,17 @@ interface LoginPortalProps {
   leaderPin?: string;
   chapelPins?: { [chapelName: string]: string };
   chapelList?: string[];
+  churchMembers?: ChurchMember[];
+  onAddChurchMember?: (member: Omit<ChurchMember, 'id'>) => ChurchMember | void;
   onLoginSuccess: (role: Role, teacher?: Teacher, chapel?: string) => void;
 }
+
+const maskPhoneForPortal = (phone?: string): string => {
+  const clean = String(phone || '').trim();
+  if (!clean) return '';
+  if (clean.length <= 4) return '****';
+  return `${clean.slice(0, 4)}****${clean.slice(-2)}`;
+};
 
 export const LoginPortal: React.FC<LoginPortalProps> = ({
   teachers,
@@ -30,6 +49,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   leaderPin = '5678',
   chapelPins = DEFAULT_CHAPEL_PINS,
   chapelList = DEFAULT_CHAPELS,
+  churchMembers = [],
+  onAddChurchMember,
   onLoginSuccess
 }) => {
   const [activeRole, setActiveRole] = useState<Role | 'chapel_leader' | null>(null);
@@ -37,6 +58,104 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const [pinInput, setPinInput] = useState<string>('');
   const [showPin, setShowPin] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
+
+  // Self-service Family Member Addition by Member Code modal state
+  const [isFamilyCodeModalOpen, setIsFamilyCodeModalOpen] = useState<boolean>(false);
+  const [portalCodeInput, setPortalCodeInput] = useState<string>('');
+  const [portalChapelHint, setPortalChapelHint] = useState<string>('');
+  const [portalMemberName, setPortalMemberName] = useState<string>('');
+  const [portalGender, setPortalGender] = useState<'ወ' | 'ሴ'>('ወ');
+  const [portalAge, setPortalAge] = useState<string>('');
+  const [portalRelation, setPortalRelation] = useState<string>('የቤተሰብ አባል');
+  const [portalEducation, setPortalEducation] = useState<string>('');
+  const [portalOccupation, setPortalOccupation] = useState<string>('');
+  const [portalPhone, setPortalPhone] = useState<string>('');
+  const [createdFeedback, setCreatedFeedback] = useState<{
+    name: string;
+    memberCode: string;
+    familyCode: string;
+    chapel: string;
+  } | null>(null);
+  const [copiedNewCode, setCopiedNewCode] = useState<boolean>(false);
+
+  const matchedPortalMember = useMemo(() => {
+    if (!portalCodeInput.trim()) return null;
+    return findMemberByEnteredCode(
+      churchMembers,
+      portalCodeInput,
+      portalChapelHint || undefined
+    );
+  }, [churchMembers, portalCodeInput, portalChapelHint]);
+
+  const portalTargetChapel = useMemo(() => {
+    if (!matchedPortalMember) return DEFAULT_CHAPELS[0];
+    return resolveOfficialChapel(matchedPortalMember.chapel || '');
+  }, [matchedPortalMember]);
+
+  const portalNextCodePreview = useMemo(() => {
+    if (!matchedPortalMember) return '';
+    return getNextMemberCodeForChapel(churchMembers, portalTargetChapel);
+  }, [churchMembers, matchedPortalMember, portalTargetChapel]);
+
+  const handleOpenFamilyCodeModal = () => {
+    setPortalCodeInput('');
+    setPortalChapelHint('');
+    setPortalMemberName('');
+    setPortalGender('ወ');
+    setPortalAge('');
+    setPortalRelation('የቤተሰብ አባል');
+    setPortalEducation('');
+    setPortalOccupation('');
+    setPortalPhone('');
+    setCreatedFeedback(null);
+    setCopiedNewCode(false);
+    setIsFamilyCodeModalOpen(true);
+  };
+
+  const handlePortalFamilySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onAddChurchMember || !matchedPortalMember) return;
+    if (!portalMemberName.trim()) {
+      alert('እባክዎን የአዲሱን የቤተሰብ አባል ሙሉ ስም ያስገቡ!');
+      return;
+    }
+
+    const parsedAge = parseInt(portalAge, 10);
+    const officialCh = resolveOfficialChapel(matchedPortalMember.chapel || '');
+    const familyRefCode = matchedPortalMember.familyCode || matchedPortalMember.memberCode || '';
+
+    const payload: Omit<ChurchMember, 'id'> = {
+      name: portalMemberName.trim(),
+      gender: portalGender,
+      age: isNaN(parsedAge) ? 20 : Math.max(0, parsedAge),
+      educationLevel: portalEducation.trim() || undefined,
+      occupation: portalOccupation.trim() || undefined,
+      chapel: officialCh,
+      parentName: matchedPortalMember.parentName || matchedPortalMember.name,
+      phone: portalPhone.trim() || matchedPortalMember.phone || undefined,
+      residence: matchedPortalMember.residence || undefined,
+      relationToHead: portalRelation.trim() || undefined,
+      familyCode: familyRefCode || undefined,
+      registeredDate: new Date().toISOString().split('T')[0]
+    };
+
+    const created = onAddChurchMember(payload);
+    const assignedCode =
+      (created && 'memberCode' in created && created.memberCode) ||
+      portalNextCodePreview;
+
+    setCreatedFeedback({
+      name: payload.name,
+      memberCode: assignedCode,
+      familyCode: familyRefCode,
+      chapel: officialCh
+    });
+    setPortalMemberName('');
+    setPortalAge('');
+    setPortalEducation('');
+    setPortalOccupation('');
+    setPortalPhone('');
+  };
 
   const handleSelectRole = (role: Role | 'chapel_leader') => {
     setActiveRole(role);
@@ -246,6 +365,33 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Family Addition by Member Code Banner */}
+          {onAddChurchMember && (
+            <div className="mt-7 bg-gradient-to-r from-cyan-50 via-white to-indigo-50 border border-cyan-200 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-cyan-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                    የቤተክርስቲያን አባል/ቤተሰብ ኮድ አለዎት?
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                    የነባር አባል ኮድዎን (ምሳሌ፦ <span className="font-mono font-bold text-indigo-900">ብከቃሕቤክኤልሮኢ 0001</span>) በማስገባት አዲስ የቤተሰብ አባል በቀጥታ መጨመር ይችላሉ፤ ሲስተሙ ቀጣዩን ኮድ በራሱ ይሰጣል።
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenFamilyCodeModal}
+                className="bg-cyan-700 hover:bg-cyan-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow transition flex items-center gap-2 shrink-0 cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4 text-cyan-100" />
+                <span>🔑 በኮድ የቤተሰብ አባል ጨምር</span>
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         /* Role + PIN Entry Card */
@@ -364,6 +510,242 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
           </form>
         </div>
       )}
+
+      {/* Isolated Family Member Addition by Code Modal */}
+      {isFamilyCodeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-cyan-700" />
+                <span>በቤተሰብ/አባል ኮድ አዲስ የቤተሰብ አባል መጨመሪያ</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsFamilyCodeModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {createdFeedback && (
+              <div className="mt-4 bg-emerald-50 border border-emerald-300 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-xs">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>"{createdFeedback.name}" ወደ {createdFeedback.chapel} የቤተሰብ መዝገብ ተጨምሯል!</span>
+                </div>
+                <div className="flex items-center justify-between bg-white border border-emerald-200 rounded-lg px-3 py-2">
+                  <div>
+                    <div className="text-[10px] text-slate-500 font-bold">የተሰጠው አዲስ መለያ ኮድ፦</div>
+                    <div className="font-mono text-sm font-black text-indigo-950">{createdFeedback.memberCode}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdFeedback.memberCode);
+                      setCopiedNewCode(true);
+                      setTimeout(() => setCopiedNewCode(false), 1800);
+                    }}
+                    className="px-2.5 py-1 text-xs font-bold bg-indigo-50 text-indigo-900 hover:bg-indigo-100 rounded-lg border border-indigo-200 flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedNewCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedNewCode ? 'ተቀድቷል' : 'ቅዳ'}</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-emerald-800 font-semibold">
+                  የተያያዘ የቤተሰብ ኮድ፦ <span className="font-mono font-bold">{createdFeedback.familyCode}</span>
+                </p>
+              </div>
+            )}
+
+            <form onSubmit={handlePortalFamilySubmit} className="space-y-3.5 mt-4">
+              <div className="bg-cyan-50/70 border border-cyan-200 rounded-xl p-3.5 space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-cyan-950 mb-1">
+                      ቻፕል (አማራጭ - አጭር ቁጥር ሲጠቀሙ)
+                    </label>
+                    <select
+                      value={portalChapelHint}
+                      onChange={(e) => setPortalChapelHint(e.target.value)}
+                      className="w-full px-2.5 py-2 text-xs border border-cyan-300 rounded-xl bg-white font-bold"
+                    >
+                      <option value="">ሁሉም ቻፕሎች (ሙሉ ኮድ)</option>
+                      {chapelList.map((ch) => (
+                        <option key={`p_ch_${ch}`} value={ch}>
+                          {ch}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-cyan-950 mb-1">
+                      የነባር አባል ኮድ ያስገቡ *
+                    </label>
+                    <div className="relative">
+                      <Hash className="w-3.5 h-3.5 text-cyan-700 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="ብከቃሕቤክኤልሮኢ 0001"
+                        value={portalCodeInput}
+                        onChange={(e) => setPortalCodeInput(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 text-xs border border-cyan-300 rounded-xl font-mono font-bold bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {matchedPortalMember ? (
+                  <div className="bg-white border border-emerald-300 rounded-xl p-3 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black text-emerald-800 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        ኮዱ ተረጋግጧል!
+                      </span>
+                      <span className="font-mono text-[11px] font-extrabold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                        {matchedPortalMember.memberCode}
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-slate-900">
+                      ነባር አባል/መሪ፦ {matchedPortalMember.name}
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      ቻፕል፦ <strong>{portalTargetChapel}</strong>
+                      {matchedPortalMember.phone
+                        ? ` | ስልክ፦ ${maskPhoneForPortal(matchedPortalMember.phone)}`
+                        : ''}
+                    </p>
+                    <div className="pt-1 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                      <span className="text-indigo-900 font-bold">ለአዲሱ አባል የሚሰጠው ቀጣይ ኮድ፦</span>
+                      <span className="font-mono font-black text-indigo-950 bg-indigo-50 px-2 py-0.5 rounded">
+                        {portalNextCodePreview}
+                      </span>
+                    </div>
+                  </div>
+                ) : portalCodeInput.trim() ? (
+                  <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>ያስገቡት ኮድ አልተገኘም! እባክዎ ትክክለኛውን ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001) ያስገቡ።</span>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-cyan-900">
+                    ነባሩን የቤተሰብ ኮድ ሲያስገቡ የአዲሱን የቤተሰብ አባል ስም፣ ጾታና ዕድሜ አስገብተው መመዝገብ ይችላሉ።
+                  </p>
+                )}
+              </div>
+
+              {matchedPortalMember && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">የአዲሱ የቤተሰብ አባል ሙሉ ስም *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="ሙሉ ስም ያስገቡ..."
+                      value={portalMemberName}
+                      onChange={(e) => setPortalMemberName(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-cyan-600"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ጾታ *</label>
+                      <select
+                        value={portalGender}
+                        onChange={(e) => setPortalGender(e.target.value as 'ወ' | 'ሴ')}
+                        className="w-full px-2.5 py-2 text-xs border border-slate-200 rounded-xl font-bold"
+                      >
+                        <option value="ወ">ወንድ</option>
+                        <option value="ሴ">ሴት</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ዕድሜ *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        placeholder="ዕድሜ"
+                        value={portalAge}
+                        onChange={(e) => setPortalAge(e.target.value)}
+                        className="w-full px-2.5 py-2 text-xs border border-slate-200 rounded-xl font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ዝምድና</label>
+                      <select
+                        value={portalRelation}
+                        onChange={(e) => setPortalRelation(e.target.value)}
+                        className="w-full px-2 py-2 text-xs border border-slate-200 rounded-xl font-bold bg-white"
+                      >
+                        <option value="ባለቤት / ሚስት">ባለቤት / ሚስት</option>
+                        <option value="ልጅ">ልጅ</option>
+                        <option value="እናት / አባት">እናት / አባት</option>
+                        <option value="ወንድም / እህት">ወንድም / እህት</option>
+                        <option value="የቤተሰብ አባል">የቤተሰብ አባል</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ስልክ (አማራጭ)</label>
+                      <input
+                        type="text"
+                        placeholder="09..."
+                        value={portalPhone}
+                        onChange={(e) => setPortalPhone(e.target.value)}
+                        className="w-full px-2.5 py-2 text-xs border border-slate-200 rounded-xl font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ትምህርት ደረጃ</label>
+                      <input
+                        type="text"
+                        placeholder="ክፍል/ዲግሪ..."
+                        value={portalEducation}
+                        onChange={(e) => setPortalEducation(e.target.value)}
+                        className="w-full px-2.5 py-2 text-xs border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">የስራ ዓይነት</label>
+                      <input
+                        type="text"
+                        placeholder="ተማሪ/ሠራተኛ..."
+                        value={portalOccupation}
+                        onChange={(e) => setPortalOccupation(e.target.value)}
+                        className="w-full px-2.5 py-2 text-xs border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsFamilyCodeModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  ዝጋ
+                </button>
+                <button
+                  type="submit"
+                  disabled={!matchedPortalMember}
+                  className="px-5 py-2 text-xs font-bold text-white bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:pointer-events-none rounded-xl shadow-md cursor-pointer"
+                >
+                  አባል ጨምርና ኮድ ስጥ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
