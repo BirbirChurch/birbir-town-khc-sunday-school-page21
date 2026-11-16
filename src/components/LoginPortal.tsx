@@ -21,7 +21,8 @@ import { ChurchMember, Role, Teacher } from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import {
   findMemberByEnteredCode,
-  getNextMemberCodeForChapel,
+  getNextFamilySubCode,
+  getRootFamilyBaseCode,
   resolveOfficialChapel
 } from '../utils/memberCodeGenerator';
 
@@ -94,7 +95,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
   const portalNextCodePreview = useMemo(() => {
     if (!matchedPortalMember) return '';
-    return getNextMemberCodeForChapel(churchMembers, portalTargetChapel);
+    return getNextFamilySubCode(
+      churchMembers,
+      matchedPortalMember.familyCode || matchedPortalMember.memberCode || '',
+      portalTargetChapel
+    );
   }, [churchMembers, matchedPortalMember, portalTargetChapel]);
 
   const handleOpenFamilyCodeModal = () => {
@@ -122,7 +127,10 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
     const parsedAge = parseInt(portalAge, 10);
     const officialCh = resolveOfficialChapel(matchedPortalMember.chapel || '');
-    const familyRefCode = matchedPortalMember.familyCode || matchedPortalMember.memberCode || '';
+    const familyRefCode = getRootFamilyBaseCode(
+      matchedPortalMember.familyCode || matchedPortalMember.memberCode || '',
+      officialCh
+    );
 
     const payload: Omit<ChurchMember, 'id'> = {
       name: portalMemberName.trim(),
@@ -378,7 +386,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     የቤተክርስቲያን አባል/ቤተሰብ ኮድ አለዎት?
                   </h3>
                   <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-                    የነባር አባል ኮድዎን (ምሳሌ፦ <span className="font-mono font-bold text-indigo-900">ብከቃሕቤክኤልሮኢ 0001</span>) በማስገባት አዲስ የቤተሰብ አባል በቀጥታ መጨመር ይችላሉ፤ ሲስተሙ ቀጣዩን ኮድ በራሱ ይሰጣል።
+                    የነባር አባል ኮድዎን (ምሳሌ፦ <span className="font-mono font-bold text-indigo-900">ብከቃሕቤክኤልሻዳይ 0513</span>) በማስገባት አዲስ የቤተሰብ አባል ሲጨምሩ በቅደም ተከተል (<span className="font-mono font-bold text-indigo-900">0513/1</span>፣ <span className="font-mono font-bold text-indigo-900">0513/2</span> ...) መለያ ኮድ ይሰጠዋል።
                   </p>
                 </div>
               </div>
@@ -588,7 +596,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       <Hash className="w-3.5 h-3.5 text-cyan-700 absolute left-2.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
-                        placeholder="ብከቃሕቤክኤልሮኢ 0001"
+                        placeholder="ብከቃሕቤክኤልሻዳይ 0513"
                         value={portalCodeInput}
                         onChange={(e) => setPortalCodeInput(e.target.value)}
                         className="w-full pl-8 pr-3 py-2 text-xs border border-cyan-300 rounded-xl font-mono font-bold bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600"

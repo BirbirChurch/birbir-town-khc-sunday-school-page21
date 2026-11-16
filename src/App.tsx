@@ -36,7 +36,12 @@ import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS }
 import { subscribeToAppData, syncAppDataToFirebase, saveToLocalStorage, countStudentsInData, exportBackupJSON, importBackupJSON } from './services/firebase';
 import { generateUniqueId, sanitizeAndDeduplicateAppData } from './utils/idGenerator';
 import { normalizeAmharicSearchText } from './utils/churchExcelParser';
-import { assignSequentialCodesAndSortMembers, getNextMemberCodeForChapel } from './utils/memberCodeGenerator';
+import {
+  assignSequentialCodesAndSortMembers,
+  getNextFamilySubCode,
+  getNextMemberCodeForChapel,
+  getRootFamilyBaseCode
+} from './utils/memberCodeGenerator';
 import {
   applyBulkAgeIncrementToAppData,
   BulkAgeIncrementOptions,
@@ -1021,12 +1026,19 @@ export default function App() {
       ? mapToOfficialChapel(loggedInChapel)
       : mapToOfficialChapel(newMember.chapel || '');
     const currentList = (latestDataRef.current || appData)?.churchMembers || [];
+    const normalizedFamilyCode = newMember.familyCode
+      ? getRootFamilyBaseCode(newMember.familyCode, enforcedChapel)
+      : undefined;
+
     const assignedCode =
       (newMember.memberCode && newMember.memberCode.trim()) ||
-      getNextMemberCodeForChapel(currentList, enforcedChapel);
+      (normalizedFamilyCode
+        ? getNextFamilySubCode(currentList, normalizedFamilyCode, enforcedChapel)
+        : getNextMemberCodeForChapel(currentList, enforcedChapel));
 
     const mWithId: ChurchMember = {
       ...newMember,
+      familyCode: normalizedFamilyCode,
       memberCode: assignedCode,
       chapel: enforcedChapel,
       id: generateUniqueId()

@@ -45,7 +45,9 @@ import {
 } from '../utils/churchExcelParser';
 import {
   findMemberByEnteredCode,
+  getNextFamilySubCode,
   getNextMemberCodeForChapel,
+  getRootFamilyBaseCode,
   normalizeCodeForLookup
 } from '../utils/memberCodeGenerator';
 
@@ -529,13 +531,19 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
   const matchedFamilyMembers = useMemo(() => {
     if (!matchedCodeMember) return [];
-    const targetFamilyKey = normalizeCodeForLookup(matchedCodeMember.familyCode || matchedCodeMember.memberCode);
-    if (!targetFamilyKey) return [matchedCodeMember];
-    return effectiveMembers.filter(
-      (m) =>
-        normalizeCodeForLookup(m.familyCode) === targetFamilyKey ||
-        normalizeCodeForLookup(m.memberCode) === targetFamilyKey
+    const ch = mapToOfficialChapel(matchedCodeMember.chapel || '');
+    const rootBase = getRootFamilyBaseCode(
+      matchedCodeMember.familyCode || matchedCodeMember.memberCode || '',
+      ch
     );
+    const targetFamilyKey = normalizeCodeForLookup(rootBase);
+    if (!targetFamilyKey) return [matchedCodeMember];
+    return effectiveMembers.filter((m) => {
+      if (mapToOfficialChapel(m.chapel || '') !== ch) return false;
+      const mMemBase = normalizeCodeForLookup(getRootFamilyBaseCode(m.memberCode || '', ch));
+      const mFamBase = normalizeCodeForLookup(getRootFamilyBaseCode(m.familyCode || '', ch));
+      return mMemBase === targetFamilyKey || mFamBase === targetFamilyKey;
+    });
   }, [matchedCodeMember, effectiveMembers]);
 
   const codeLookupSuggestions = useMemo(() => {
@@ -560,8 +568,15 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   }, [officialLoggedInChapel, editingMember, addMode, matchedCodeMember, formChapel]);
 
   const nextAutoCodePreview = useMemo(() => {
+    if (!editingMember && addMode === 'by_code' && matchedCodeMember) {
+      return getNextFamilySubCode(
+        churchMembers,
+        matchedCodeMember.familyCode || matchedCodeMember.memberCode || '',
+        activeTargetChapelForForm
+      );
+    }
     return getNextMemberCodeForChapel(churchMembers, activeTargetChapelForForm);
-  }, [churchMembers, activeTargetChapelForForm]);
+  }, [churchMembers, activeTargetChapelForForm, editingMember, addMode, matchedCodeMember]);
 
   const handleCopyMemberCode = (id: number, code: string) => {
     if (!code) return;
@@ -572,11 +587,15 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
   const applyMatchedFamilyToForm = (matched: ChurchMember) => {
     const officialCh = officialLoggedInChapel || mapToOfficialChapel(matched.chapel || '');
+    const rootBase = getRootFamilyBaseCode(
+      matched.familyCode || matched.memberCode || '',
+      officialCh
+    );
     setFormChapel(officialCh);
     setFormParent(matched.parentName || matched.name || '');
     setFormPhone(matched.phone || '');
     setFormResidence(matched.residence || '');
-    setFormFamilyCode(matched.familyCode || matched.memberCode || '');
+    setFormFamilyCode(rootBase);
   };
 
   const handleOpenAddModal = () => {
@@ -616,11 +635,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     if (codeStr) {
       const matched = findMemberByEnteredCode(effectiveMembers, codeStr, officialLoggedInChapel);
       if (matched) {
-        setFormChapel(officialLoggedInChapel || mapToOfficialChapel(matched.chapel || ''));
-        setFormParent(matched.parentName || matched.name || '');
-        setFormPhone(matched.phone || '');
-        setFormResidence(matched.residence || '');
-        setFormFamilyCode(matched.familyCode || matched.memberCode || '');
+        applyMatchedFamilyToForm(matched);
       }
     }
     setIsAddModalOpen(true);
@@ -664,7 +679,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
     const resolvedFamilyCode =
       !editingMember && addMode === 'by_code' && matchedCodeMember
-        ? matchedCodeMember.familyCode || matchedCodeMember.memberCode
+        ? getRootFamilyBaseCode(
+            matchedCodeMember.familyCode || matchedCodeMember.memberCode || '',
+            officialChapel
+          )
         : formFamilyCode.trim() || undefined;
 
     const resolvedParent =
@@ -710,7 +728,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       const created = onAddMember(payload);
       const assignedCode =
         (created && 'memberCode' in created && created.memberCode) ||
-        getNextMemberCodeForChapel(churchMembers, officialChapel);
+        (resolvedFamilyCode
+          ? getNextFamilySubCode(churchMembers, resolvedFamilyCode, officialChapel)
+          : getNextMemberCodeForChapel(churchMembers, officialChapel));
       setExtractedSuccessMsg(
         `✓ "${payload.name}" በስኬት ተመዝግቧል! የተሰጠው ኮድ፦ ${assignedCode}${
           resolvedFamilyCode ? ` (የቤተሰብ ኮድ፦ ${resolvedFamilyCode})` : ''
@@ -1559,87 +1579,99 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                   </label>
                   <div className="relative">
                     <Hash className="w-4 h-4 text-cyan-700 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001"
-                      value={lookupCodeInput}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setLookupCodeInput(val);
-                        const found = findMemberByEnteredCode(effectiveMembers, val, officialLoggedInChapel);
-                        if (found) {
-                          applyMatchedFamilyToForm(found);
-                        }
-                      }}
-                      className="w-full pl-9 pr-8 py-2 text-xs border border-cyan-300 rounded-xl font-mono font-bold bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600"
-                    />
-                    {lookupCodeInput && (
-                      <button
-                        type="button"
-                        onClick={() => setLookupCodeInput('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {codeLookupSuggestions.length > 0 && (
-                    <div className="bg-white border border-cyan-200 rounded-lg divide-y divide-slate-100 max-h-36 overflow-y-auto">
-                      {codeLookupSuggestions.map((s) => (
+                      <input
+                        type="text"
+                        placeholder="ምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513"
+                        value={lookupCodeInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setLookupCodeInput(val);
+                          const found = findMemberByEnteredCode(effectiveMembers, val, officialLoggedInChapel);
+                          if (found) {
+                            applyMatchedFamilyToForm(found);
+                          }
+                        }}
+                        className="w-full pl-9 pr-8 py-2 text-xs border border-cyan-300 rounded-xl font-mono font-bold bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                      />
+                      {lookupCodeInput && (
                         <button
-                          key={`sug_${s.id}`}
                           type="button"
-                          onClick={() => {
-                            setLookupCodeInput(s.memberCode || '');
-                            applyMatchedFamilyToForm(s);
-                          }}
-                          className="w-full text-left px-3 py-1.5 hover:bg-cyan-50 text-xs flex items-center justify-between gap-2 cursor-pointer"
+                          onClick={() => setLookupCodeInput('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                         >
-                          <span className="font-bold text-slate-900 truncate">{s.name}</span>
-                          <span className="font-mono text-[11px] font-bold text-indigo-800 shrink-0">{s.memberCode}</span>
+                          <X className="w-3.5 h-3.5" />
                         </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {matchedCodeMember ? (
-                    <div className="bg-white border border-emerald-300 rounded-xl p-3 space-y-1.5 shadow-2xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-black text-emerald-800 flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          ቤተሰቡ ተገኝቷል!
-                        </span>
-                        <span className="font-mono text-[11px] font-extrabold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                          {matchedCodeMember.memberCode}
-                        </span>
-                      </div>
-                      <p className="text-xs font-bold text-slate-900">
-                        መሪ/ነባር አባል፦ {matchedCodeMember.name}
-                      </p>
-                      <p className="text-[11px] text-slate-600">
-                        ቻፕል፦ <strong>{mapToOfficialChapel(matchedCodeMember.chapel || '')}</strong>
-                        {matchedCodeMember.phone ? ` | ስልክ፦ ${matchedCodeMember.phone}` : ''}
-                      </p>
-                      {matchedFamilyMembers.length > 1 && (
-                        <p className="text-[10px] text-cyan-800 font-semibold pt-1 border-t border-slate-100">
-                          በዚህ ቤተሰብ ኮድ ውስጥ ያሉ አባላት ({matchedFamilyMembers.length})፦{' '}
-                          {matchedFamilyMembers.map((fm) => fm.name).slice(0, 4).join('፣ ')}
-                          {matchedFamilyMembers.length > 4 ? '...' : ''}
-                        </p>
                       )}
                     </div>
-                  ) : lookupCodeInput.trim() ? (
-                    <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>ይህ ኮድ አልተገኘም! እባክዎ ትክክለኛውን የቻፕል ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001) ያስገቡ።</span>
-                    </p>
-                  ) : (
-                    <p className="text-[11px] text-cyan-900">
-                      ነባሩን የቤተሰብ መሪ ኮድ ሲያስገቡ ቻፕሉ፣ ወላጅ ስምና ስልክ በራሱ ይሞላል፤ ለአዲሱ አባልም ቀጣዩ ተከታታይ ኮድ ይሰጠዋል።
-                    </p>
-                  )}
-                </div>
+
+                    {codeLookupSuggestions.length > 0 && (
+                      <div className="bg-white border border-cyan-200 rounded-lg divide-y divide-slate-100 max-h-36 overflow-y-auto">
+                        {codeLookupSuggestions.map((s) => (
+                          <button
+                            key={`sug_${s.id}`}
+                            type="button"
+                            onClick={() => {
+                              setLookupCodeInput(s.memberCode || '');
+                              applyMatchedFamilyToForm(s);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-cyan-50 text-xs flex items-center justify-between gap-2 cursor-pointer"
+                          >
+                            <span className="font-bold text-slate-900 truncate">{s.name}</span>
+                            <span className="font-mono text-[11px] font-bold text-indigo-800 shrink-0">{s.memberCode}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {matchedCodeMember ? (
+                      <div className="bg-white border border-emerald-300 rounded-xl p-3 space-y-1.5 shadow-2xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-black text-emerald-800 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            ቤተሰቡ ተገኝቷል!
+                          </span>
+                          <span className="font-mono text-[11px] font-extrabold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                            {matchedCodeMember.memberCode}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-900">
+                          መሪ/ነባር አባል፦ {matchedCodeMember.name}
+                        </p>
+                        <p className="text-[11px] text-slate-600">
+                          ቻፕል፦ <strong>{mapToOfficialChapel(matchedCodeMember.chapel || '')}</strong>
+                          {matchedCodeMember.phone ? ` | ስልክ፦ ${matchedCodeMember.phone}` : ''}
+                        </p>
+                        {matchedFamilyMembers.length > 0 && (
+                          <div className="text-[10px] text-cyan-900 font-semibold pt-1.5 border-t border-slate-100 space-y-0.5">
+                            <div>በዚህ ቤተሰብ ውስጥ የተመዘገቡ አባላት ({matchedFamilyMembers.length})፦</div>
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {matchedFamilyMembers.slice(0, 6).map((fm) => (
+                                <span
+                                  key={`mfm_${fm.id}`}
+                                  className="inline-flex items-center gap-1 bg-cyan-50 border border-cyan-200 rounded px-1.5 py-0.5 text-[10px] text-slate-800"
+                                >
+                                  <span className="font-bold">{fm.name}</span>
+                                  <span className="font-mono text-indigo-900">({fm.memberCode})</span>
+                                </span>
+                              ))}
+                              {matchedFamilyMembers.length > 6 && (
+                                <span className="text-slate-500">+{matchedFamilyMembers.length - 6} ሌሎች</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : lookupCodeInput.trim() ? (
+                      <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>ይህ ኮድ አልተገኘም! እባክዎ ትክክለኛውን የቻፕል ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513) ያስገቡ።</span>
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-cyan-900">
+                        ነባሩን ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513) ሲያስገቡ ቻፕሉና መሪው በራሱ ይሞላል፤ ለባለቤት/ልጅም በቅደም ተከተል (0513/1፣ 0513/2 ...) ንዑስ ኮድ ይሰጠዋል።
+                      </p>
+                    )}
+                  </div>
               )}
 
               {/* Auto-generated Code Preview Badge */}
