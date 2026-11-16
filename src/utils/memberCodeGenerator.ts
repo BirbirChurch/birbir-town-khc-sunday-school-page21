@@ -27,7 +27,7 @@ const normalizeHomophones = (text: string): string => {
   return String(text || '')
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, '')
+    .replace(/[\s\-_\u00A0\u200B-\u200D\uFEFF]+/g, '')
     .replace(/[ሀሃሐሓኀኃ]/g, 'ሀ')
     .replace(/[ሑኁ]/g, 'ሁ')
     .replace(/[ሒኂ]/g, 'ሂ')
@@ -71,6 +71,32 @@ export const resolveOfficialChapel = (rawInput: string): string => {
   return DEFAULT_CHAPELS[0];
 };
 
+const matchExplicitChapelPrefix = (rawPrefix: string): string | null => {
+  const norm = normalizeHomophones(rawPrefix);
+  if (!norm) return null;
+
+  for (const ch of DEFAULT_CHAPELS) {
+    const fullPrefNorm = normalizeHomophones(CHAPEL_CODE_PREFIXES[ch] || '');
+    const strippedChNorm = normalizeHomophones(ch.replace(/ቻፕል/g, ''));
+    if (norm === fullPrefNorm || norm.startsWith(fullPrefNorm) || norm === strippedChNorm || norm.includes(strippedChNorm)) {
+      return ch;
+    }
+  }
+
+  const str = String(rawPrefix || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+  if (str.includes('elroi') || str.includes('elrohe') || str.includes('ኤልሮኢ') || str.includes('ኤልሮይ')) return DEFAULT_CHAPELS[0];
+  if (str.includes('shalom') || str.includes('shaloam') || str.includes('ሻሎም') || str.includes('ሳሎም')) return DEFAULT_CHAPELS[1];
+  if (str.includes('bethel') || str.includes('betel') || str.includes('ቤቴል') || str.includes('በቴል') || str.includes('ቤትኤል')) return DEFAULT_CHAPELS[2];
+  if (str.includes('yahweh') || str.includes('yahwe') || str.includes('ያህዌ')) return DEFAULT_CHAPELS[3];
+  if (str.includes('eden') || str.includes('ኤዴን') || str.includes('ኤደን')) return DEFAULT_CHAPELS[4];
+  if (str.includes('ebenezer') || str.includes('abenezer') || str.includes('አቤንኤዘር') || str.includes('አቤኔዘር')) return DEFAULT_CHAPELS[5];
+  if (str.includes('rehoboth') || str.includes('rehobot') || str.includes('ርኆቦት') || str.includes('ርሆቦት')) return DEFAULT_CHAPELS[6];
+  if (str.includes('elshaddai') || str.includes('elshaday') || str.includes('elshadday') || str.includes('ኤልሻዳይ') || str.includes('ሻዳይ')) return DEFAULT_CHAPELS[7];
+  if (str.includes('ruhama') || str.includes('ruhamah') || str.includes('ሩሐማ') || str.includes('ሩሃማ') || str.includes('ሩሀማ')) return DEFAULT_CHAPELS[8];
+  if (str.includes('adonai') || str.includes('adonay') || str.includes('አዶናይ')) return DEFAULT_CHAPELS[9];
+  return null;
+};
+
 /**
  * Returns the exact code prefix for a given chapel name.
  */
@@ -112,6 +138,7 @@ export const formatChapelMemberCode = (
 /**
  * Parses base sequence number and optional family branch sub-number ("/1", "/2", etc.)
  * from an existing member code if it belongs to the given chapel prefix.
+ * Also supports "<chapelName> 0513" (e.g., "ኤልሻዳይ 0513/1") or full prefix variants with spaces/dashes.
  */
 export const parseChapelCodeParts = (
   code: string | undefined | null,
@@ -120,22 +147,24 @@ export const parseChapelCodeParts = (
   const clean = String(code || '').trim();
   if (!clean) return null;
 
+  const numMatch = clean.match(/(\d+)(?:\s*\/\s*(\d+))?\s*$/);
+  if (!numMatch || numMatch.index === undefined) return null;
+
+  const rawPrefixPart = clean.slice(0, numMatch.index).trim();
+  const explicitPrefixChapel = matchExplicitChapelPrefix(rawPrefixPart);
+
   let matchedChapel = chapelName ? resolveOfficialChapel(chapelName) : '';
   if (matchedChapel) {
-    const expectedPrefix = getChapelCodePrefix(matchedChapel);
-    if (!normalizeHomophones(clean).startsWith(normalizeHomophones(expectedPrefix))) {
-      return null;
+    if (!explicitPrefixChapel || explicitPrefixChapel !== matchedChapel) {
+      const expectedPrefix = getChapelCodePrefix(matchedChapel);
+      if (!normalizeHomophones(clean).startsWith(normalizeHomophones(expectedPrefix))) {
+        return null;
+      }
     }
   } else {
-    const foundChapel = DEFAULT_CHAPELS.find((ch) =>
-      normalizeHomophones(clean).startsWith(normalizeHomophones(getChapelCodePrefix(ch)))
-    );
-    if (!foundChapel) return null;
-    matchedChapel = foundChapel;
+    if (!explicitPrefixChapel) return null;
+    matchedChapel = explicitPrefixChapel;
   }
-
-  const numMatch = clean.match(/(\d+)(?:\s*\/\s*(\d+))?\s*$/);
-  if (!numMatch) return null;
 
   const baseSeq = parseInt(numMatch[1], 10);
   if (isNaN(baseSeq) || baseSeq <= 0) return null;
@@ -164,14 +193,28 @@ export const parseChapelCodeNumber = (code: string | undefined | null, chapelNam
 };
 
 /**
- * Extracts the root family base code (e.g. "ብከቃሕቤክኤልሻዳይ 0513" from "ብከቃሕቤክኤልሻዳይ 0513/1").
+ * Extracts the root family base code (e.g. "ብከቃሕቤክኤልሻዳይ 0513" from "ብከቃሕቤክኤልሻዳይ 0513/1"
+ * or short "0513" when `chapelName` is known).
  */
 export const getRootFamilyBaseCode = (
   code: string | undefined | null,
   chapelName?: string
 ): string => {
-  const parts = parseChapelCodeParts(code, chapelName);
-  return parts ? parts.baseCode : String(code || '').trim();
+  const clean = String(code || '').trim();
+  if (!clean) return '';
+  const parts = parseChapelCodeParts(clean, chapelName);
+  if (parts) return parts.baseCode;
+
+  if (chapelName) {
+    const shortMatch = clean.match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
+    if (shortMatch) {
+      const baseNum = parseInt(shortMatch[1], 10);
+      if (!isNaN(baseNum) && baseNum > 0) {
+        return formatChapelMemberCode(chapelName, baseNum);
+      }
+    }
+  }
+  return clean;
 };
 
 /**
@@ -204,7 +247,7 @@ export const getNextMemberCodeForChapel = (
 
 /**
  * Computes the next hierarchical family branch sub-code ("/1", "/2", "/3", ...)
- * anchored to an existing member or family base code.
+ * anchored to an existing member or family base code (full OR short e.g. "0513").
  * Example: Anchor "ብከቃሕቤክኤልሻዳይ 0513" -> first dependent "ብከቃሕቤክኤልሻዳይ 0513/1",
  * second dependent (even if added using "... 0513" or "... 0513/1") -> "ብከቃሕቤክኤልሻዳይ 0513/2".
  */
@@ -223,17 +266,35 @@ export const getNextFamilySubCode = (
       ? preferredChapel
       : anchorCodeOrMember.chapel || preferredChapel;
 
-  const anchorParts =
+  let anchorParts =
     parseChapelCodeParts(rawAnchorCode, anchorChapel || undefined) ||
     (typeof anchorCodeOrMember !== 'string'
       ? parseChapelCodeParts(anchorCodeOrMember.memberCode, anchorChapel || undefined)
       : null);
 
+  // Support short numeric anchor ("0513", "513", "0513/1") when chapel is known
+  if (!anchorParts && anchorChapel) {
+    const shortMatch = String(rawAnchorCode || '').trim().match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
+    if (shortMatch) {
+      const baseNum = parseInt(shortMatch[1], 10);
+      const subNum = shortMatch[2] ? parseInt(shortMatch[2], 10) : null;
+      if (!isNaN(baseNum) && baseNum > 0) {
+        anchorParts = {
+          prefix: getChapelCodePrefix(anchorChapel),
+          baseSeq: baseNum,
+          subSeq: subNum,
+          baseCode: formatChapelMemberCode(anchorChapel, baseNum),
+          formatted: formatChapelMemberCode(anchorChapel, baseNum, subNum)
+        };
+      }
+    }
+  }
+
   const officialChapel = anchorChapel
     ? resolveOfficialChapel(anchorChapel)
     : anchorParts
     ? resolveOfficialChapel(
-        DEFAULT_CHAPELS.find((ch) => getChapelCodePrefix(ch) === anchorParts.prefix) || DEFAULT_CHAPELS[0]
+        DEFAULT_CHAPELS.find((ch) => getChapelCodePrefix(ch) === anchorParts!.prefix) || DEFAULT_CHAPELS[0]
       )
     : DEFAULT_CHAPELS[0];
 
@@ -256,62 +317,110 @@ export const getNextFamilySubCode = (
 };
 
 /**
+ * Returns ALL matching representative members across chapels for an entered code.
+ * Handles:
+ * - Full code: "ብከቃሕቤክኤልሻዳይ 0513", "ብከቃሕቤክኤልሻዳይ 0513/1"
+ * - Chapel + number: "ኤልሻዳይ 0513", "elshaddai 0513/1"
+ * - Short number: "0513", "513", "0513/1" (scoped to preferredChapel if given, or scanning all chapels!)
+ */
+export const findAllMatchingMembersByCode = (
+  members: ChurchMember[] = [],
+  enteredCode: string,
+  preferredChapel?: string | null
+): ChurchMember[] => {
+  const raw = String(enteredCode || '').trim();
+  if (!raw) return [];
+
+  const targetOfficialChapel = preferredChapel ? resolveOfficialChapel(preferredChapel) : null;
+  const scopedMembers = targetOfficialChapel
+    ? members.filter((m) => resolveOfficialChapel(m.chapel || '') === targetOfficialChapel)
+    : members;
+
+  const normFull = normalizeCodeForLookup(raw);
+
+  // 1. Exact memberCode match
+  const exactMember = scopedMembers.find((m) => normalizeCodeForLookup(m.memberCode) === normFull);
+  if (exactMember) return [exactMember];
+
+  // 2. Match by familyCode (preferring head)
+  const familyMatches = scopedMembers.filter(
+    (m) => Boolean(m.familyCode) && normalizeCodeForLookup(m.familyCode) === normFull
+  );
+  if (familyMatches.length > 0) {
+    const head = familyMatches.find((m) => normalizeCodeForLookup(m.memberCode) === normFull);
+    return [head || familyMatches[0]];
+  }
+
+  // 3. Parsed chapel/prefix code (e.g. "ኤልሻዳይ 0513", "ብከቃሕቤክ ኤልሻዳይ 0513/1")
+  const parsed = parseChapelCodeParts(raw, targetOfficialChapel || undefined);
+  if (parsed) {
+    const normFormatted = normalizeCodeForLookup(parsed.formatted);
+    const normBase = normalizeCodeForLookup(parsed.baseCode);
+    const exactFormatted = scopedMembers.find(
+      (m) => normalizeCodeForLookup(m.memberCode) === normFormatted
+    );
+    if (exactFormatted) return [exactFormatted];
+
+    const byBase = scopedMembers.find(
+      (m) =>
+        normalizeCodeForLookup(m.memberCode) === normBase ||
+        normalizeCodeForLookup(m.familyCode) === normBase
+    );
+    if (byBase) return [byBase];
+  }
+
+  // 4. Short number ("0513", "513", "0513/1", "513/2") across preferredChapel or ALL chapels
+  const shortMatch = raw.match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
+  if (shortMatch) {
+    const baseNum = parseInt(shortMatch[1], 10);
+    const subNum = shortMatch[2] ? parseInt(shortMatch[2], 10) : null;
+    if (!isNaN(baseNum) && baseNum > 0) {
+      const resultsByChapel = new Map<string, ChurchMember>();
+
+      const chapelsToCheck = targetOfficialChapel ? [targetOfficialChapel] : DEFAULT_CHAPELS;
+      for (const ch of chapelsToCheck) {
+        const chFormattedExact = normalizeCodeForLookup(formatChapelMemberCode(ch, baseNum, subNum));
+        const chBaseFormatted = normalizeCodeForLookup(formatChapelMemberCode(ch, baseNum));
+
+        const exactInCh = scopedMembers.find(
+          (m) =>
+            resolveOfficialChapel(m.chapel || '') === ch &&
+            normalizeCodeForLookup(m.memberCode) === chFormattedExact
+        );
+        if (exactInCh) {
+          resultsByChapel.set(ch, exactInCh);
+          continue;
+        }
+
+        // Otherwise fallback to head (base) or any dependent referencing base in that chapel
+        const familyHeadInCh = scopedMembers.find(
+          (m) =>
+            resolveOfficialChapel(m.chapel || '') === ch &&
+            (normalizeCodeForLookup(m.memberCode) === chBaseFormatted ||
+              normalizeCodeForLookup(m.familyCode) === chBaseFormatted)
+        );
+        if (familyHeadInCh) {
+          resultsByChapel.set(ch, familyHeadInCh);
+        }
+      }
+
+      return Array.from(resultsByChapel.values());
+    }
+  }
+
+  return [];
+};
+
+/**
  * Finds an existing member (or household head) matching a user-entered code.
- * Supports full code ("ብከቃሕቤክኤልሻዳይ 0513" or "ብከቃሕቤክኤልሻዳይ 0513/1"),
- * spaceless ("ብከቃሕቤክኤልሻዳይ0513/1"), or short number ("0513" / "0513/1") when `preferredChapel` is supplied.
  */
 export const findMemberByEnteredCode = (
   members: ChurchMember[] = [],
   enteredCode: string,
   preferredChapel?: string | null
 ): ChurchMember | null => {
-  const raw = String(enteredCode || '').trim();
-  if (!raw) return null;
-
-  const normFull = normalizeCodeForLookup(raw);
-  const targetOfficialChapel = preferredChapel ? resolveOfficialChapel(preferredChapel) : null;
-
-  // 1. Exact memberCode match
-  const exactMember = members.find((m) => {
-    if (targetOfficialChapel && resolveOfficialChapel(m.chapel || '') !== targetOfficialChapel) {
-      return false;
-    }
-    return normalizeCodeForLookup(m.memberCode) === normFull;
-  });
-  if (exactMember) return exactMember;
-
-  // 2. Match by familyCode (preferring the family head whose memberCode equals familyCode)
-  const familyMatches = members.filter((m) => {
-    if (targetOfficialChapel && resolveOfficialChapel(m.chapel || '') !== targetOfficialChapel) {
-      return false;
-    }
-    return Boolean(m.familyCode) && normalizeCodeForLookup(m.familyCode) === normFull;
-  });
-  if (familyMatches.length > 0) {
-    const head = familyMatches.find(
-      (m) => normalizeCodeForLookup(m.memberCode) === normFull
-    );
-    return head || familyMatches[0];
-  }
-
-  // 3. Short number (e.g. "0513", "513", "0513/1", "513/2") with preferredChapel
-  const shortMatch = raw.match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
-  if (shortMatch && targetOfficialChapel) {
-    const baseNum = parseInt(shortMatch[1], 10);
-    const subNum = shortMatch[2] ? parseInt(shortMatch[2], 10) : null;
-    if (!isNaN(baseNum) && baseNum > 0) {
-      const formatted = formatChapelMemberCode(targetOfficialChapel, baseNum, subNum);
-      const normFormatted = normalizeCodeForLookup(formatted);
-      const byShort = members.find(
-        (m) =>
-          resolveOfficialChapel(m.chapel || '') === targetOfficialChapel &&
-          normalizeCodeForLookup(m.memberCode) === normFormatted
-      );
-      if (byShort) return byShort;
-    }
-  }
-
-  return null;
+  const allMatches = findAllMatchingMembersByCode(members, enteredCode, preferredChapel);
+  return allMatches[0] || null;
 };
 
 /**
@@ -362,13 +471,18 @@ export const assignSequentialCodesAndSortMembers = (
           if ((parts.subSeq ?? 0) > prevSub) {
             maxSubByBase.set(parts.baseSeq, parts.subSeq ?? 0);
           }
-          // Normalize familyCode to root baseCode when it belongs to this chapel
+          // Normalize familyCode to root baseCode when it belongs to this chapel (or auto-fill for sub-coded members)
           const famParts = m.familyCode ? parseChapelCodeParts(m.familyCode, chapel) : null;
+          const normalizedFamilyCode = famParts
+            ? famParts.baseCode
+            : parts.subSeq !== null
+            ? parts.baseCode
+            : m.familyCode;
           return {
             member: {
               ...m,
               memberCode: parts.formatted,
-              familyCode: famParts ? famParts.baseCode : m.familyCode
+              familyCode: normalizedFamilyCode
             },
             baseSeq: parts.baseSeq,
             subSeq: parts.subSeq
@@ -382,15 +496,31 @@ export const assignSequentialCodesAndSortMembers = (
     const completed = firstPass.map((entry) => {
       if (entry.baseSeq !== null) return entry;
 
-      const famParts = entry.member.familyCode
+      let famParts = entry.member.familyCode
         ? parseChapelCodeParts(entry.member.familyCode, chapel)
         : null;
+
+      // Also support numeric-only familyCode like "0513" if present
+      if (!famParts && entry.member.familyCode) {
+        const shortFamMatch = String(entry.member.familyCode).trim().match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
+        if (shortFamMatch) {
+          const bNum = parseInt(shortFamMatch[1], 10);
+          if (!isNaN(bNum) && bNum > 0) {
+            famParts = {
+              prefix: getChapelCodePrefix(chapel),
+              baseSeq: bNum,
+              subSeq: shortFamMatch[2] ? parseInt(shortFamMatch[2], 10) : null,
+              baseCode: formatChapelMemberCode(chapel, bNum),
+              formatted: formatChapelMemberCode(chapel, bNum)
+            };
+          }
+        }
+      }
 
       if (famParts) {
         const targetBase = famParts.baseSeq;
         if (targetBase > maxBaseSeq) maxBaseSeq = targetBase;
 
-        // If base itself isn't taken yet, assign base; otherwise assign next subSeq (/1, /2, ...)
         let nextSub = (maxSubByBase.get(targetBase) ?? 0) + 1;
         while (usedCodeKeys.has(`${targetBase}/${nextSub}`)) {
           nextSub += 1;

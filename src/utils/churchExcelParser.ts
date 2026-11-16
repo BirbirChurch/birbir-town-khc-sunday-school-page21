@@ -764,7 +764,12 @@ export const parseChurchWorkbookAllSheets = (
   const ageMode = options?.ageMode ?? 'auto';
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const allMembers: (ChurchMember & { _parsedAgeWasKnown: boolean; _rel?: string })[] = [];
+  const allMembers: (ChurchMember & {
+    _parsedAgeWasKnown: boolean;
+    _rel?: string;
+    _householdId?: string;
+    _linkedHouseholdId?: string;
+  })[] = [];
   const allChildren: Omit<ChurchChild, 'id'>[] = [];
   const allAdultsSkipped: { name: string; age: number; gender: string; reason: string }[] = [];
   const sheetCounts: Record<string, number> = {};
@@ -829,11 +834,19 @@ export const parseChurchWorkbookAllSheets = (
     let currentFamilyHeadName = '';
     let currentFamilyPhone = '';
     let currentFamilyResidence = '';
+    let currentHouseholdId = '';
+    let householdSeqCounter = 0;
     let lastRecentAdultHeadName = '';
     let lastRecentAdultPhone = '';
     let lastRecentAdultResidence = '';
+    let lastRecentAdultHouseholdId = '';
 
-    const sheetMembers: (ChurchMember & { _parsedAgeWasKnown: boolean; _rel?: string })[] = [];
+    const sheetMembers: (ChurchMember & {
+      _parsedAgeWasKnown: boolean;
+      _rel?: string;
+      _householdId?: string;
+      _linkedHouseholdId?: string;
+    })[] = [];
 
     for (let i = startRow; i < rawRows.length; i++) {
       const row = rawRows[i];
@@ -850,6 +863,8 @@ export const parseChurchWorkbookAllSheets = (
           activeSectionChapel = mapToOfficialChapelStrict(nonEmptyCells[0].val, sIdx);
           currentFamilyPhone = '';
           currentFamilyHeadName = '';
+          currentHouseholdId = '';
+          lastRecentAdultHouseholdId = '';
           continue;
         }
       }
@@ -998,9 +1013,13 @@ export const parseChurchWorkbookAllSheets = (
           normalizeAmharicSearchText(currentFamilyHeadName).includes(normalizeAmharicSearchText(parentName))
         );
 
+      const hadOwnPhoneBeforeFallback = Boolean(directPhone);
       const isChildOrMinor = ageNum >= 0 && ageNum <= 17;
       const isDependent = isDependentRelation(rel);
       const isExplicitHead = isHeadRelation(rel);
+
+      let rowHouseholdId = '';
+      let linkedHouseholdId: string | undefined = undefined;
 
       // If this row starts a clearly distinct new adult household (not grouped seq, not dependent, not matching patronym)
       if (!sameGroupedSeq && !isDependent && !isChildOrMinor && !matchesCurrentHeadPatronym) {
@@ -1008,6 +1027,9 @@ export const parseChurchWorkbookAllSheets = (
         currentFamilyHeadName = rawName;
         currentFamilyPhone = directPhone || '';
         currentFamilyResidence = residence || '';
+        householdSeqCounter += 1;
+        currentHouseholdId = `hh_${sIdx}_${householdSeqCounter}`;
+        rowHouseholdId = currentHouseholdId;
       } else {
         // Same household or dependent or child
         if (!sameGroupedSeq && seqBase && isExplicitHead) {
@@ -1015,8 +1037,34 @@ export const parseChurchWorkbookAllSheets = (
           currentFamilyHeadName = rawName;
           currentFamilyPhone = directPhone || '';
           currentFamilyResidence = residence || '';
+          householdSeqCounter += 1;
+          currentHouseholdId = `hh_${sIdx}_${householdSeqCounter}`;
+          rowHouseholdId = currentHouseholdId;
         } else {
           if (!currentFamilyHeadName) currentFamilyHeadName = rawName;
+          if (!currentHouseholdId) {
+            householdSeqCounter += 1;
+            currentHouseholdId = `hh_${sIdx}_${householdSeqCounter}`;
+            rowHouseholdId = currentHouseholdId;
+          } else if (
+            sameGroupedSeq ||
+            isDependent ||
+            explicitParentMatchesHead ||
+            ((isChildOrMinor || !hadOwnPhoneBeforeFallback) && matchesCurrentHeadPatronym)
+          ) {
+            linkedHouseholdId = currentHouseholdId;
+          } else if (
+            isChildOrMinor &&
+            matchesRecentAdultPatronym &&
+            lastRecentAdultHouseholdId
+          ) {
+            linkedHouseholdId = lastRecentAdultHouseholdId;
+          } else {
+            // Standalone minor/adult that shouldn't inherit an unrelated household's familyCode
+            householdSeqCounter += 1;
+            rowHouseholdId = `hh_${sIdx}_${householdSeqCounter}`;
+          }
+
           const sameResidenceOrBlank =
             !residence ||
             !currentFamilyResidence ||
@@ -1060,10 +1108,16 @@ export const parseChurchWorkbookAllSheets = (
         if (!residence && lastRecentAdultResidence) {
           residence = lastRecentAdultResidence;
         }
+        if (!linkedHouseholdId && matchesRecentAdultPatronym && lastRecentAdultHouseholdId) {
+          linkedHouseholdId = lastRecentAdultHouseholdId;
+        }
       } else if (!directPhone && matchesPrevSiblingFather && prevMember?.phone) {
         directPhone = prevMember.phone;
         if (!parentName && prevMember.parentName) parentName = prevMember.parentName;
         if (!residence && prevMember.residence) residence = prevMember.residence;
+        if (!linkedHouseholdId && (prevMember._linkedHouseholdId || prevMember._householdId)) {
+          linkedHouseholdId = prevMember._linkedHouseholdId || prevMember._householdId;
+        }
       }
 
       // Final parentName fallback from father's + grandfather's name parts
@@ -1079,6 +1133,7 @@ export const parseChurchWorkbookAllSheets = (
         lastRecentAdultHeadName = rawName;
         lastRecentAdultPhone = directPhone;
         lastRecentAdultResidence = residence || '';
+        lastRecentAdultHouseholdId = rowHouseholdId || currentHouseholdId;
       }
 
       // Register in lookup maps if we have a phone
@@ -1122,7 +1177,10 @@ export const parseChurchWorkbookAllSheets = (
         sheetName,
         registeredDate: todayStr,
         _parsedAgeWasKnown: parsedAgeWasKnown,
-        _rel: rel
+        _rel: rel,
+        _householdId: rowHouseholdId || undefined,
+        _linkedHouseholdId:
+          existingMemberCode || existingFamilyCode ? undefined : linkedHouseholdId
       });
     }
 
@@ -1154,9 +1212,55 @@ export const parseChurchWorkbookAllSheets = (
     }
   }
 
-  // Pass 3: Assign sequential chapel codes (e.g. ብከቃሕቤክኤልሮኢ 0001) and order members by all 10 chapels sequentially
-  const cleanMembers = allMembers.map(({ _parsedAgeWasKnown, _rel, ...rest }) => rest);
-  const codedSortedMembers = assignSequentialCodesAndSortMembers(cleanMembers);
+  // Pass 3: Resolve household heads first so detected family dependents inherit head's base memberCode -> /1, /2, ...
+  const householdMetaById = new Map<number, { householdId?: string; linkedHouseholdId?: string }>();
+  const primaryOrStandaloneRows: ChurchMember[] = [];
+  const linkedDependentRows: ChurchMember[] = [];
+
+  allMembers.forEach(({ _parsedAgeWasKnown, _rel, _householdId, _linkedHouseholdId, ...rest }) => {
+    if (_householdId || _linkedHouseholdId) {
+      householdMetaById.set(rest.id, {
+        householdId: _householdId,
+        linkedHouseholdId: _linkedHouseholdId
+      });
+    }
+    if (_linkedHouseholdId) {
+      linkedDependentRows.push(rest);
+    } else {
+      primaryOrStandaloneRows.push(rest);
+    }
+  });
+
+  const codedPrimaryRows = assignSequentialCodesAndSortMembers(primaryOrStandaloneRows);
+  const headCodeByHouseholdKey = new Map<string, { code: string; chapel: string }>();
+  codedPrimaryRows.forEach((m) => {
+    const meta = householdMetaById.get(m.id);
+    if (meta?.householdId && m.memberCode) {
+      headCodeByHouseholdKey.set(meta.householdId, {
+        code: m.memberCode,
+        chapel: m.chapel || DEFAULT_CHAPELS[0]
+      });
+    }
+  });
+
+  const resolvedDependents = linkedDependentRows.map((m) => {
+    const meta = householdMetaById.get(m.id);
+    const headInfo = meta?.linkedHouseholdId
+      ? headCodeByHouseholdKey.get(meta.linkedHouseholdId)
+      : undefined;
+    if (headInfo && headInfo.chapel === m.chapel && !m.familyCode && !m.memberCode) {
+      return {
+        ...m,
+        familyCode: headInfo.code
+      };
+    }
+    return m;
+  });
+
+  const codedSortedMembers = assignSequentialCodesAndSortMembers([
+    ...codedPrimaryRows,
+    ...resolvedDependents
+  ]);
 
   // Pass 4: Extract 0-14 children preserving their assigned chapel memberCode
   for (const m of codedSortedMembers) {

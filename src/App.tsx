@@ -41,7 +41,8 @@ import {
   assignSequentialCodesAndSortMembers,
   getNextFamilySubCode,
   getNextMemberCodeForChapel,
-  getRootFamilyBaseCode
+  getRootFamilyBaseCode,
+  normalizeCodeForLookup
 } from './utils/memberCodeGenerator';
 import {
   applyBulkAgeIncrementToAppData,
@@ -1057,23 +1058,98 @@ export default function App() {
         ? getNextFamilySubCode(currentList, normalizedFamilyCode, enforcedChapel)
         : getNextMemberCodeForChapel(currentList, enforcedChapel));
 
-    const mWithId: ChurchMember = {
+    const newId = generateUniqueId();
+    const initialMember: ChurchMember = {
       ...newMember,
       familyCode: normalizedFamilyCode,
       memberCode: assignedCode,
       chapel: enforcedChapel,
-      id: generateUniqueId()
+      id: newId
     };
 
+    let finalSavedMember: ChurchMember = initialMember;
+
     updateAppData(
-      (prev) => ({
-        ...prev,
-        churchMembers: assignSequentialCodesAndSortMembers([...(prev.churchMembers || []), mWithId])
-      }),
+      (prev) => {
+        const prevMembers = prev.churchMembers || [];
+        // Avoid stale-ref code collision: if assignedCode already exists in prevMembers, clear so Pass 2 computes fresh next code
+        const normAssigned = normalizeCodeForLookup(assignedCode);
+        const hasCollision =
+          Boolean(normAssigned) &&
+          prevMembers.some((m) => normalizeCodeForLookup(m.memberCode) === normAssigned);
+
+        const candidate: ChurchMember = {
+          ...initialMember,
+          memberCode: hasCollision ? undefined : initialMember.memberCode
+        };
+
+        const nextMembers = assignSequentialCodesAndSortMembers([...prevMembers, candidate]);
+        const saved = nextMembers.find((m) => m.id === newId) || candidate;
+        finalSavedMember = saved;
+
+        // Also sync 0-14 children directly into churchChildren ("የልጆች ቋት") with their memberCode & familyCode
+        const ageNum =
+          typeof saved.age === 'number' ? saved.age : parseInt(String(saved.age ?? ''), 10);
+        let nextChildren = prev.churchChildren || [];
+        if (!isNaN(ageNum) && ageNum >= 0 && ageNum <= 14) {
+          const normChildName = normalizeAmharicSearchText(saved.name);
+          const existingIdx = nextChildren.findIndex(
+            (c) =>
+              (c.memberCode &&
+                saved.memberCode &&
+                normalizeCodeForLookup(c.memberCode) === normalizeCodeForLookup(saved.memberCode)) ||
+              (normalizeAmharicSearchText(c.name) === normChildName &&
+                mapToOfficialChapel(c.chapel || '') === enforcedChapel)
+          );
+          const syncedChildFields: Omit<ChurchChild, 'id'> = {
+            memberCode: saved.memberCode,
+            familyCode: saved.familyCode,
+            name: saved.name,
+            gender: saved.gender === 'ሴ' ? 'ሴ' : 'ወ',
+            age: ageNum,
+            educationLevel:
+              saved.educationLevel ||
+              (ageNum <= 3
+                ? 'ጨቅላ/ያልጀመረ'
+                : ageNum <= 6
+                ? `መዋዕለ ሕፃናት (KG ${Math.min(3, Math.max(1, ageNum - 3))})`
+                : `${ageNum - 6}ኛ ክፍል`),
+            occupation: saved.occupation || (ageNum <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
+            chapel: enforcedChapel,
+            parentName: saved.parentName,
+            phone: saved.phone,
+            residence: saved.residence,
+            fellowshipOrVillage: saved.residence,
+            registeredDate: saved.registeredDate || new Date().toISOString().split('T')[0]
+          };
+
+          if (existingIdx >= 0) {
+            nextChildren = nextChildren.map((c, idx) =>
+              idx === existingIdx
+                ? {
+                    ...c,
+                    ...syncedChildFields,
+                    memberCode: saved.memberCode || c.memberCode,
+                    familyCode: saved.familyCode || c.familyCode
+                  }
+                : c
+            );
+          } else {
+            nextChildren = [...nextChildren, { ...syncedChildFields, id: generateUniqueId() }];
+          }
+        }
+
+        return {
+          ...prev,
+          chapels: DEFAULT_CHAPELS,
+          churchMembers: nextMembers,
+          churchChildren: nextChildren
+        };
+      },
       { immediate: true }
     );
 
-    return mWithId;
+    return finalSavedMember;
   };
 
   const handleUpdateChurchMember = (updatedMember: ChurchMember) => {
@@ -1081,23 +1157,79 @@ export default function App() {
       ? mapToOfficialChapel(loggedInChapel)
       : mapToOfficialChapel(updatedMember.chapel || '');
 
-    updateAppData((prev) => ({
-      ...prev,
-      churchMembers: assignSequentialCodesAndSortMembers(
-        (prev.churchMembers || []).map((m) => {
+    updateAppData(
+      (prev) => {
+        const prevMembers = prev.churchMembers || [];
+        const targetExisting = prevMembers.find((m) => m.id === updatedMember.id);
+        const oldMemberCode = targetExisting?.memberCode;
+        const oldNormName = targetExisting ? normalizeAmharicSearchText(targetExisting.name) : '';
+
+        const mapped = prevMembers.map((m) => {
           if (m.id !== updatedMember.id) return m;
           if (loggedInChapel && mapToOfficialChapel(m.chapel || '') !== enforcedChapel) {
             return m;
           }
           const chapelChanged = mapToOfficialChapel(m.chapel || '') !== enforcedChapel;
+          const resolvedFamilyCode = updatedMember.familyCode
+            ? getRootFamilyBaseCode(updatedMember.familyCode, enforcedChapel)
+            : undefined;
+          const prevFamilyNorm = normalizeCodeForLookup(m.familyCode);
+          const nextFamilyNorm = normalizeCodeForLookup(resolvedFamilyCode);
+          const familyLinkedChanged = Boolean(nextFamilyNorm) && nextFamilyNorm !== prevFamilyNorm;
+          const explicitClearCode =
+            updatedMember.memberCode === '' || updatedMember.memberCode === undefined;
+
           return {
             ...updatedMember,
             chapel: enforcedChapel,
-            memberCode: chapelChanged ? undefined : (updatedMember.memberCode || m.memberCode)
+            familyCode: resolvedFamilyCode,
+            memberCode:
+              chapelChanged || explicitClearCode || familyLinkedChanged
+                ? undefined
+                : updatedMember.memberCode
           };
-        })
-      )
-    }));
+        });
+
+        const nextMembers = assignSequentialCodesAndSortMembers(mapped);
+        const savedUpdated = nextMembers.find((m) => m.id === updatedMember.id);
+
+        // Keep matching churchChildren row synced with updated memberCode / familyCode
+        let nextChildren = prev.churchChildren || [];
+        if (savedUpdated) {
+          nextChildren = nextChildren.map((c) => {
+            const matchesByCode =
+              Boolean(oldMemberCode) &&
+              Boolean(c.memberCode) &&
+              normalizeCodeForLookup(c.memberCode) === normalizeCodeForLookup(oldMemberCode);
+            const matchesByName =
+              oldNormName &&
+              normalizeAmharicSearchText(c.name) === oldNormName &&
+              mapToOfficialChapel(c.chapel || '') === enforcedChapel;
+
+            if (!matchesByCode && !matchesByName) return c;
+            return {
+              ...c,
+              memberCode: savedUpdated.memberCode,
+              familyCode: savedUpdated.familyCode,
+              name: savedUpdated.name,
+              gender: savedUpdated.gender === 'ሴ' ? 'ሴ' : 'ወ',
+              age: savedUpdated.age ?? c.age,
+              chapel: enforcedChapel,
+              parentName: savedUpdated.parentName ?? c.parentName,
+              phone: savedUpdated.phone ?? c.phone,
+              residence: savedUpdated.residence ?? c.residence
+            };
+          });
+        }
+
+        return {
+          ...prev,
+          churchMembers: nextMembers,
+          churchChildren: nextChildren
+        };
+      },
+      { immediate: true }
+    );
   };
 
   const handleDeleteChurchMember = (id: number) => {
@@ -1616,9 +1748,11 @@ export default function App() {
                   ageReferenceYear={appData.ageReferenceYear || 2017}
                   classList={CLASS_LIST}
                   churchChildren={appData.churchChildren || []}
+                  churchMembers={appData.churchMembers || []}
                   chapelList={appData.chapels || DEFAULT_CHAPELS}
                   studentsByClass={appData.students?.[currentYear] || {}}
                   onAddChild={handleAddChurchChild}
+                  onAddChurchMember={handleAddChurchMember}
                   onUpdateChild={handleUpdateChurchChild}
                   onDeleteChild={handleDeleteChurchChild}
                   onClearChurchChildren={handleClearChurchChildren}

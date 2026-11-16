@@ -20,7 +20,7 @@ import {
 import { ChurchMember, Role, Teacher } from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import {
-  findMemberByEnteredCode,
+  findAllMatchingMembersByCode,
   getNextFamilySubCode,
   getRootFamilyBaseCode,
   resolveOfficialChapel
@@ -79,14 +79,19 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   } | null>(null);
   const [copiedNewCode, setCopiedNewCode] = useState<boolean>(false);
 
-  const matchedPortalMember = useMemo(() => {
-    if (!portalCodeInput.trim()) return null;
-    return findMemberByEnteredCode(
+  const matchedAllPortalMembers = useMemo(() => {
+    if (!portalCodeInput.trim()) return [];
+    return findAllMatchingMembersByCode(
       churchMembers,
       portalCodeInput,
       portalChapelHint || undefined
     );
   }, [churchMembers, portalCodeInput, portalChapelHint]);
+
+  const matchedPortalMember = useMemo(() => {
+    if (matchedAllPortalMembers.length === 1) return matchedAllPortalMembers[0];
+    return null;
+  }, [matchedAllPortalMembers]);
 
   const portalTargetChapel = useMemo(() => {
     if (!matchedPortalMember) return DEFAULT_CHAPELS[0];
@@ -605,6 +610,32 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                   </div>
                 </div>
 
+                {matchedAllPortalMembers.length > 1 && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 space-y-1.5">
+                    <p className="text-[11px] font-extrabold text-amber-950">
+                      ይህ ቁጥር ({portalCodeInput.trim()}) በ{matchedAllPortalMembers.length} ቻፕሎች ተገኝቷል — ትክክለኛውን ቻፕል ይምረጡ፦
+                    </p>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {matchedAllPortalMembers.map((pm) => (
+                        <button
+                          key={`pm_multi_${pm.id}`}
+                          type="button"
+                          onClick={() => {
+                            setPortalChapelHint(resolveOfficialChapel(pm.chapel || ''));
+                            setPortalCodeInput(pm.memberCode || '');
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 bg-white hover:bg-cyan-50 border border-amber-200 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <span className="font-bold text-slate-900">
+                            {pm.name} <span className="text-[10px] text-blue-800">({pm.chapel})</span>
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-indigo-900">{pm.memberCode}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {matchedPortalMember ? (
                   <div className="bg-white border border-emerald-300 rounded-xl p-3 space-y-1">
                     <div className="flex items-center justify-between gap-2">
@@ -632,16 +663,16 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       </span>
                     </div>
                   </div>
-                ) : portalCodeInput.trim() ? (
+                ) : portalCodeInput.trim() && matchedAllPortalMembers.length === 0 ? (
                   <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>ያስገቡት ኮድ አልተገኘም! እባክዎ ትክክለኛውን ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001) ያስገቡ።</span>
+                    <span>ያስገቡት ኮድ አልተገኘም! እባክዎ ትክክለኛውን ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513 ወይም 0513) ያስገቡ።</span>
                   </p>
-                ) : (
+                ) : !matchedAllPortalMembers.length ? (
                   <p className="text-[11px] text-cyan-900">
-                    ነባሩን የቤተሰብ ኮድ ሲያስገቡ የአዲሱን የቤተሰብ አባል ስም፣ ጾታና ዕድሜ አስገብተው መመዝገብ ይችላሉ።
+                    ነባሩን የቤተሰብ ኮድ (0513) ሲያስገቡ ለሚስት 0513/1፣ ለልጅ 0513/2 እያለ በቅደም ተከተል ንዑስ ኮድ ይሰጠዋል።
                   </p>
-                )}
+                ) : null}
               </div>
 
               {matchedPortalMember && (

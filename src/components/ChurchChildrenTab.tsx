@@ -30,10 +30,12 @@ import {
   BookOpen,
   Briefcase,
   SlidersHorizontal,
-  Languages
+  Languages,
+  KeyRound,
+  Hash
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ChurchChild, Student, Role } from '../types';
+import { ChurchChild, ChurchMember, Student, Role } from '../types';
 import { downloadXLSX } from '../utils/csv';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { NameCrossReferenceModal } from './NameCrossReferenceModal';
@@ -45,6 +47,12 @@ import {
   SheetRowOverrideMapping
 } from '../utils/churchExcelParser';
 import {
+  findAllMatchingMembersByCode,
+  getNextFamilySubCode,
+  getRootFamilyBaseCode,
+  normalizeCodeForLookup
+} from '../utils/memberCodeGenerator';
+import {
   NameScriptMode,
   transliterateAmharicToEnglish
 } from '../utils/amharicTransliterator';
@@ -54,9 +62,11 @@ interface ChurchChildrenTabProps {
   ageReferenceYear?: number;
   classList: string[];
   churchChildren: ChurchChild[];
+  churchMembers?: ChurchMember[];
   chapelList?: string[];
   studentsByClass: { [className: string]: Student[] };
   onAddChild: (child: Omit<ChurchChild, 'id'>) => void;
+  onAddChurchMember?: (member: Omit<ChurchMember, 'id'>) => ChurchMember | void;
   onUpdateChild: (child: ChurchChild) => void;
   onDeleteChild: (id: number) => void;
   onClearChurchChildren?: (chapelFilter?: string | string[]) => void;
@@ -530,9 +540,11 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   ageReferenceYear = 2017,
   classList,
   churchChildren = [],
+  churchMembers = [],
   chapelList = DEFAULT_CHAPELS,
   studentsByClass = {},
   onAddChild,
+  onAddChurchMember,
   onUpdateChild,
   onDeleteChild,
   onClearChurchChildren,
@@ -594,6 +606,10 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   const [clearConfirmWord, setClearConfirmWord] = useState<string>('');
 
   // Form state
+  const [childAddMode, setChildAddMode] = useState<'new' | 'by_code'>('new');
+  const [childLookupCode, setChildLookupCode] = useState<string>('');
+  const [childLookupChapelHint, setChildLookupChapelHint] = useState<string>('');
+  const [childCodeSuccessMsg, setChildCodeSuccessMsg] = useState<string>('');
   const [formName, setFormName] = useState<string>('');
   const [formGender, setFormGender] = useState<'ወ' | 'ሴ' | ''>('ወ');
   const [formAge, setFormAge] = useState<string>('5');
@@ -906,9 +922,92 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     setTimeout(() => setCopiedPhoneId(null), 2000);
   };
 
+  const scopedChurchMembers = useMemo(() => {
+    if (!officialLoggedInChapel) return churchMembers;
+    return churchMembers.filter(
+      (m) => mapToOfficialChapel(m.chapel || '') === officialLoggedInChapel
+    );
+  }, [churchMembers, officialLoggedInChapel]);
+
+  const activeChildLookupScope = useMemo(
+    () => officialLoggedInChapel || childLookupChapelHint || undefined,
+    [officialLoggedInChapel, childLookupChapelHint]
+  );
+
+  const matchedChildCodeAll = useMemo(() => {
+    if (!childLookupCode.trim()) return [];
+    return findAllMatchingMembersByCode(
+      scopedChurchMembers,
+      childLookupCode,
+      activeChildLookupScope
+    );
+  }, [scopedChurchMembers, childLookupCode, activeChildLookupScope]);
+
+  const matchedChildFamilyHead = useMemo(() => {
+    if (matchedChildCodeAll.length === 1) return matchedChildCodeAll[0];
+    return null;
+  }, [matchedChildCodeAll]);
+
+  const childLookupSuggestions = useMemo(() => {
+    const q = childLookupCode.trim();
+    if (!q || matchedChildFamilyHead || matchedChildCodeAll.length > 0) return [];
+    const normQ = normalizeCodeForLookup(q);
+    return scopedChurchMembers
+      .filter((m) => {
+        if (activeChildLookupScope && mapToOfficialChapel(m.chapel || '') !== activeChildLookupScope) {
+          return false;
+        }
+        return (
+          (m.memberCode && normalizeCodeForLookup(m.memberCode).includes(normQ)) ||
+          matchesAmharicSearch(q, m.name)
+        );
+      })
+      .slice(0, 8);
+  }, [scopedChurchMembers, childLookupCode, matchedChildFamilyHead, matchedChildCodeAll, activeChildLookupScope]);
+
+  const childNextSubCodePreview = useMemo(() => {
+    if (!matchedChildFamilyHead) return '';
+    const ch = officialLoggedInChapel || mapToOfficialChapel(matchedChildFamilyHead.chapel || '');
+    return getNextFamilySubCode(
+      churchMembers,
+      matchedChildFamilyHead.familyCode || matchedChildFamilyHead.memberCode || '',
+      ch
+    );
+  }, [churchMembers, matchedChildFamilyHead, officialLoggedInChapel]);
+
+  const applyChildFamilyMatch = (matched: ChurchMember) => {
+    const ch = officialLoggedInChapel || mapToOfficialChapel(matched.chapel || '');
+    setFormChapel(ch);
+    setFormParent(matched.parentName || matched.name || '');
+    setFormPhone(matched.phone || '');
+    setFormResidence(matched.residence || '');
+  };
+
   // Modal helpers
   const openAddModal = () => {
     setEditingChild(null);
+    setChildAddMode('new');
+    setChildLookupCode('');
+    setChildLookupChapelHint('');
+    setFormName('');
+    setFormGender('ወ');
+    setFormAge('5');
+    setFormEducationLevel('1ኛ ክፍል');
+    setFormOccupation('ተማሪ');
+    setFormChapel(officialLoggedInChapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+    setFormParent('');
+    setFormPhone('');
+    setFormResidence('');
+    setFormVillage('');
+    setFormNotes('');
+    setIsAddModalOpen(true);
+  };
+
+  const openAddByCodeModal = () => {
+    setEditingChild(null);
+    setChildAddMode('by_code');
+    setChildLookupCode('');
+    setChildLookupChapelHint('');
     setFormName('');
     setFormGender('ወ');
     setFormAge('5');
@@ -925,6 +1024,9 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
   const openEditModal = (child: ChurchChild) => {
     setEditingChild(child);
+    setChildAddMode('new');
+    setChildLookupCode('');
+    setChildLookupChapelHint('');
     setFormName(child.name);
     setFormGender((child.gender as 'ወ' | 'ሴ') || 'ወ');
     setFormAge(String(child.age || '5'));
@@ -943,6 +1045,42 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     e.preventDefault();
     if (!formName.trim()) {
       alert('እባክዎ የልጁን ሙሉ ስም ያስገቡ!');
+      return;
+    }
+
+    if (!editingChild && childAddMode === 'by_code' && onAddChurchMember) {
+      if (!matchedChildFamilyHead) {
+        alert('እባክዎን ትክክለኛ የወላጅ/ቤተሰብ ኮድ (ለምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513 ወይም 0513) ያስገቡ!');
+        return;
+      }
+      const parsedFormAge = parseInt(formAge, 10);
+      const ageNum = isNaN(parsedFormAge) ? 5 : Math.max(0, parsedFormAge);
+      const officialCh = officialLoggedInChapel || mapToOfficialChapel(matchedChildFamilyHead.chapel || '');
+      const rootFamCode = getRootFamilyBaseCode(
+        matchedChildFamilyHead.familyCode || matchedChildFamilyHead.memberCode || '',
+        officialCh
+      );
+      const created = onAddChurchMember({
+        name: formName.trim(),
+        gender: formGender || 'ወ',
+        age: ageNum,
+        educationLevel: formEducationLevel.trim() || undefined,
+        occupation: formOccupation.trim() || 'ተማሪ',
+        chapel: officialCh,
+        parentName: formParent.trim() || matchedChildFamilyHead.parentName || matchedChildFamilyHead.name,
+        phone: formPhone.trim() || matchedChildFamilyHead.phone || undefined,
+        residence: formResidence.trim() || matchedChildFamilyHead.residence || undefined,
+        relationToHead: 'ልጅ',
+        familyCode: rootFamCode || undefined,
+        registeredDate: new Date().toISOString().split('T')[0]
+      });
+      const assignedCode =
+        (created && 'memberCode' in created && created.memberCode) || childNextSubCodePreview;
+      setChildCodeSuccessMsg(
+        `✓ "${formName.trim()}" በቤተሰብ ኮድ ${rootFamCode} ስር በንዑስ ኮድ ${assignedCode} ተመዝግቧል!`
+      );
+      setTimeout(() => setChildCodeSuccessMsg(''), 8000);
+      setIsAddModalOpen(false);
       return;
     }
 
@@ -965,6 +1103,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     if (editingChild) {
       onUpdateChild({
         ...payload,
+        memberCode: editingChild.memberCode,
+        familyCode: editingChild.familyCode,
         id: editingChild.id
       });
     } else {
@@ -1399,6 +1539,18 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap">
+            {onAddChurchMember && (
+              <button
+                type="button"
+                onClick={openAddByCodeModal}
+                className="bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="በወላጅ/ቤተሰብ ኮድ (0513 → 0513/2) ልጅ መመዝገቢያ"
+              >
+                <KeyRound className="w-4 h-4 text-amber-200" />
+                <span>🔑 በቤተሰብ ኮድ ልጅ ጨምር</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={openAddModal}
@@ -1534,6 +1686,13 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
             )}
           </div>
         </div>
+
+        {childCodeSuccessMsg && (
+          <div className="mt-3 p-3 bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-xl text-xs font-extrabold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{childCodeSuccessMsg}</span>
+          </div>
+        )}
       </div>
 
       {/* KPI & Summary Strip */}
@@ -2606,11 +2765,21 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       {/* Add / Edit Child Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-blue-800" />
-                <span>{editingChild ? 'የልጁን መረጃ ማስተካከያ' : 'አዲስ ልጅ መመዝገቢያ'}</span>
+                {!editingChild && childAddMode === 'by_code' ? (
+                  <KeyRound className="w-5 h-5 text-cyan-700" />
+                ) : (
+                  <UserPlus className="w-5 h-5 text-blue-800" />
+                )}
+                <span>
+                  {editingChild
+                    ? 'የልጁን መረጃ ማስተካከያ'
+                    : childAddMode === 'by_code'
+                    ? 'በወላጅ/ቤተሰብ ኮድ ልጅ መጨመሪያ'
+                    : 'አዲስ ልጅ መመዝገቢያ'}
+                </span>
               </h3>
               <button
                 type="button"
@@ -2621,7 +2790,179 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               </button>
             </div>
 
+            {!editingChild && onAddChurchMember && (
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl mt-3 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setChildAddMode('new')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                    childAddMode === 'new'
+                      ? 'bg-blue-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🆕 አዲስ ልጅ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChildAddMode('by_code')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                    childAddMode === 'by_code'
+                      ? 'bg-cyan-700 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🔑 በቤተሰብ ኮድ (0513 → 0513/2)
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSaveChild} className="space-y-4 mt-4">
+              {!editingChild && childAddMode === 'by_code' && onAddChurchMember && (
+                <div className="bg-cyan-50/70 border border-cyan-200 rounded-xl p-3.5 space-y-2.5">
+                  <label className="block text-xs font-extrabold text-cyan-950">
+                    የወላጅ/ቤተሰብ ኮድ ወይም ስም ያስገቡ *
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {!officialLoggedInChapel && (
+                      <select
+                        value={childLookupChapelHint}
+                        onChange={(e) => {
+                          const ch = e.target.value;
+                          setChildLookupChapelHint(ch);
+                          if (childLookupCode.trim()) {
+                            const found = findAllMatchingMembersByCode(
+                              scopedChurchMembers,
+                              childLookupCode,
+                              ch || undefined
+                            );
+                            if (found.length === 1) applyChildFamilyMatch(found[0]);
+                          }
+                        }}
+                        className="w-full px-2.5 py-2 text-xs border border-cyan-300 rounded-xl bg-white font-bold"
+                      >
+                        <option value="">ሁሉም ቻፕሎች (ራስ-ሰር)</option>
+                        {DEFAULT_CHAPELS.map((ch) => (
+                          <option key={`chl_lkp_${ch}`} value={ch}>
+                            {ch}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <div className={`relative ${officialLoggedInChapel ? 'sm:col-span-2' : ''}`}>
+                      <Hash className="w-4 h-4 text-cyan-700 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="ምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513 ወይም 0513"
+                        value={childLookupCode}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setChildLookupCode(val);
+                          const matches = findAllMatchingMembersByCode(
+                            scopedChurchMembers,
+                            val,
+                            activeChildLookupScope
+                          );
+                          if (matches.length === 1) {
+                            applyChildFamilyMatch(matches[0]);
+                          }
+                        }}
+                        className="w-full pl-9 pr-8 py-2 text-xs border border-cyan-300 rounded-xl font-mono font-bold bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                      />
+                      {childLookupCode && (
+                        <button
+                          type="button"
+                          onClick={() => setChildLookupCode('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {matchedChildCodeAll.length > 1 && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 space-y-1.5">
+                      <p className="text-[11px] font-extrabold text-amber-950">
+                        ይህ ቁጥር ({childLookupCode.trim()}) በ{matchedChildCodeAll.length} ቻፕሎች ተገኝቷል — ቻፕሉን ይምረጡ፦
+                      </p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {matchedChildCodeAll.map((mc) => (
+                          <button
+                            key={`c_multi_${mc.id}`}
+                            type="button"
+                            onClick={() => {
+                              setChildLookupChapelHint(mapToOfficialChapel(mc.chapel || ''));
+                              setChildLookupCode(mc.memberCode || '');
+                              applyChildFamilyMatch(mc);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 bg-white hover:bg-cyan-50 border border-amber-200 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer"
+                          >
+                            <span className="font-bold text-slate-900">
+                              {mc.name} <span className="text-[10px] text-blue-800">({mc.chapel})</span>
+                            </span>
+                            <span className="font-mono text-[11px] font-bold text-indigo-900">{mc.memberCode}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {childLookupSuggestions.length > 0 && (
+                    <div className="bg-white border border-cyan-200 rounded-lg divide-y divide-slate-100 max-h-36 overflow-y-auto">
+                      {childLookupSuggestions.map((s) => (
+                        <button
+                          key={`csug_${s.id}`}
+                          type="button"
+                          onClick={() => {
+                            if (!officialLoggedInChapel) {
+                              setChildLookupChapelHint(mapToOfficialChapel(s.chapel || ''));
+                            }
+                            setChildLookupCode(s.memberCode || '');
+                            applyChildFamilyMatch(s);
+                          }}
+                          className="w-full text-left px-3 py-1.5 hover:bg-cyan-50 text-xs flex items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <span className="font-bold text-slate-900 truncate">
+                            {s.name} <span className="text-[10px] text-slate-500">({s.chapel})</span>
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-indigo-800 shrink-0">{s.memberCode}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {matchedChildFamilyHead ? (
+                    <div className="bg-white border border-emerald-300 rounded-xl p-3 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-black text-emerald-800 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          ቤተሰቡ ተገኝቷል! ({matchedChildFamilyHead.name})
+                        </span>
+                        <span className="font-mono text-[11px] font-extrabold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                          {matchedChildFamilyHead.memberCode}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px]">
+                        <span className="font-bold text-indigo-950">ለልጁ የሚሰጠው ቀጣይ ንዑስ ኮድ፦</span>
+                        <span className="font-mono font-black text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                          {childNextSubCodePreview}
+                        </span>
+                      </div>
+                    </div>
+                  ) : childLookupCode.trim() && matchedChildCodeAll.length === 0 ? (
+                    <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>ይህ ኮድ አልተገኘም! ትክክለኛውን ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513 ወይም 0513) ያስገቡ።</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-cyan-900">
+                      ለምሳሌ የወላጅ ኮድ 0513 (እና ሚስቱ 0513/1 ካላት) ለልጁ በራሱ 0513/2 ይሰጠዋል።
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Child Full Name */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -2630,7 +2971,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="ምሳሌ፦ ዮናታን ዳዊት ታደሰ"
+                  placeholder="ምሳሌ፦ ካይሮስ ገላትያ ደስታ"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-900"
@@ -2652,12 +2993,18 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 </label>
                 <select
                   value={officialLoggedInChapel || formChapel}
-                  disabled={Boolean(officialLoggedInChapel)}
+                  disabled={
+                    Boolean(officialLoggedInChapel) ||
+                    (!editingChild && childAddMode === 'by_code' && Boolean(matchedChildFamilyHead))
+                  }
                   onChange={(e) => {
                     if (!officialLoggedInChapel) setFormChapel(e.target.value);
                   }}
                   className={`w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-900 ${
-                    officialLoggedInChapel ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                    officialLoggedInChapel ||
+                    (!editingChild && childAddMode === 'by_code' && matchedChildFamilyHead)
+                      ? 'bg-slate-100 cursor-not-allowed'
+                      : 'bg-white'
                   }`}
                 >
                   {(officialLoggedInChapel ? [officialLoggedInChapel] : chapelList).map((ch) => (
