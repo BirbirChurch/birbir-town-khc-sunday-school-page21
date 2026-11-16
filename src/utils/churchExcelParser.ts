@@ -3,6 +3,7 @@ import { ChurchChild, ChurchMember } from '../types';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { generateUniqueId } from './idGenerator';
 import { assignSequentialCodesAndSortMembers } from './memberCodeGenerator';
+import { transliterateAmharicToEnglish } from './amharicTransliterator';
 
 /**
  * Comprehensive Amharic text & homophone normalization for accurate search and matching.
@@ -74,9 +75,17 @@ export const matchesAmharicSearch = (
   const normHaystack = normalizeAmharicSearchText(rawJoined);
   // Compact digits for flexible phone searching (handles spaces, hyphens, +251)
   const compactDigits = rawJoined.replace(/[\s\-().+]/g, '');
+  // Lazy Latin phonetic transliteration cache when query contains English letters
+  let latinHaystackLower: string | null = null;
 
   return tokens.every((tok) => {
     if (normHaystack.includes(tok)) return true;
+    if (/[a-z]/.test(tok)) {
+      if (latinHaystackLower === null) {
+        latinHaystackLower = transliterateAmharicToEnglish(rawJoined).toLowerCase();
+      }
+      if (latinHaystackLower.includes(tok)) return true;
+    }
     const tokDigits = tok.replace(/[\s\-().+]/g, '');
     if (tokDigits.length >= 3 && /^\d+$/.test(tokDigits)) {
       const asLocalZero = tokDigits.startsWith('251') ? '0' + tokDigits.slice(3) : tokDigits;

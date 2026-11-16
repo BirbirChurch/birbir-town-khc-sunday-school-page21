@@ -17,7 +17,8 @@ import {
   Users,
   HeartHandshake,
   Database,
-  Calendar
+  Calendar,
+  Languages
 } from 'lucide-react';
 import {
   Role,
@@ -62,6 +63,8 @@ import { TeachersTab } from './components/TeachersTab';
 import { SubjectsTab } from './components/SubjectsTab';
 import { PinManageTab } from './components/PinManageTab';
 import { FirebaseSyncModal } from './components/FirebaseSyncModal';
+import { NameTransliteratorModal } from './components/NameTransliteratorModal';
+import { NameScriptMode } from './utils/amharicTransliterator';
 
 export default function App() {
   const [appData, setAppData] = useState<AppData | null>(null);
@@ -72,6 +75,24 @@ export default function App() {
   const [selectedClass, setSelectedClass] = useState<string>(CLASS_LIST[3]); // 1ኛ ክፍል ሀ
   const [activeTab, setActiveTab] = useState<string>('classesTab');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const [isTransliteratorModalOpen, setIsTransliteratorModalOpen] = useState<boolean>(false);
+  const [nameScriptMode, setNameScriptMode] = useState<NameScriptMode>(() => {
+    try {
+      const saved = localStorage.getItem('bk_name_script_mode');
+      if (saved === 'am' || saved === 'both' || saved === 'en') return saved;
+    } catch {
+      // ignore storage failure
+    }
+    return 'am';
+  });
+  const handleChangeNameScriptMode = useCallback((mode: NameScriptMode) => {
+    setNameScriptMode(mode);
+    try {
+      localStorage.setItem('bk_name_script_mode', mode);
+    } catch {
+      // ignore storage failure
+    }
+  }, []);
   const [dismissedAgeBannerYear, setDismissedAgeBannerYear] = useState<string | null>(null);
   const [ageSyncFeedback, setAgeSyncFeedback] = useState<string>('');
 
@@ -1338,41 +1359,91 @@ export default function App() {
                   )}
                 </div>
 
-                {!loggedInChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <input
-                      ref={quickJsonInputRef}
-                      type="file"
-                      accept=".json,application/json"
-                      onChange={handleQuickJsonUpload}
-                      className="hidden"
-                    />
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Direct Amharic <-> English Name Script Mode Switcher + Converter Modal */}
+                  <div
+                    className="flex items-center gap-1 bg-slate-900/70 border border-emerald-700/60 rounded-lg p-0.5"
+                    title="ስሞችን ያለ ትርጉም በቀጥታ ወደ እንግሊዝኛ ፊደል መቀየሪያ ምርጫ"
+                  >
+                    <span className="px-1.5 text-[10px] font-bold text-emerald-200 flex items-center gap-1">
+                      <Languages className="w-3 h-3 text-amber-300" />
+                      <span className="hidden sm:inline">ስም፦</span>
+                    </span>
                     <button
                       type="button"
-                      onClick={() => quickJsonInputRef.current?.click()}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
-                      title="የFirebase Export ወይም Backup JSON ፋይል በቀጥታ ይጫኑ"
+                      onClick={() => handleChangeNameScriptMode('am')}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                        nameScriptMode === 'am' ? 'bg-amber-400 text-slate-950 shadow-2xs' : 'text-emerald-100 hover:bg-white/10'
+                      }`}
                     >
-                      <span>📂 JSON ጫን</span>
+                      አማርኛ
                     </button>
                     <button
                       type="button"
-                      onClick={() => exportBackupJSON(appData)}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
-                      title="የሰሩትን ሙሉ መረጃ በJSON ወደ ኮምፒዩተርዎ ያውርዱ"
+                      onClick={() => handleChangeNameScriptMode('both')}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                        nameScriptMode === 'both' ? 'bg-amber-400 text-slate-950 shadow-2xs' : 'text-emerald-100 hover:bg-white/10'
+                      }`}
                     >
-                      <span>💾 ባክአፕ አውርድ (JSON)</span>
+                      አማ+EN
                     </button>
                     <button
                       type="button"
-                      onClick={() => setIsSyncModalOpen(true)}
-                      className="bg-blue-800 hover:bg-blue-700 text-amber-300 font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 border border-blue-700 shadow cursor-pointer"
-                      title="የJSON ፋይል መጫኛ እና የአዲሱ Firebase ማስተካከያ"
+                      onClick={() => handleChangeNameScriptMode('en')}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                        nameScriptMode === 'en' ? 'bg-amber-400 text-slate-950 shadow-2xs' : 'text-emerald-100 hover:bg-white/10'
+                      }`}
                     >
-                      <span>⚙️ ዳታቤዝ & JSON መቀበያ</span>
+                      English
                     </button>
                   </div>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsTransliteratorModalOpen(true)}
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer border border-cyan-400/50"
+                    title="ማንኛውንም ስም ያለ ትርጉም ቀጥታ ወደ እንግሊዝኛ መቀየሪያ መሳሪያ"
+                  >
+                    <Languages className="w-3.5 h-3.5" />
+                    <span>ስም ወደ EN ቀይር</span>
+                  </button>
+
+                  {!loggedInChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                    <>
+                      <input
+                        ref={quickJsonInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        onChange={handleQuickJsonUpload}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => quickJsonInputRef.current?.click()}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
+                        title="የFirebase Export ወይም Backup JSON ፋይል በቀጥታ ይጫኑ"
+                      >
+                        <span>📂 JSON ጫን</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportBackupJSON(appData)}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
+                        title="የሰሩትን ሙሉ መረጃ በJSON ወደ ኮምፒዩተርዎ ያውርዱ"
+                      >
+                        <span>💾 ባክአፕ አውርድ (JSON)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsSyncModalOpen(true)}
+                        className="bg-blue-800 hover:bg-blue-700 text-amber-300 font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 border border-blue-700 shadow cursor-pointer"
+                        title="የJSON ፋይል መጫኛ እና የአዲሱ Firebase ማስተካከያ"
+                      >
+                        <span>⚙️ ዳታቤዝ & JSON መቀበያ</span>
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
               {quickJsonFeedback && (
                 <div className="max-w-7xl mx-auto mt-2 bg-emerald-800/90 border border-emerald-400/50 text-emerald-100 px-3 py-1.5 rounded-lg font-bold text-[11px]">
@@ -1488,6 +1559,7 @@ export default function App() {
                   subjects={appData.subjects}
                   classSubjects={appData.classSubjects || {}}
                   onUpdateClassSubjects={handleUpdateClassSubjects}
+                  nameScriptMode={nameScriptMode}
                 />
               )}
 
@@ -1510,6 +1582,7 @@ export default function App() {
                     setActiveTab('classesTab');
                   }}
                   currentUserRole={currentUserRole}
+                  nameScriptMode={nameScriptMode}
                 />
               )}
 
@@ -1531,6 +1604,9 @@ export default function App() {
                   onBulkIncrementAges={!loggedInChapel ? handleBulkIncrementAges : undefined}
                   currentUserRole={currentUserRole}
                   loggedInChapel={loggedInChapel}
+                  nameScriptMode={nameScriptMode}
+                  onChangeNameScriptMode={handleChangeNameScriptMode}
+                  onOpenTransliterator={() => setIsTransliteratorModalOpen(true)}
                 />
               )}
 
@@ -1553,6 +1629,9 @@ export default function App() {
                   currentUserRole={currentUserRole}
                   loggedInChapel={loggedInChapel}
                   onDeleteChapel={handleDeleteChapel}
+                  nameScriptMode={nameScriptMode}
+                  onChangeNameScriptMode={handleChangeNameScriptMode}
+                  onOpenTransliterator={() => setIsTransliteratorModalOpen(true)}
                 />
               )}
 
@@ -1578,6 +1657,7 @@ export default function App() {
                   onSetClassAge={handleSetClassAge}
                   currentUserRole={currentUserRole}
                   loggedInTeacher={loggedInTeacher}
+                  nameScriptMode={nameScriptMode}
                 />
               )}
 
@@ -1610,6 +1690,7 @@ export default function App() {
                   currentYear={currentYear}
                   classList={CLASS_LIST}
                   studentsByClass={appData.students?.[currentYear] || {}}
+                  nameScriptMode={nameScriptMode}
                 />
               )}
 
@@ -1689,6 +1770,31 @@ export default function App() {
             syncAppDataToFirebase(newData);
           }}
           syncStatus={syncStatus}
+        />
+      )}
+
+      {appData && (
+        <NameTransliteratorModal
+          isOpen={isTransliteratorModalOpen}
+          onClose={() => setIsTransliteratorModalOpen(false)}
+          churchMembers={
+            loggedInChapel
+              ? (appData.churchMembers || []).filter(
+                  (m) => mapToOfficialChapel(m.chapel || '') === mapToOfficialChapel(loggedInChapel)
+                )
+              : currentUserRole === 'teacher'
+              ? []
+              : appData.churchMembers || []
+          }
+          churchChildren={
+            loggedInChapel
+              ? (appData.churchChildren || []).filter(
+                  (c) => mapToOfficialChapel(c.chapel || '') === mapToOfficialChapel(loggedInChapel)
+                )
+              : currentUserRole === 'teacher'
+              ? []
+              : appData.churchChildren || []
+          }
         />
       )}
     </div>

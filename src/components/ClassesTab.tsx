@@ -31,6 +31,7 @@ import {
   parseCleanStudentLine
 } from '../utils/csv';
 import { matchesAmharicSearch } from '../utils/churchExcelParser';
+import { NameScriptMode, transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
 
 interface ClassesTabProps {
   currentYear: string;
@@ -61,6 +62,7 @@ interface ClassesTabProps {
   subjects?: string[];
   classSubjects?: { [className: string]: string[] };
   onUpdateClassSubjects?: (classSubjects: { [className: string]: string[] }) => void;
+  nameScriptMode?: NameScriptMode;
 }
 
 export const ClassesTab: React.FC<ClassesTabProps> = ({
@@ -84,7 +86,8 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
   loggedInTeacher,
   subjects = [],
   classSubjects = {},
-  onUpdateClassSubjects
+  onUpdateClassSubjects,
+  nameScriptMode = 'am'
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isPrinting, setIsPrinting] = useState(false);
@@ -443,10 +446,14 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
   };
 
   const handleExportCSV = () => {
+    const enHeader = nameScriptMode === 'both' ? ',Student Name (English)' : '';
     let csv =
-      '\uFEFFተ.ቁ,የተማሪው ስም,ክፍል,ዕድሜ,ፆታ,ምዘና 1 (10),ምዘና 2 (10),ምዘና 3 (10),ምዘና 4 (20),ምዘና 5 (10),ምዘና 6 (10),ምዘና 7 (30),አጠቃላይ ድምር (100),ደረጃ\n';
+      `\uFEFFተ.ቁ,${nameScriptMode === 'en' ? 'የተማሪው ስም (English)' : 'የተማሪው ስም'}${enHeader},ክፍል,ዕድሜ,ፆታ,ምዘና 1 (10),ምዘና 2 (10),ምዘና 3 (10),ምዘና 4 (20),ምዘና 5 (10),ምዘና 6 (10),ምዘና 7 (30),አጠቃላይ ድምር (100),ደረጃ\n`;
     rankedStudents.forEach((s, idx) => {
-      csv += `${idx + 1},"${s.name}","${selectedClass}",${s.age},${s.gender},${s.m1},${s.m2},${s.m3},${s.m4},${s.m5},${s.m6},${s.m7},${s.total},${s.rank || ''}\n`;
+      const enName = transliterateAmharicToEnglish(s.name);
+      const displayName = nameScriptMode === 'en' ? enName : s.name;
+      const enCol = nameScriptMode === 'both' ? `,"${enName}"` : '';
+      csv += `${idx + 1},"${displayName}"${enCol},"${selectedClass}",${s.age},${s.gender},${s.m1},${s.m2},${s.m3},${s.m4},${s.m5},${s.m6},${s.m7},${s.total},${s.rank || ''}\n`;
     });
     downloadCSV(csv, `${selectedClass}_የውጤት_መዝገብ_${currentYear}.csv`);
   };
@@ -455,7 +462,8 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
     const data: (string | number)[][] = [
       [
         'ተ.ቁ',
-        'የተማሪው ሙሉ ስም',
+        nameScriptMode === 'en' ? 'የተማሪው ሙሉ ስም (English)' : 'የተማሪው ሙሉ ስም',
+        ...(nameScriptMode === 'both' ? ['Student Name (English)'] : []),
         'ክፍል',
         'ዕድሜ',
         'ፆታ',
@@ -472,9 +480,11 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
     ];
 
     rankedStudents.forEach((s, idx) => {
+      const enName = transliterateAmharicToEnglish(s.name);
       data.push([
         idx + 1,
-        s.name,
+        nameScriptMode === 'en' ? enName : s.name,
+        ...(nameScriptMode === 'both' ? [enName] : []),
         selectedClass,
         s.age,
         s.gender,
@@ -991,15 +1001,31 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
 
                       {/* Sticky Name Column */}
                       <td className="py-2.5 px-3 border-r border-slate-200 text-left font-bold text-slate-900 sticky left-12 z-10 bg-white group-hover:bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[240px] print:static print:shadow-none print:border-slate-400">
-                        {canEdit ? (
-                          <input
-                            type="text"
-                            value={s.name}
-                            onChange={(e) => handleInfoChange(s, 'name', e.target.value)}
-                            className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-600 focus:bg-white px-1 py-0.5 rounded text-[13pt] outline-none font-bold text-slate-900 leading-normal"
-                          />
+                        {nameScriptMode === 'en' ? (
+                          <span
+                            className="text-[13pt] font-bold text-slate-900 leading-normal"
+                            title={s.name}
+                          >
+                            {transliterateAmharicToEnglish(s.name)}
+                          </span>
                         ) : (
-                          <span className="text-[13pt] font-bold text-slate-900 leading-normal">{s.name}</span>
+                          <>
+                            {canEdit ? (
+                              <input
+                                type="text"
+                                value={s.name}
+                                onChange={(e) => handleInfoChange(s, 'name', e.target.value)}
+                                className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-600 focus:bg-white px-1 py-0.5 rounded text-[13pt] outline-none font-bold text-slate-900 leading-normal"
+                              />
+                            ) : (
+                              <span className="text-[13pt] font-bold text-slate-900 leading-normal">{s.name}</span>
+                            )}
+                            {nameScriptMode === 'both' && (
+                              <div className="text-[11px] font-semibold text-indigo-700 px-1 mt-0.5">
+                                {transliterateAmharicToEnglish(s.name)}
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
 

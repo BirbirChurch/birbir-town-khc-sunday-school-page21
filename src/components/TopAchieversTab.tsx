@@ -2,17 +2,20 @@ import React, { useState } from 'react';
 import { Award, Printer, Download, Filter, Trophy } from 'lucide-react';
 import { Student } from '../types';
 import { downloadCSV } from '../utils/csv';
+import { NameScriptMode, transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
 
 interface TopAchieversTabProps {
   currentYear: string;
   classList: string[];
   studentsByClass: { [className: string]: Student[] };
+  nameScriptMode?: NameScriptMode;
 }
 
 export const TopAchieversTab: React.FC<TopAchieversTabProps> = ({
   currentYear,
   classList,
-  studentsByClass
+  studentsByClass,
+  nameScriptMode = 'am'
 }) => {
   const [classFilter, setClassFilter] = useState('all');
 
@@ -59,9 +62,12 @@ export const TopAchieversTab: React.FC<TopAchieversTabProps> = ({
   const filtered = classFilter === 'all' ? topList : topList.filter((item) => item.className === classFilter);
 
   const handleExportCSV = () => {
-    let csv = '\uFEFFክፍል,ደረጃ,የተማሪው ስም,ፆታ,ዕድሜ,ውጤት (100)\n';
+    const enHeader = nameScriptMode === 'both' ? ',Student Name (English)' : '';
+    let csv = `\uFEFFክፍል,ደረጃ,${nameScriptMode === 'en' ? 'የተማሪው ስም (English)' : 'የተማሪው ስም'}${enHeader},ፆታ,ዕድሜ,ውጤት (100)\n`;
     filtered.forEach((item) => {
-      csv += `"${item.className}",${item.rank}ኛ,"${item.name}",${item.gender},${item.age},${item.total}\n`;
+      const enName = transliterateAmharicToEnglish(item.name);
+      const enVal = nameScriptMode === 'both' ? `,"${enName}"` : '';
+      csv += `"${item.className}",${item.rank}ኛ,"${nameScriptMode === 'en' ? enName : item.name}"${enVal},${item.gender},${item.age},${item.total}\n`;
     });
     downloadCSV(csv, `ከ1ኛ_እስከ_3ኛ_የወጡ_${currentYear}_ዓ_ም.csv`);
   };
@@ -186,7 +192,12 @@ export const TopAchieversTab: React.FC<TopAchieversTabProps> = ({
                       </span>
                     </td>
                     <td className="py-2.5 px-4 border-r border-slate-200 text-left font-bold text-[13pt] text-slate-900 min-w-[200px]">
-                      {item.name}
+                      <div>{nameScriptMode === 'en' ? transliterateAmharicToEnglish(item.name) : item.name}</div>
+                      {nameScriptMode === 'both' && (
+                        <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                          {transliterateAmharicToEnglish(item.name)}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2.5 px-3 border-r border-slate-200">
                       <span

@@ -41,6 +41,7 @@ import {
   parseCleanStudentLine
 } from '../utils/csv';
 import { matchesAmharicSearch } from '../utils/churchExcelParser';
+import { NameScriptMode, transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
 
 interface AttendanceTabProps {
   currentYear: string;
@@ -75,6 +76,7 @@ interface AttendanceTabProps {
   onUpdateStudent?: (student: Student) => void;
   currentUserRole: Role | null;
   loggedInTeacher?: Teacher | null;
+  nameScriptMode?: NameScriptMode;
 }
 
 type AttendanceViewMode = 'roster40' | 'weeklyTaker' | 'absenteeList';
@@ -100,7 +102,8 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   onAddStudentToClass,
   onUpdateStudent,
   currentUserRole,
-  loggedInTeacher
+  loggedInTeacher,
+  nameScriptMode = 'am'
 }) => {
   // Navigation / View modes
   const [activeView, setActiveView] = useState<AttendanceViewMode>('roster40');
@@ -561,7 +564,14 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
   // Export 40-Week Roster to Excel (.xlsx)
   const handleExport40WeeksXLSX = () => {
-    const headerRow: (string | number)[] = ['ተ.ቁ', 'የተማሪው ሙሉ ስም', 'ክፍል', 'ፆታ', 'ዕድሜ'];
+    const headerRow: (string | number)[] = [
+      'ተ.ቁ',
+      nameScriptMode === 'en' ? 'የተማሪው ሙሉ ስም (English)' : 'የተማሪው ሙሉ ስም',
+      ...(nameScriptMode === 'both' ? ['Student Name (English)'] : []),
+      'ክፍል',
+      'ፆታ',
+      'ዕድሜ'
+    ];
     for (let w = 1; w <= 40; w++) {
       const d = weekDates?.[w] ? ` (${weekDates[w]})` : '';
       headerRow.push(`ሳምንት ${w}${d}`);
@@ -575,9 +585,11 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       const s = classStudents[idx];
       if (s) {
         const st = studentStatsMap[s.id] || { present: 0, absent: 0, excused: 0, totalRecorded: 0, rate: 0 };
+        const enName = transliterateAmharicToEnglish(s.name);
         const row: (string | number)[] = [
           idx + 1,
-          s.name,
+          nameScriptMode === 'en' ? enName : s.name,
+          ...(nameScriptMode === 'both' ? [enName] : []),
           selectedClass,
           s.gender || 'ወ',
           s.age || ''
@@ -592,7 +604,14 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
         row.push(st.present, st.absent, st.excused, st.totalRecorded, `${st.rate}%`);
         dataRows.push(row);
       } else {
-        const blankRow: (string | number)[] = [idx + 1, '', selectedClass, '', ''];
+        const blankRow: (string | number)[] = [
+          idx + 1,
+          '',
+          ...(nameScriptMode === 'both' ? [''] : []),
+          selectedClass,
+          '',
+          ''
+        ];
         for (let w = 1; w <= 40; w++) blankRow.push('');
         blankRow.push(0, 0, 0, 0, '0%');
         dataRows.push(blankRow);
@@ -614,7 +633,8 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
   // Export 40-Week Roster to CSV
   const handleExport40WeeksCSV = () => {
-    let csv = '\uFEFFተ.ቁ,የተማሪው ስም,ክፍል,ፆታ,እድሜ';
+    const enHeader = nameScriptMode === 'both' ? ',Student Name (English)' : '';
+    let csv = `\uFEFFተ.ቁ,${nameScriptMode === 'en' ? 'የተማሪው ስም (English)' : 'የተማሪው ስም'}${enHeader},ክፍል,ፆታ,እድሜ`;
     for (let w = 1; w <= 40; w++) {
       const d = weekDates?.[w] ? ` (${weekDates[w]})` : '';
       csv += `,ሳምንት ${w}${d}`;
@@ -627,9 +647,11 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       const s = classStudents[idx];
       if (s) {
         const st = studentStatsMap[s.id] || { present: 0, absent: 0, excused: 0, totalRecorded: 0, rate: 0 };
+        const enName = transliterateAmharicToEnglish(s.name);
         const row = [
           idx + 1,
-          `"${s.name}"`,
+          `"${nameScriptMode === 'en' ? enName : s.name}"`,
+          ...(nameScriptMode === 'both' ? [`"${enName}"`] : []),
           `"${selectedClass}"`,
           `"${s.gender || 'ወ'}"`,
           `"${s.age || ''}"`
@@ -645,7 +667,14 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
         csv += row.join(',') + '\n';
       } else {
         // Blank row placeholder
-        const blankRow = [idx + 1, '""', `"${selectedClass}"`, '""', '""'];
+        const blankRow = [
+          idx + 1,
+          '""',
+          ...(nameScriptMode === 'both' ? ['""'] : []),
+          `"${selectedClass}"`,
+          '""',
+          '""'
+        ];
         for (let w = 1; w <= 40; w++) blankRow.push('""');
         blankRow.push('0', '0', '0', '0', '"0%"');
         csv += blankRow.join(',') + '\n';
@@ -1318,15 +1347,28 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
                           {/* Student Name (Sticky - 240px wide, 12pt font, NO TRUNCATE so names are not squeezed) */}
                           <td className="py-2 px-3 border-r border-slate-200 text-left font-bold text-slate-900 sticky left-[48px] bg-white group-hover:bg-slate-50 z-20 min-w-[240px] print:static print:border-slate-900">
-                            {onUpdateStudent ? (
-                              <input
-                                type="text"
-                                value={student.name}
-                                onChange={(e) => handleStudentInfoChange(student, 'name', e.target.value)}
-                                className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-emerald-600 focus:bg-white px-1 py-0.5 rounded text-[13pt] outline-none font-bold text-slate-900 leading-normal"
-                              />
+                            {nameScriptMode === 'en' ? (
+                              <span className="text-[13pt] font-bold text-slate-900 leading-normal" title={student.name}>
+                                {transliterateAmharicToEnglish(student.name)}
+                              </span>
                             ) : (
-                              <span className="text-[13pt] font-bold text-slate-900 leading-normal">{student.name}</span>
+                              <>
+                                {onUpdateStudent ? (
+                                  <input
+                                    type="text"
+                                    value={student.name}
+                                    onChange={(e) => handleStudentInfoChange(student, 'name', e.target.value)}
+                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-emerald-600 focus:bg-white px-1 py-0.5 rounded text-[13pt] outline-none font-bold text-slate-900 leading-normal"
+                                  />
+                                ) : (
+                                  <span className="text-[13pt] font-bold text-slate-900 leading-normal">{student.name}</span>
+                                )}
+                                {nameScriptMode === 'both' && (
+                                  <div className="text-[11px] font-semibold text-indigo-700 px-1 mt-0.5">
+                                    {transliterateAmharicToEnglish(student.name)}
+                                  </div>
+                                )}
+                              </>
                             )}
                           </td>
 
@@ -1892,7 +1934,14 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                           {idx + 1}
                         </span>
                         <div>
-                          <h4 className="font-bold text-slate-900 text-[13pt]">{student.name}</h4>
+                          <h4 className="font-bold text-slate-900 text-[13pt]">
+                            {nameScriptMode === 'en' ? transliterateAmharicToEnglish(student.name) : student.name}
+                          </h4>
+                          {nameScriptMode === 'both' && (
+                            <div className="text-[11px] font-semibold text-indigo-700">
+                              {transliterateAmharicToEnglish(student.name)}
+                            </div>
+                          )}
                           <span
                             className={`text-[11px] font-semibold ${
                               student.gender === 'ወ'

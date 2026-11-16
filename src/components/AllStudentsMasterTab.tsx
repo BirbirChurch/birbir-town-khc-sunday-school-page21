@@ -28,6 +28,7 @@ import { Student, Teacher, ChoirMember, SpiritualMember, Role, ChurchChild } fro
 import { downloadCSV, downloadXLSX } from '../utils/csv';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { matchesAmharicSearch } from '../utils/churchExcelParser';
+import { NameScriptMode, transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
 
 interface AllStudentsMasterTabProps {
   currentYear: string;
@@ -44,6 +45,7 @@ interface AllStudentsMasterTabProps {
   onMoveStudentClass?: (studentId: number | string, sourceClass: string, targetClass: string) => void;
   onGoToClass?: (className: string) => void;
   currentUserRole: Role | null;
+  nameScriptMode?: NameScriptMode;
 }
 
 interface EnrichedStudent extends Student {
@@ -72,7 +74,8 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
   onDeleteStudent,
   onMoveStudentClass,
   onGoToClass,
-  currentUserRole
+  currentUserRole,
+  nameScriptMode = 'am'
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
@@ -405,10 +408,12 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
   const handleExportExcel = () => {
     const headers = [
       'ተ.ቁ',
-      'የተማሪው ሙሉ ስም',
+      nameScriptMode === 'en' ? 'የተማሪው ሙሉ ስም (English)' : 'የተማሪው ሙሉ ስም',
+      ...(nameScriptMode === 'both' ? ['Student Name (English)'] : []),
       'ክፍል / ደረጃ',
       'ቻፕል (አጥቢያ ማዕከል)',
-      'የወላጅ ስም',
+      nameScriptMode === 'en' ? 'የወላጅ ስም (English)' : 'የወላጅ ስም',
+      ...(nameScriptMode === 'both' ? ['Parent Name (English)'] : []),
       'የወላጅ ስልክ ቁጥር',
       'ጾታ',
       'ዕድሜ',
@@ -425,27 +430,33 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
       'የመንፈሳዊ ትምህርት ቡድን'
     ];
 
-    const rows = filteredStudents.map((s, idx) => [
-      idx + 1,
-      s.name,
-      s.className,
-      s.chapel || 'ዋናው ማዕከል ቻፕል',
-      s.parentName || '-',
-      s.parentPhone || '-',
-      s.gender === 'ወ' ? 'ወንድ' : s.gender === 'ሴ' ? 'ሴት' : '-',
-      s.age || '-',
-      s.teacherName,
-      s.m1 ?? 0,
-      s.m2 ?? 0,
-      s.m3 ?? 0,
-      s.m4 ?? 0,
-      s.m5 ?? 0,
-      s.m6 ?? 0,
-      s.m7 ?? 0,
-      s.totalScore ?? 0,
-      s.choirGroup || '-',
-      s.spiritualGroup || '-'
-    ]);
+    const rows = filteredStudents.map((s, idx) => {
+      const enName = transliterateAmharicToEnglish(s.name);
+      const enParent = s.parentName && s.parentName !== '-' ? transliterateAmharicToEnglish(s.parentName) : '-';
+      return [
+        idx + 1,
+        nameScriptMode === 'en' ? enName : s.name,
+        ...(nameScriptMode === 'both' ? [enName] : []),
+        s.className,
+        s.chapel || 'ዋናው ማዕከል ቻፕል',
+        nameScriptMode === 'en' ? enParent : s.parentName || '-',
+        ...(nameScriptMode === 'both' ? [enParent] : []),
+        s.parentPhone || '-',
+        s.gender === 'ወ' ? 'ወንድ' : s.gender === 'ሴ' ? 'ሴት' : '-',
+        s.age || '-',
+        s.teacherName,
+        s.m1 ?? 0,
+        s.m2 ?? 0,
+        s.m3 ?? 0,
+        s.m4 ?? 0,
+        s.m5 ?? 0,
+        s.m6 ?? 0,
+        s.m7 ?? 0,
+        s.totalScore ?? 0,
+        s.choirGroup || '-',
+        s.spiritualGroup || '-'
+      ];
+    });
 
     const data = [headers, ...rows];
     downloadXLSX(data, `የብርብር_ቃለሕይወት_ጠቅላላ_ተማሪዎች_ማስተር_${currentYear}ዓም.xlsx`, 'ጠቅላላ ተማሪዎች ማስተር');
@@ -453,10 +464,14 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
 
   // Export to CSV
   const handleExportCSV = () => {
-    let csv = `\uFEFFተ.ቁ,የተማሪው ሙሉ ስም,ክፍል,ቻፕል,የወላጅ ስም,የወላጅ ስልክ,ጾታ,ዕድሜ,መምህር,ጠቅላላ ውጤት,መዘምራን ቡድን,መንፈሳዊ ቡድን\n`;
+    const enColHeader = nameScriptMode === 'both' ? ',Student Name (English)' : '';
+    let csv = `\uFEFFተ.ቁ,${nameScriptMode === 'en' ? 'የተማሪው ሙሉ ስም (English)' : 'የተማሪው ሙሉ ስም'}${enColHeader},ክፍል,ቻፕል,የወላጅ ስም,የወላጅ ስልክ,ጾታ,ዕድሜ,መምህር,ጠቅላላ ውጤት,መዘምራን ቡድን,መንፈሳዊ ቡድን\n`;
     filteredStudents.forEach((s, idx) => {
       const g = s.gender === 'ወ' ? 'ወንድ' : s.gender === 'ሴ' ? 'ሴት' : '-';
-      csv += `${idx + 1},"${s.name}","${s.className}","${s.chapel || 'ዋናው ማዕከል ቻፕል'}","${s.parentName || '-'}","${s.parentPhone || '-'}","${g}","${s.age || '-'}","${s.teacherName}",${s.totalScore ?? 0},"${s.choirGroup || '-'}","${s.spiritualGroup || '-'}"\n`;
+      const enName = transliterateAmharicToEnglish(s.name);
+      const enParent = s.parentName && s.parentName !== '-' ? transliterateAmharicToEnglish(s.parentName) : '-';
+      const enVal = nameScriptMode === 'both' ? `,"${enName}"` : '';
+      csv += `${idx + 1},"${nameScriptMode === 'en' ? enName : s.name}"${enVal},"${s.className}","${s.chapel || 'ዋናው ማዕከል ቻፕል'}","${nameScriptMode === 'en' ? enParent : s.parentName || '-'}","${s.parentPhone || '-'}","${g}","${s.age || '-'}","${s.teacherName}",${s.totalScore ?? 0},"${s.choirGroup || '-'}","${s.spiritualGroup || '-'}"\n`;
     });
     downloadCSV(csv, `የብርብር_ቃለሕይወት_ጠቅላላ_ተማሪዎች_ማስተር_${currentYear}ዓም.csv`);
   };
@@ -901,7 +916,12 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
 
                       {/* Student Name */}
                       <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[200px] leading-normal">
-                        <span>{student.name}</span>
+                        <div>{nameScriptMode === 'en' ? transliterateAmharicToEnglish(student.name) : student.name}</div>
+                        {nameScriptMode === 'both' && (
+                          <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                            {transliterateAmharicToEnglish(student.name)}
+                          </div>
+                        )}
                       </td>
 
                       {/* Class */}
@@ -924,8 +944,10 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
                         {student.parentPhone && student.parentPhone !== '-' ? (
                           <div className="flex flex-col gap-0.5">
                             {student.parentName && student.parentName !== '-' && (
-                              <span className="text-[10px] text-slate-500 font-semibold truncate max-w-[140px]">
-                                {student.parentName}
+                              <span className="text-[10px] text-slate-500 font-semibold truncate max-w-[160px]">
+                                {nameScriptMode === 'en'
+                                  ? transliterateAmharicToEnglish(student.parentName)
+                                  : student.parentName}
                               </span>
                             )}
                             <div className="flex items-center gap-1">

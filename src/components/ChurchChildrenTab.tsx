@@ -29,7 +29,8 @@ import {
   PhoneCall,
   BookOpen,
   Briefcase,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Languages
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ChurchChild, Student, Role } from '../types';
@@ -43,6 +44,10 @@ import {
   parseChurchWorkbookAllSheets,
   SheetRowOverrideMapping
 } from '../utils/churchExcelParser';
+import {
+  NameScriptMode,
+  transliterateAmharicToEnglish
+} from '../utils/amharicTransliterator';
 
 interface ChurchChildrenTabProps {
   currentYear: string;
@@ -64,6 +69,9 @@ interface ChurchChildrenTabProps {
   currentUserRole: Role | null;
   loggedInChapel?: string | null;
   onDeleteChapel?: (chapelName: string) => void;
+  nameScriptMode?: NameScriptMode;
+  onChangeNameScriptMode?: (mode: NameScriptMode) => void;
+  onOpenTransliterator?: () => void;
 }
 
 // Comprehensive Normalization function to match Amharic names accurately
@@ -534,8 +542,17 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   onBulkIncrementAges,
   currentUserRole,
   loggedInChapel,
-  onDeleteChapel
+  onDeleteChapel,
+  nameScriptMode,
+  onChangeNameScriptMode,
+  onOpenTransliterator
 }) => {
+  const [localScriptMode, setLocalScriptMode] = useState<NameScriptMode>('am');
+  const activeNameMode: NameScriptMode = nameScriptMode ?? localScriptMode;
+  const setActiveNameMode = (mode: NameScriptMode) => {
+    setLocalScriptMode(mode);
+    if (onChangeNameScriptMode) onChangeNameScriptMode(mode);
+  };
   const officialLoggedInChapel = useMemo(
     () => (loggedInChapel ? mapToOfficialChapel(loggedInChapel) : null),
     [loggedInChapel]
@@ -1003,7 +1020,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     const headers = [
       'ተ.ቁ',
       'መለያ ኮድ',
-      'የልጁ ሙሉ ስም',
+      activeNameMode === 'en' ? 'የልጁ ሙሉ ስም (English)' : 'የልጁ ሙሉ ስም',
+      ...(activeNameMode === 'both' ? ['Child Name (English)'] : []),
       'ጾታ',
       'ዕድሜ',
       'የዕድሜ ምድብ',
@@ -1012,7 +1030,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       'ቻፕል (አጥቢያ)',
       'በሰንበት ት/ቤት ይማራል?',
       'የሰንበት ት/ቤት ክፍል',
-      'የወላጅ/አሳዳጊ ስም',
+      activeNameMode === 'en' ? 'የወላጅ/አሳዳጊ ስም (English)' : 'የወላጅ/አሳዳጊ ስም',
+      ...(activeNameMode === 'both' ? ['Parent Name (English)'] : []),
       'የወላጅ ስልክ ቁጥር',
       'መኖሪያ አካባቢ',
       'ህብረት/መንደር',
@@ -1029,10 +1048,14 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       else if (numAge <= 12) ageGroupStr = '10-12 ዓመት';
       else if (numAge <= 14) ageGroupStr = '13-14 ዓመት';
 
+      const enChildName = transliterateAmharicToEnglish(c.name);
+      const enParentName = c.parentName ? transliterateAmharicToEnglish(c.parentName) : '-';
+
       return [
         idx + 1,
         c.memberCode || '-',
-        c.name,
+        activeNameMode === 'en' ? enChildName : c.name,
+        ...(activeNameMode === 'both' ? [enChildName] : []),
         c.gender === 'ወ' ? 'ወንድ' : c.gender === 'ሴ' ? 'ሴት' : '-',
         c.age || '-',
         ageGroupStr,
@@ -1041,7 +1064,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         c.chapel || 'ዋናው ማዕከል ቻፕል',
         c.isEnrolled ? 'አዎ (ይማራል)' : 'አይማርም',
         c.enrolledClass || '-',
-        c.parentName || '-',
+        activeNameMode === 'en' ? enParentName : c.parentName || '-',
+        ...(activeNameMode === 'both' ? [enParentName] : []),
         c.phone || '-',
         c.residence || '-',
         c.fellowshipOrVillage || '-',
@@ -1435,6 +1459,49 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               <Printer className="w-4 h-4" />
               <span>🖨️ ፕሪንት / PDF</span>
             </button>
+
+            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1" title="ስሞችን ያለ ትርጉም በቀጥታ ወደ እንግሊዝኛ መቀየሪያ">
+              <Languages className="w-3.5 h-3.5 text-indigo-700 ml-1" />
+              <button
+                type="button"
+                onClick={() => setActiveNameMode('am')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  activeNameMode === 'am' ? 'bg-blue-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                አማ
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveNameMode('both')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  activeNameMode === 'both' ? 'bg-blue-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                አማ+EN
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveNameMode('en')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  activeNameMode === 'en' ? 'bg-blue-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                English
+              </button>
+            </div>
+
+            {onOpenTransliterator && (
+              <button
+                type="button"
+                onClick={onOpenTransliterator}
+                className="bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="ስሞችን ያለ ትርጉም በቀጥታ ወደ እንግሊዝኛ መቀየሪያ"
+              >
+                <Languages className="w-4 h-4 text-amber-300" />
+                <span>ስም ወደ EN ቀይር</span>
+              </button>
+            )}
 
             {onClearChurchChildren && (
               <button
@@ -2129,7 +2196,12 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                               <tr key={`grp_ch_${child.id}`} className="hover:bg-blue-50/30 transition-colors">
                                 <td className="py-2 px-3 text-center font-bold text-slate-500 bg-slate-50/50">{idx + 1}</td>
                                 <td className="py-2 px-4 font-bold text-[12pt] text-slate-900">
-                                  <div>{child.name}</div>
+                                  <div>{activeNameMode === 'en' ? transliterateAmharicToEnglish(child.name) : child.name}</div>
+                                  {activeNameMode === 'both' && (
+                                    <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                      {transliterateAmharicToEnglish(child.name)}
+                                    </div>
+                                  )}
                                   {child.memberCode && (
                                     <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
                                       {child.memberCode}
@@ -2158,7 +2230,24 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                                     </span>
                                   )}
                                 </td>
-                                <td className="py-2 px-3 text-slate-700">{child.parentName || '-'}</td>
+                                <td className="py-2 px-3 text-slate-700">
+                                  {child.parentName ? (
+                                    <div>
+                                      <div>
+                                        {activeNameMode === 'en'
+                                          ? transliterateAmharicToEnglish(child.parentName)
+                                          : child.parentName}
+                                      </div>
+                                      {activeNameMode === 'both' && (
+                                        <div className="text-[10px] font-semibold text-indigo-700">
+                                          {transliterateAmharicToEnglish(child.parentName)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    '-'
+                                  )}
+                                </td>
                                 <td className="py-2 px-3 font-mono text-[11px]">
                                   {child.phone ? (
                                     <div className="flex items-center gap-1">
@@ -2242,7 +2331,12 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
                           {/* Child Name (13pt Bold) */}
                           <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[200px] leading-normal">
-                            <div>{child.name}</div>
+                            <div>{activeNameMode === 'en' ? transliterateAmharicToEnglish(child.name) : child.name}</div>
+                            {activeNameMode === 'both' && (
+                              <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                {transliterateAmharicToEnglish(child.name)}
+                              </div>
+                            )}
                             {child.memberCode && (
                               <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
                                 {child.memberCode}
@@ -2325,7 +2419,22 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
                           {/* Parent / Guardian Name */}
                           <td className="py-2.5 px-3 text-slate-700 font-medium">
-                            {child.parentName || '-'}
+                            {child.parentName ? (
+                              <div>
+                                <div>
+                                  {activeNameMode === 'en'
+                                    ? transliterateAmharicToEnglish(child.parentName)
+                                    : child.parentName}
+                                </div>
+                                {activeNameMode === 'both' && (
+                                  <div className="text-[10px] font-semibold text-indigo-700">
+                                    {transliterateAmharicToEnglish(child.parentName)}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              '-'
+                            )}
                           </td>
 
                           {/* Parent Phone Number with Quick Call & Copy */}
@@ -2453,7 +2562,16 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                         {idx + 1}
                       </td>
                       <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[220px]">
-                        {item.student.name}
+                        <div>
+                          {activeNameMode === 'en'
+                            ? transliterateAmharicToEnglish(item.student.name)
+                            : item.student.name}
+                        </div>
+                        {activeNameMode === 'both' && (
+                          <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                            {transliterateAmharicToEnglish(item.student.name)}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 font-bold text-blue-900">
                         <span className="bg-blue-50 text-blue-800 px-2.5 py-0.5 rounded-lg border border-blue-200 font-bold text-[11px]">
@@ -2517,6 +2635,14 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                   onChange={(e) => setFormName(e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-900"
                 />
+                {formName.trim() && (
+                  <p className="mt-1 text-[11px] font-semibold text-indigo-800 bg-indigo-50/70 border border-indigo-200/70 rounded-lg px-2.5 py-1 flex items-center gap-1.5">
+                    <Languages className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span>
+                      በእንግሊዝኛ (ቀጥታ)፦ <strong>{transliterateAmharicToEnglish(formName)}</strong>
+                    </span>
+                  </p>
+                )}
               </div>
 
               {/* Chapel Selection */}
@@ -2606,6 +2732,11 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                     onChange={(e) => setFormParent(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
+                  {formParent.trim() && (
+                    <p className="mt-1 text-[10px] font-semibold text-indigo-700">
+                      English: {transliterateAmharicToEnglish(formParent)}
+                    </p>
+                  )}
                 </div>
 
                 <div>
