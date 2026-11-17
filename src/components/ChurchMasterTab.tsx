@@ -50,7 +50,8 @@ import {
   getNextFamilySubCode,
   getNextMemberCodeForChapel,
   getRootFamilyBaseCode,
-  normalizeCodeForLookup
+  normalizeCodeForLookup,
+  parseChapelCodeParts
 } from '../utils/memberCodeGenerator';
 import {
   NameScriptMode,
@@ -630,8 +631,22 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     );
   }, [editingMember, formFamilyCode, activeTargetChapelForForm]);
 
+  const editHasExistingFamilyLinkOrSubCode = useMemo(() => {
+    if (!editingMember) return false;
+    const parts = parseChapelCodeParts(editingMember.memberCode, activeTargetChapelForForm);
+    return Boolean(editingMember.familyCode || (parts && parts.subSeq !== null));
+  }, [editingMember, activeTargetChapelForForm]);
+
+  const editWillUnlinkToStandalone = useMemo(() => {
+    if (!editingMember) return false;
+    return editHasExistingFamilyLinkOrSubCode && !formFamilyCode.trim();
+  }, [editingMember, editHasExistingFamilyLinkOrSubCode, formFamilyCode]);
+
   const nextAutoCodePreview = useMemo(() => {
     if (editingMember) {
+      if (editWillUnlinkToStandalone) {
+        return getNextMemberCodeForChapel(churchMembers, activeTargetChapelForForm);
+      }
       if (editWillReassignSubCode) {
         const anchor = formFamilyCode.trim();
         return getNextFamilySubCode(churchMembers, anchor, activeTargetChapelForForm);
@@ -656,7 +671,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     addMode,
     matchedCodeMember,
     formFamilyCode,
-    editWillReassignSubCode
+    editWillReassignSubCode,
+    editWillUnlinkToStandalone
   ]);
 
   const handleCopyMemberCode = (id: number, code: string) => {
@@ -792,7 +808,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       undefined;
 
     const parsedFormAge = parseInt(formAge, 10);
-    const shouldReassignCodeOnEdit = Boolean(editingMember && editWillReassignSubCode);
+    const shouldReassignCodeOnEdit = Boolean(
+      editingMember && (editWillReassignSubCode || editWillUnlinkToStandalone)
+    );
 
     const payload: Omit<ChurchMember, 'id'> = {
       name: formName.trim(),
@@ -815,7 +833,12 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         ...payload,
         id: editingMember.id
       });
-      if (shouldReassignCodeOnEdit) {
+      if (editWillUnlinkToStandalone) {
+        setExtractedSuccessMsg(
+          `✓ "${payload.name}" ራሱን የቻለ (1 ሰው ቤተሰብ) ሆኖ ቀጥታ የራሱ ኮድ (${nextAutoCodePreview}) ተሰጥቶታል!`
+        );
+        setTimeout(() => setExtractedSuccessMsg(''), 8000);
+      } else if (shouldReassignCodeOnEdit) {
         setExtractedSuccessMsg(
           `✓ "${payload.name}" ወደ ቤተሰብ ኮድ ${resolvedFamilyCode} ተያይዞ አዲስ ንዑስ ኮድ (${nextAutoCodePreview}) ተሰጥቶታል!`
         );
@@ -1737,7 +1760,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  🆕 አዲስ አባል (ያለ ኮድ)
+                  🆕 አዲስ / 1 ሰው ቤተሰብ (ራሱን ኮድ)
                 </button>
                 <button
                   type="button"
@@ -1960,8 +1983,20 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                     </div>
                   )}
                   <p className="text-[10px] text-cyan-900">
-                    ነባሩን የቤተሰብ መሪ ኮድ (ለምሳሌ 0513) እዚህ ሲያስገቡ ለሚስት 0513/1፣ ለልጅ 0513/2 እየተባለ ኮዱ በራሱ ይዘመናል።
+                    ነባሩን የቤተሰብ መሪ ኮድ (ለምሳሌ 0513) እዚህ ሲያስገቡ 0513/1፣ 0513/2 ይሆናል። በቤተሰብ ደረጃ 1 ሰው ብቻ ከሆነ ግን የቤተሰብ ኮዱን ያጽዱና ራሱን የቻለ ኮድ እንዲሰጠው ያድርጉ።
                   </p>
+                  {editHasExistingFamilyLinkOrSubCode && formFamilyCode.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormFamilyCode('');
+                        setFormRelation('ብቸኛ (1 ሰው ቤተሰብ)');
+                      }}
+                      className="text-[11px] font-bold bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                    >
+                      ↳ ከሌላ ቤተሰብ ነጥልና ራሱን የቻለ (1 ሰው) ኮድ ስጠው
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1969,7 +2004,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
                 <div className="text-[11px] font-bold text-indigo-950">
                   {editingMember
-                    ? editWillReassignSubCode
+                    ? editWillUnlinkToStandalone
+                      ? 'ራሱን ችሎ (1 ሰው) የሚሰጠው አዲስ ኮድ፦'
+                      : editWillReassignSubCode
                       ? 'ከተያያዘ በኋላ የሚሰጠው አዲስ ኮድ፦'
                       : 'የተመደበ መለያ ኮድ፦'
                     : 'ሲመዘገብ በራሱ የሚሰጠው ቀጣይ ኮድ፦'}
@@ -2054,6 +2091,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-bold bg-white"
                   >
                     <option value="">ይምረጡ (አማራጭ)</option>
+                    <option value="ብቸኛ (1 ሰው ቤተሰብ)">ብቸኛ (1 ሰው ቤተሰብ)</option>
                     <option value="የቤተሰብ መሪ">የቤተሰብ መሪ</option>
                     <option value="ባለቤት / ሚስት">ባለቤት / ሚስት</option>
                     <option value="ልጅ">ልጅ</option>

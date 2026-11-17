@@ -521,6 +521,21 @@ export const assignSequentialCodesAndSortMembers = (
         const targetBase = famParts.baseSeq;
         if (targetBase > maxBaseSeq) maxBaseSeq = targetBase;
 
+        // If nobody holds the base head code (`targetBase/0`) yet AND the anchor didn't explicitly carry a sub-branch,
+        // this person is the standalone / first member of this household (e.g., a 1-person family -> direct `0514`, NOT `0514/1`).
+        if (!usedCodeKeys.has(`${targetBase}/0`) && famParts.subSeq === null) {
+          usedCodeKeys.add(`${targetBase}/0`);
+          return {
+            member: {
+              ...entry.member,
+              familyCode: famParts.baseCode,
+              memberCode: formatChapelMemberCode(chapel, targetBase)
+            },
+            baseSeq: targetBase,
+            subSeq: null as number | null
+          };
+        }
+
         let nextSub = (maxSubByBase.get(targetBase) ?? 0) + 1;
         while (usedCodeKeys.has(`${targetBase}/${nextSub}`)) {
           nextSub += 1;

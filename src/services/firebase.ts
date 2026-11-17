@@ -1,5 +1,4 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, get, Database } from 'firebase/database';
 import { getFirestore, doc, onSnapshot, setDoc, getDoc, Firestore, setLogLevel } from 'firebase/firestore';
 import { AppData } from '../types';
 import { INITIAL_APP_DATA, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
@@ -11,112 +10,79 @@ try {
   setLogLevel('silent');
 } catch {}
 
+export const firebaseConfig = {
+  apiKey: "AIzaSyBwIZor6Yunr_XQNq_6v5t_73klowrZNV8",
+  authDomain: "birbirtownkhcchildministrypage.firebaseapp.com",
+  projectId: "birbirtownkhcchildministrypage",
+  storageBucket: "birbirtownkhcchildministrypage.firebasestorage.app",
+  messagingSenderId: "737025715503",
+  appId: "1:737025715503:web:8c27955f4f60c01c7705da"
+};
+
 export interface FirebaseProjectProfile {
   id: string;
   label: string;
-  config: {
-    apiKey: string;
-    authDomain: string;
-    databaseURL: string;
-    databaseURL_alt?: string;
-    databaseURL_alt2?: string;
-    projectId: string;
-    storageBucket: string;
-    messagingSenderId: string;
-    appId: string;
-    measurementId?: string;
-  };
+  config: typeof firebaseConfig;
 }
 
-export const KNOWN_PROJECTS: FirebaseProjectProfile[] = [
-  {
-    id: "geladestazelulove1628",
-    label: "geladestazelulove1628 (ዋናው አዲሱ የቤተክርስቲያን ዳታቤዝ)",
-    config: {
-      apiKey: "AIzaSyAw5j4fochMJoU4CzWv5h8gl3vXVA49PEU",
-      authDomain: "geladestazelulove1628.firebaseapp.com",
-      databaseURL: "https://geladestazelulove1628-default-rtdb.europe-west1.firebasedatabase.app",
-      databaseURL_alt: "https://geladestazelulove1628-default-rtdb.firebaseio.com",
-      projectId: "geladestazelulove1628",
-      storageBucket: "geladestazelulove1628.firebasestorage.app",
-      messagingSenderId: "873670244371",
-      appId: "1:873670244371:web:5e58672da91ce8d284e7e6"
-    }
-  }
-];
+const ACTIVE_PROJECT_PROFILE: FirebaseProjectProfile = {
+  id: firebaseConfig.projectId,
+  label: `${firebaseConfig.projectId} (የቤተክርስቲያን ዋና Cloud Firestore ዳታቤዝ)`,
+  config: firebaseConfig
+};
 
-const ACTIVE_PROJECT_STORAGE_KEY = 'birbir_active_firebase_project_id';
 const LOCAL_STORAGE_KEY = 'birbir_khc_local_data';
 const BACKUP_STORAGE_KEY = 'birbir_khc_safety_backup';
 const DB_KEY = 'kaleheywet_data';
 
-export const getActiveProjectId = (): string => {
-  try {
-    const saved = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-    if (saved && saved !== KNOWN_PROJECTS[0].id) {
-      localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, KNOWN_PROJECTS[0].id);
-    }
-  } catch {}
-  return KNOWN_PROJECTS[0].id;
-};
-
-export const setActiveProjectId = (projectId: string) => {
-  const valid = KNOWN_PROJECTS.some((p) => p.id === projectId) ? projectId : KNOWN_PROJECTS[0].id;
-  localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, valid);
-};
+// Clean up any legacy project selector key from previous sessions
+try {
+  localStorage.removeItem('birbir_active_firebase_project_id');
+} catch {}
 
 export const getActiveProjectProfile = (): FirebaseProjectProfile => {
-  return KNOWN_PROJECTS[0];
+  return ACTIVE_PROJECT_PROFILE;
 };
 
-export const firebaseConfig = getActiveProjectProfile().config;
-
-// Initialize Firebase App
 let appInstance: FirebaseApp | null = null;
-let rtdbInstance: Database | null = null;
 let firestoreInstance: Firestore | null = null;
 
 const countStudentsInData = (data: any): number => {
   if (!data?.students || typeof data.students !== 'object') return 0;
   return Object.values(data.students).reduce(
     (acc: number, classObj: any) =>
-      acc + (typeof classObj === 'object' ? Object.values(classObj).reduce((cAcc: number, arr: any) => cAcc + (Array.isArray(arr) ? arr.length : 0), 0) : 0),
+      acc +
+      (typeof classObj === 'object'
+        ? Object.values(classObj).reduce(
+            (cAcc: number, arr: any) => cAcc + (Array.isArray(arr) ? arr.length : 0),
+            0
+          )
+        : 0),
     0
   );
 };
 
-const initFirebaseForActiveProject = () => {
+const initFirebaseApp = () => {
   try {
-    const profile = getActiveProjectProfile();
-    const appName = `app_${profile.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-
+    const appName = `app_${firebaseConfig.projectId.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const existing = getApps().find((a) => a.name === appName);
-    appInstance = existing || initializeApp(profile.config, appName);
-
-    try {
-      rtdbInstance = getDatabase(appInstance, profile.config.databaseURL);
-    } catch {
-      if (profile.config.databaseURL_alt) {
-        try {
-          rtdbInstance = getDatabase(appInstance, profile.config.databaseURL_alt);
-        } catch {}
-      }
-    }
+    appInstance = existing || initializeApp(firebaseConfig, appName);
 
     try {
       firestoreInstance = getFirestore(appInstance);
-    } catch {}
+    } catch (fsErr) {
+      console.warn('Firestore init notice:', fsErr);
+    }
   } catch (err) {
     console.warn('Firebase init notice:', err);
   }
 };
 
-initFirebaseForActiveProject();
+initFirebaseApp();
 
-export const db = rtdbInstance;
 export const firestore = firestoreInstance;
 
-// Load stored local data with exhaustive recovery check across all potential keys in localStorage
+// Load stored local data with recovery check across known localStorage keys
 export const loadStoredLocalData = (): AppData => {
   try {
     const candidates: any[] = [];
@@ -144,7 +110,11 @@ export const loadStoredLocalData = (): AppData => {
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && !knownKeys.includes(k) && (k.includes('birbir') || k.includes('kale') || k.includes('backup') || k.includes('student'))) {
+        if (
+          k &&
+          !knownKeys.includes(k) &&
+          (k.includes('birbir') || k.includes('kale') || k.includes('backup') || k.includes('student'))
+        ) {
           const item = localStorage.getItem(k);
           if (item) {
             try {
@@ -179,18 +149,25 @@ export const loadStoredLocalData = (): AppData => {
         leader: source.pins?.leader || INITIAL_APP_DATA.pins.leader,
         chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) }
       },
-      teachers: (source.teachers && source.teachers.length > 0) ? source.teachers : INITIAL_APP_DATA.teachers,
-      plans: (source.plans && source.plans.length > 0) ? source.plans : INITIAL_APP_DATA.plans,
-      choirGroups: (source.choirGroups && source.choirGroups.length > 0) ? source.choirGroups : INITIAL_APP_DATA.choirGroups,
-      spiritualGroups: (source.spiritualGroups && source.spiritualGroups.length > 0) ? source.spiritualGroups : INITIAL_APP_DATA.spiritualGroups,
-      subjects: (source.subjects && source.subjects.length > 0) ? source.subjects : INITIAL_APP_DATA.subjects,
+      teachers: source.teachers && source.teachers.length > 0 ? source.teachers : INITIAL_APP_DATA.teachers,
+      plans: source.plans && source.plans.length > 0 ? source.plans : INITIAL_APP_DATA.plans,
+      choirGroups:
+        source.choirGroups && source.choirGroups.length > 0 ? source.choirGroups : INITIAL_APP_DATA.choirGroups,
+      spiritualGroups:
+        source.spiritualGroups && source.spiritualGroups.length > 0
+          ? source.spiritualGroups
+          : INITIAL_APP_DATA.spiritualGroups,
+      subjects: source.subjects && source.subjects.length > 0 ? source.subjects : INITIAL_APP_DATA.subjects,
       classSubjects: source.classSubjects || {},
       students: source.students || {},
       attendance: source.attendance || [],
       choirMembers: source.choirMembers || [],
       spiritualMembers: source.spiritualMembers || [],
       chapels: DEFAULT_CHAPELS,
-      churchChildren: (source.churchChildren && source.churchChildren.length > 0) ? source.churchChildren : INITIAL_APP_DATA.churchChildren || [],
+      churchChildren:
+        source.churchChildren && source.churchChildren.length > 0
+          ? source.churchChildren
+          : INITIAL_APP_DATA.churchChildren || [],
       churchMembers: Array.isArray(source.churchMembers) ? source.churchMembers : []
     };
 
@@ -208,7 +185,12 @@ export const saveToLocalStorage = (data: AppData) => {
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, jsonStr);
     } catch {
-      const legacyKeys = ['birbir_khc_safety_backup', 'kaleheywet_data', 'birbir_town_khc_data', 'sunday_school_data'];
+      const legacyKeys = [
+        'birbir_khc_safety_backup',
+        'kaleheywet_data',
+        'birbir_town_khc_data',
+        'sunday_school_data'
+      ];
       legacyKeys.forEach((k) => localStorage.removeItem(k));
       try {
         localStorage.setItem(LOCAL_STORAGE_KEY, jsonStr);
@@ -225,7 +207,6 @@ export interface SyncDiagnosticInfo {
   status: 'connected' | 'saving' | 'offline' | 'permission_denied' | 'error';
   projectId: string;
   projectLabel: string;
-  databaseURL: string;
   lastSyncTime?: string;
   errorMessage?: string;
   totalStudentsLocal?: number;
@@ -233,25 +214,30 @@ export interface SyncDiagnosticInfo {
 
 export let currentDiagnostic: SyncDiagnosticInfo = {
   status: 'offline',
-  projectId: getActiveProjectId(),
-  projectLabel: getActiveProjectProfile().label,
-  databaseURL: getActiveProjectProfile().config.databaseURL,
+  projectId: firebaseConfig.projectId,
+  projectLabel: ACTIVE_PROJECT_PROFILE.label,
   totalStudentsLocal: 0
 };
 
 export const CLIENT_SESSION_ID = `client_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-const writeAppDataToFirestore = async (fs: Firestore, payload: any): Promise<void> => {
-  const docRef = doc(fs, 'church_data', DB_KEY);
-  const serialized = JSON.stringify(payload);
+// Strip any `undefined` properties recursively before writing to Cloud Firestore
+const stripUndefinedForFirestore = <T>(obj: T): T => {
+  return JSON.parse(JSON.stringify(obj));
+};
 
-  if (serialized.length < 800000) {
-    await setDoc(docRef, { ...payload, _membersChunkCount: 0 });
+const writeAppDataToFirestore = async (fs: Firestore, payload: any): Promise<void> => {
+  const cleanPayload = stripUndefinedForFirestore(payload);
+  const docRef = doc(fs, 'church_data', DB_KEY);
+  const serialized = JSON.stringify(cleanPayload);
+
+  if (serialized.length < 750000) {
+    await setDoc(docRef, { ...cleanPayload, _membersChunkCount: 0 });
     return;
   }
 
-  const allMembers = Array.isArray(payload.churchMembers) ? payload.churchMembers : [];
-  const CHUNK_SIZE = 1500;
+  const allMembers = Array.isArray(cleanPayload.churchMembers) ? cleanPayload.churchMembers : [];
+  const CHUNK_SIZE = 1000;
   const chunks: any[][] = [];
   for (let i = 0; i < allMembers.length; i += CHUNK_SIZE) {
     chunks.push(allMembers.slice(i, i + CHUNK_SIZE));
@@ -261,13 +247,13 @@ const writeAppDataToFirestore = async (fs: Firestore, payload: any): Promise<voi
     chunks.map((chunk, idx) =>
       setDoc(doc(fs, 'church_data', `${DB_KEY}_members_${idx}`), {
         members: chunk,
-        _syncMeta: payload._syncMeta
+        _syncMeta: cleanPayload._syncMeta || null
       })
     )
   );
 
   await setDoc(docRef, {
-    ...payload,
+    ...cleanPayload,
     churchMembers: [],
     _membersChunkCount: chunks.length
   });
@@ -306,10 +292,9 @@ export const subscribeToAppData = (
   const initialLocal = loadStoredLocalData();
   onData(initialLocal);
 
-  initFirebaseForActiveProject();
+  initFirebaseApp();
   const profile = getActiveProjectProfile();
 
-  let unsubRtdb: (() => void) | null = null;
   let unsubFirestore: (() => void) | null = null;
 
   const handleRemoteData = (val: any) => {
@@ -319,7 +304,6 @@ export const subscribeToAppData = (
           status: 'connected',
           projectId: profile.id,
           projectLabel: profile.label,
-          databaseURL: profile.config.databaseURL,
           lastSyncTime: new Date().toLocaleTimeString('am-ET')
         };
         onStatusChange('connected', currentDiagnostic);
@@ -330,20 +314,14 @@ export const subscribeToAppData = (
 
       const mergedStudents: AppData['students'] = {};
       const localStudents = currentLocal.students || {};
-      const remoteStudents = (val.students && typeof val.students === 'object') ? val.students : {};
+      const remoteStudents = val.students && typeof val.students === 'object' ? val.students : {};
 
-      const allYears = Array.from(new Set([
-        ...Object.keys(localStudents),
-        ...Object.keys(remoteStudents)
-      ]));
+      const allYears = Array.from(new Set([...Object.keys(localStudents), ...Object.keys(remoteStudents)]));
 
       allYears.forEach((yr) => {
         const localClassMap = localStudents[yr] || {};
         const remoteClassMap = remoteStudents[yr] || {};
-        const allClasses = Array.from(new Set([
-          ...Object.keys(localClassMap),
-          ...Object.keys(remoteClassMap)
-        ]));
+        const allClasses = Array.from(new Set([...Object.keys(localClassMap), ...Object.keys(remoteClassMap)]));
 
         mergedStudents[yr] = {};
         allClasses.forEach((cls) => {
@@ -366,19 +344,28 @@ export const subscribeToAppData = (
             ...(val.pins?.chapels || {})
           }
         },
-        teachers: (val.teachers && val.teachers.length > 0) ? val.teachers : currentLocal.teachers,
-        subjects: (val.subjects && val.subjects.length > 0) ? val.subjects : currentLocal.subjects,
+        teachers: val.teachers && val.teachers.length > 0 ? val.teachers : currentLocal.teachers,
+        subjects: val.subjects && val.subjects.length > 0 ? val.subjects : currentLocal.subjects,
         classSubjects: val.classSubjects || currentLocal.classSubjects || {},
-        choirGroups: (val.choirGroups && val.choirGroups.length > 0) ? val.choirGroups : currentLocal.choirGroups,
-        spiritualGroups: (val.spiritualGroups && val.spiritualGroups.length > 0) ? val.spiritualGroups : currentLocal.spiritualGroups,
-        plans: (val.plans && val.plans.length > 0) ? val.plans : currentLocal.plans,
-        students: Object.keys(mergedStudents).length > 0 ? mergedStudents : (currentLocal.students || {}),
-        attendance: (val.attendance && val.attendance.length > 0) ? val.attendance : currentLocal.attendance,
-        choirMembers: (val.choirMembers && val.choirMembers.length > 0) ? val.choirMembers : currentLocal.choirMembers,
+        choirGroups: val.choirGroups && val.choirGroups.length > 0 ? val.choirGroups : currentLocal.choirGroups,
+        spiritualGroups:
+          val.spiritualGroups && val.spiritualGroups.length > 0
+            ? val.spiritualGroups
+            : currentLocal.spiritualGroups,
+        plans: val.plans && val.plans.length > 0 ? val.plans : currentLocal.plans,
+        students: Object.keys(mergedStudents).length > 0 ? mergedStudents : currentLocal.students || {},
+        attendance: val.attendance && val.attendance.length > 0 ? val.attendance : currentLocal.attendance,
+        choirMembers: val.choirMembers && val.choirMembers.length > 0 ? val.choirMembers : currentLocal.choirMembers,
         chapels: DEFAULT_CHAPELS,
-        churchChildren: (val.churchChildren && val.churchChildren.length > 0) ? val.churchChildren : currentLocal.churchChildren || [],
-        churchMembers: (val.churchMembers && val.churchMembers.length > 0) ? val.churchMembers : (currentLocal.churchMembers || []),
-        years: (val.years && val.years.length > 0) ? val.years : currentLocal.years
+        churchChildren:
+          val.churchChildren && val.churchChildren.length > 0
+            ? val.churchChildren
+            : currentLocal.churchChildren || [],
+        churchMembers:
+          val.churchMembers && val.churchMembers.length > 0
+            ? val.churchMembers
+            : currentLocal.churchMembers || [],
+        years: val.years && val.years.length > 0 ? val.years : currentLocal.years
       };
 
       const sanitizedMerged = sanitizeAndDeduplicateAppData(mergedData);
@@ -390,7 +377,6 @@ export const subscribeToAppData = (
         status: 'connected',
         projectId: profile.id,
         projectLabel: profile.label,
-        databaseURL: profile.config.databaseURL,
         lastSyncTime: new Date().toLocaleTimeString('am-ET'),
         totalStudentsLocal: countStudentsInData(sanitizedMerged)
       };
@@ -398,67 +384,7 @@ export const subscribeToAppData = (
     }
   };
 
-  if (rtdbInstance) {
-    try {
-      const dataRef = ref(rtdbInstance, DB_KEY);
-      unsubRtdb = onValue(
-        dataRef,
-        (snapshot) => {
-          const val = snapshot.val();
-          if (val) {
-            handleRemoteData(val);
-          } else {
-            set(dataRef, initialLocal)
-              .then(() => {
-                currentDiagnostic = {
-                  status: 'connected',
-                  projectId: profile.id,
-                  projectLabel: profile.label,
-                  databaseURL: profile.config.databaseURL,
-                  lastSyncTime: new Date().toLocaleTimeString('am-ET')
-                };
-                onStatusChange('connected', currentDiagnostic);
-              })
-              .catch((err) => {
-                const isPermission = err?.message?.includes('PERMISSION_DENIED');
-                currentDiagnostic = {
-                  status: isPermission ? 'permission_denied' : 'offline',
-                  projectId: profile.id,
-                  projectLabel: profile.label,
-                  databaseURL: profile.config.databaseURL,
-                  errorMessage: err?.message
-                };
-                onStatusChange('offline', currentDiagnostic);
-              });
-          }
-        },
-        (error) => {
-          const isPermission = error?.message?.includes('PERMISSION_DENIED');
-          currentDiagnostic = {
-            status: isPermission ? 'permission_denied' : 'offline',
-            projectId: profile.id,
-            projectLabel: profile.label,
-            databaseURL: profile.config.databaseURL,
-            errorMessage: isPermission
-              ? 'የFirebase ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console ውስጥ Rules ን .read: true, .write: true ያድርጉ።'
-              : error?.message
-          };
-          onStatusChange('offline', currentDiagnostic);
-        }
-      );
-    } catch (err: any) {
-      currentDiagnostic = {
-        status: 'offline',
-        projectId: profile.id,
-        projectLabel: profile.label,
-        databaseURL: profile.config.databaseURL,
-        errorMessage: err?.message
-      };
-      onStatusChange('offline', currentDiagnostic);
-    }
-  }
-
-  if (firestoreInstance && !rtdbInstance) {
+  if (firestoreInstance) {
     try {
       const fs = firestoreInstance;
       const docRef = doc(fs, 'church_data', DB_KEY);
@@ -472,27 +398,72 @@ export const subscribeToAppData = (
             } catch {
               handleRemoteData(snap.data());
             }
+          } else {
+            try {
+              await writeAppDataToFirestore(fs, {
+                ...initialLocal,
+                _syncMeta: {
+                  clientId: CLIENT_SESSION_ID,
+                  timestamp: Date.now()
+                }
+              });
+              currentDiagnostic = {
+                status: 'connected',
+                projectId: profile.id,
+                projectLabel: profile.label,
+                lastSyncTime: new Date().toLocaleTimeString('am-ET'),
+                totalStudentsLocal: countStudentsInData(initialLocal)
+              };
+              onStatusChange('connected', currentDiagnostic);
+            } catch (writeErr: any) {
+              const msg = String(writeErr?.message || '');
+              const isPermission =
+                writeErr?.code === 'permission-denied' || msg.toLowerCase().includes('permission');
+              currentDiagnostic = {
+                status: isPermission ? 'permission_denied' : 'offline',
+                projectId: profile.id,
+                projectLabel: profile.label,
+                errorMessage: isPermission
+                  ? 'የCloud Firestore ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console -> Firestore Rules ውስጥ allow read, write: if true; ያድርጉ።'
+                  : msg
+              };
+              onStatusChange('offline', currentDiagnostic);
+            }
           }
         },
-        () => {
-          if (unsubFirestore) {
-            unsubFirestore();
-            unsubFirestore = null;
-          }
+        (error: any) => {
+          const msg = String(error?.message || '');
+          const isPermission =
+            error?.code === 'permission-denied' || msg.toLowerCase().includes('permission');
+          currentDiagnostic = {
+            status: isPermission ? 'permission_denied' : 'offline',
+            projectId: profile.id,
+            projectLabel: profile.label,
+            errorMessage: isPermission
+              ? 'የCloud Firestore ፍቃድ አልተከፈተም (Permission Denied)። እባክዎ በFirebase Console -> Firestore Rules ውስጥ allow read, write: if true; ያድርጉ።'
+              : msg
+          };
+          onStatusChange('offline', currentDiagnostic);
         }
       );
-    } catch {}
+    } catch (err: any) {
+      currentDiagnostic = {
+        status: 'offline',
+        projectId: profile.id,
+        projectLabel: profile.label,
+        errorMessage: err?.message
+      };
+      onStatusChange('offline', currentDiagnostic);
+    }
   }
 
   return () => {
-    if (unsubRtdb) unsubRtdb();
     if (unsubFirestore) unsubFirestore();
   };
 };
 
 export const syncAppDataToFirebase = async (data: AppData): Promise<boolean> => {
   saveToLocalStorage(data);
-  let synced = false;
 
   const payload = {
     ...data,
@@ -502,64 +473,61 @@ export const syncAppDataToFirebase = async (data: AppData): Promise<boolean> => 
     }
   };
 
-  if (rtdbInstance) {
-    try {
-      const dataRef = ref(rtdbInstance, DB_KEY);
-      await Promise.race([
-        set(dataRef, payload),
-        new Promise<void>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
-      ]);
-      synced = true;
-      currentDiagnostic.status = 'connected';
-      currentDiagnostic.lastSyncTime = new Date().toLocaleTimeString('am-ET');
-    } catch (error: any) {
-      console.warn('RTDB sync note:', error?.message);
-    }
-  }
-
-  if (!synced && firestoreInstance) {
+  if (firestoreInstance) {
     try {
       await Promise.race([
         writeAppDataToFirestore(firestoreInstance, payload),
-        new Promise<void>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
+        new Promise<void>((_, reject) => setTimeout(() => reject(new Error('timeout')), 12000))
       ]);
-      synced = true;
-      currentDiagnostic.status = 'connected';
-      currentDiagnostic.lastSyncTime = new Date().toLocaleTimeString('am-ET');
-    } catch {}
+      currentDiagnostic = {
+        ...currentDiagnostic,
+        status: 'connected',
+        lastSyncTime: new Date().toLocaleTimeString('am-ET'),
+        totalStudentsLocal: countStudentsInData(data)
+      };
+      return true;
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      const isPermission = err?.code === 'permission-denied' || msg.toLowerCase().includes('permission');
+      currentDiagnostic = {
+        ...currentDiagnostic,
+        status: isPermission ? 'permission_denied' : 'offline',
+        errorMessage: msg
+      };
+      console.warn('Firestore sync note:', msg);
+    }
   }
 
-  return synced;
+  return false;
 };
 
 const hasRecognizableAppFields = (obj: any): boolean => {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
   return Boolean(
     obj.students ||
-    obj.teachers ||
-    obj.subjects ||
-    obj.classSubjects ||
-    obj.churchMembers ||
-    obj.churchChildren ||
-    obj.plans ||
-    obj.attendance ||
-    obj.weeklyAttendance ||
-    obj.choirMembers ||
-    obj.spiritualMembers ||
-    obj.pins ||
-    obj.years
+      obj.teachers ||
+      obj.subjects ||
+      obj.classSubjects ||
+      obj.churchMembers ||
+      obj.churchChildren ||
+      obj.plans ||
+      obj.attendance ||
+      obj.weeklyAttendance ||
+      obj.choirMembers ||
+      obj.spiritualMembers ||
+      obj.pins ||
+      obj.years
   );
 };
 
-// Unwrap exported Firebase RTDB JSON, app backup JSON, or standalone JSON arrays/objects
+// Unwrap exported JSON, app backup JSON, or standalone JSON arrays/objects
 export const extractFirebasePayloadObject = (raw: any): any | null => {
   if (!raw || typeof raw !== 'object') return null;
 
-  // Case 1: Array of records (churchMembers / churchChildren / students)
   if (Array.isArray(raw)) {
     if (raw.length === 0) return { churchMembers: [] };
     const sample = raw[0] || {};
-    if (sample.m1 !== undefined || sample.assignedClass === undefined && sample.total !== undefined) {
+    if (sample.m1 !== undefined || (sample.assignedClass === undefined && sample.total !== undefined)) {
       return { students: { '2019': { '1ኛ ክፍል ሀ': raw } } };
     }
     if (sample.assignedClass !== undefined && sample.pin !== undefined) {
@@ -572,17 +540,14 @@ export const extractFirebasePayloadObject = (raw: any): any | null => {
     return { churchMembers: raw };
   }
 
-  // Case 2: Standard Firebase wrapper { kaleheywet_data: {...} }
   if (raw[DB_KEY] && typeof raw[DB_KEY] === 'object') {
     return raw[DB_KEY];
   }
 
-  // Case 3: Direct AppData-like JSON object
   if (hasRecognizableAppFields(raw)) {
     return raw;
   }
 
-  // Case 4: Nested 1-level wrapper (e.g. { data: {...} } or { backup: {...} })
   for (const val of Object.values(raw)) {
     if (hasRecognizableAppFields(val)) {
       return val;
@@ -601,12 +566,16 @@ export interface ImportSundaySchoolSummary {
   churchChildrenCount?: number;
 }
 
-const mergeNamedChurchRecords = <T extends { name: string; chapel?: string; phone?: string; parentName?: string; residence?: string }>(
+const mergeNamedChurchRecords = <
+  T extends { name: string; chapel?: string; phone?: string; parentName?: string; residence?: string }
+>(
   existing: T[],
   incoming: T[]
 ): T[] => {
   if (!incoming || incoming.length === 0) return existing;
-  if (!existing || existing.length === 0) return incoming.map((item) => ({ ...item, chapel: mapToOfficialChapelStrict(item.chapel || '') }));
+  if (!existing || existing.length === 0) {
+    return incoming.map((item) => ({ ...item, chapel: mapToOfficialChapelStrict(item.chapel || '') }));
+  }
 
   const result = [...existing];
   const keyToIdx = new Map<string, number>();
@@ -658,7 +627,8 @@ export const mergeImportedSundaySchoolData = (
     const replacedData: AppData = sanitizeAndDeduplicateAppData({
       ...INITIAL_APP_DATA,
       ...source,
-      years: Array.isArray(source.years) && source.years.length > 0 ? source.years : INITIAL_APP_DATA.years,
+      years:
+        Array.isArray(source.years) && source.years.length > 0 ? source.years : INITIAL_APP_DATA.years,
       pins: {
         admin: source.pins?.admin || currentData.pins?.admin || INITIAL_APP_DATA.pins.admin,
         leader: source.pins?.leader || currentData.pins?.leader || INITIAL_APP_DATA.pins.leader,
@@ -676,13 +646,25 @@ export const mergeImportedSundaySchoolData = (
       weeklyAttendance: source.weeklyAttendance || {},
       weekDates: source.weekDates || {},
       plans: Array.isArray(source.plans) && source.plans.length > 0 ? source.plans : currentData.plans,
-      choirGroups: Array.isArray(source.choirGroups) && source.choirGroups.length > 0 ? source.choirGroups : currentData.choirGroups,
+      choirGroups:
+        Array.isArray(source.choirGroups) && source.choirGroups.length > 0
+          ? source.choirGroups
+          : currentData.choirGroups,
       choirMembers: Array.isArray(source.choirMembers) ? source.choirMembers : [],
-      spiritualGroups: Array.isArray(source.spiritualGroups) && source.spiritualGroups.length > 0 ? source.spiritualGroups : currentData.spiritualGroups,
+      spiritualGroups:
+        Array.isArray(source.spiritualGroups) && source.spiritualGroups.length > 0
+          ? source.spiritualGroups
+          : currentData.spiritualGroups,
       spiritualMembers: Array.isArray(source.spiritualMembers) ? source.spiritualMembers : [],
       chapels: DEFAULT_CHAPELS,
-      churchChildren: incomingChurchChildren.map((c: any) => ({ ...c, chapel: mapToOfficialChapelStrict(c.chapel || '') })),
-      churchMembers: incomingChurchMembers.map((m: any) => ({ ...m, chapel: mapToOfficialChapelStrict(m.chapel || '') }))
+      churchChildren: incomingChurchChildren.map((c: any) => ({
+        ...c,
+        chapel: mapToOfficialChapelStrict(c.chapel || '')
+      })),
+      churchMembers: incomingChurchMembers.map((m: any) => ({
+        ...m,
+        chapel: mapToOfficialChapelStrict(m.chapel || '')
+      }))
     });
 
     saveToLocalStorage(replacedData);
@@ -717,8 +699,10 @@ export const mergeImportedSundaySchoolData = (
             currentList.push(st);
             existingNames.add(stNorm);
           } else if (stNorm && existingNames.has(stNorm)) {
-            const idx = currentList.findIndex((s: any) => normalizeAmharicSearchText(s?.name || '') === stNorm);
-            if (idx !== -1 && (Number(st?.total || 0) >= Number(currentList[idx]?.total || 0))) {
+            const idx = currentList.findIndex(
+              (s: any) => normalizeAmharicSearchText(s?.name || '') === stNorm
+            );
+            if (idx !== -1 && Number(st?.total || 0) >= Number(currentList[idx]?.total || 0)) {
               currentList[idx] = { ...currentList[idx], ...st };
             }
           }
@@ -729,9 +713,10 @@ export const mergeImportedSundaySchoolData = (
     mergedStudents[year] = existingYearMap;
   });
 
-  const mergedSubjects = incomingSubjects.length > 0
-    ? Array.from(new Set([...incomingSubjects, ...(currentData.subjects || [])]))
-    : currentData.subjects;
+  const mergedSubjects =
+    incomingSubjects.length > 0
+      ? Array.from(new Set([...incomingSubjects, ...(currentData.subjects || [])]))
+      : currentData.subjects;
 
   const mergedClassSubjects: { [className: string]: string[] } = {
     ...(currentData.classSubjects || {}),
@@ -739,12 +724,19 @@ export const mergeImportedSundaySchoolData = (
   };
 
   const mergedTeachers = incomingTeachers.length > 0 ? incomingTeachers : currentData.teachers;
-  const mergedYears = Array.isArray(source.years) && source.years.length > 0
-    ? Array.from(new Set([...(currentData.years || []), ...source.years])).sort()
-    : currentData.years;
+  const mergedYears =
+    Array.isArray(source.years) && source.years.length > 0
+      ? Array.from(new Set([...(currentData.years || []), ...source.years])).sort()
+      : currentData.years;
 
-  const mergedChurchChildren = mergeNamedChurchRecords(currentData.churchChildren || [], incomingChurchChildren);
-  const mergedChurchMembers = mergeNamedChurchRecords(currentData.churchMembers || [], incomingChurchMembers);
+  const mergedChurchChildren = mergeNamedChurchRecords(
+    currentData.churchChildren || [],
+    incomingChurchChildren
+  );
+  const mergedChurchMembers = mergeNamedChurchRecords(
+    currentData.churchMembers || [],
+    incomingChurchMembers
+  );
 
   const mergedData: AppData = {
     ...INITIAL_APP_DATA,
@@ -767,14 +759,29 @@ export const mergeImportedSundaySchoolData = (
     subjects: mergedSubjects,
     classSubjects: mergedClassSubjects,
     students: mergedStudents,
-    attendance: (Array.isArray(source.attendance) && source.attendance.length > 0) ? source.attendance : currentData.attendance,
+    attendance:
+      Array.isArray(source.attendance) && source.attendance.length > 0
+        ? source.attendance
+        : currentData.attendance,
     weeklyAttendance: { ...(currentData.weeklyAttendance || {}), ...(source.weeklyAttendance || {}) },
     weekDates: { ...(currentData.weekDates || {}), ...(source.weekDates || {}) },
-    plans: (Array.isArray(source.plans) && source.plans.length > 0) ? source.plans : currentData.plans,
-    choirGroups: (Array.isArray(source.choirGroups) && source.choirGroups.length > 0) ? source.choirGroups : currentData.choirGroups,
-    choirMembers: (Array.isArray(source.choirMembers) && source.choirMembers.length > 0) ? source.choirMembers : currentData.choirMembers,
-    spiritualGroups: (Array.isArray(source.spiritualGroups) && source.spiritualGroups.length > 0) ? source.spiritualGroups : currentData.spiritualGroups,
-    spiritualMembers: (Array.isArray(source.spiritualMembers) && source.spiritualMembers.length > 0) ? source.spiritualMembers : currentData.spiritualMembers,
+    plans: Array.isArray(source.plans) && source.plans.length > 0 ? source.plans : currentData.plans,
+    choirGroups:
+      Array.isArray(source.choirGroups) && source.choirGroups.length > 0
+        ? source.choirGroups
+        : currentData.choirGroups,
+    choirMembers:
+      Array.isArray(source.choirMembers) && source.choirMembers.length > 0
+        ? source.choirMembers
+        : currentData.choirMembers,
+    spiritualGroups:
+      Array.isArray(source.spiritualGroups) && source.spiritualGroups.length > 0
+        ? source.spiritualGroups
+        : currentData.spiritualGroups,
+    spiritualMembers:
+      Array.isArray(source.spiritualMembers) && source.spiritualMembers.length > 0
+        ? source.spiritualMembers
+        : currentData.spiritualMembers,
     chapels: DEFAULT_CHAPELS,
     churchChildren: mergedChurchChildren,
     churchMembers: mergedChurchMembers
@@ -797,147 +804,6 @@ export const mergeImportedSundaySchoolData = (
   };
 };
 
-// Fetch data directly from a previous Firebase RTDB URL or Project ID (kept for optional JSON/URL import)
-export const fetchDataFromPreviousFirebaseUrl = async (
-  urlOrProjectId: string,
-  currentData: AppData,
-  authToken?: string
-): Promise<{
-  ok: boolean;
-  errorType?: 'permission_denied' | 'not_found' | 'invalid' | 'network';
-  message?: string;
-  merged?: AppData;
-  summary?: ImportSundaySchoolSummary;
-}> => {
-  const input = (urlOrProjectId || '').trim().replace(/\/+$/, '');
-  if (!input) {
-    return {
-      ok: false,
-      errorType: 'invalid',
-      message: 'እባክዎ Firebase Database URL ወይም Project ID ያስገቡ።'
-    };
-  }
-
-  const candidateBases: string[] = [];
-  if (input.startsWith('http://') || input.startsWith('https://')) {
-    const cleanBase = input.replace(/\/kaleheywet_data\.json.*$/i, '').replace(/\/\.json.*$/i, '');
-    candidateBases.push(cleanBase);
-  } else {
-    const cleanId = input.replace(/[^a-zA-Z0-9-]/g, '');
-    candidateBases.push(`https://${cleanId}-default-rtdb.europe-west1.firebasedatabase.app`);
-    candidateBases.push(`https://${cleanId}-default-rtdb.firebaseio.com`);
-    candidateBases.push(`https://${cleanId}.firebaseio.com`);
-  }
-
-  const authQuery = authToken && authToken.trim() ? `?auth=${encodeURIComponent(authToken.trim())}` : '';
-  let sawPermissionDenied = false;
-
-  for (const base of candidateBases) {
-    const paths = [`${base}/${DB_KEY}.json${authQuery}`, `${base}/.json${authQuery}`];
-    for (const fullUrl of paths) {
-      try {
-        const res = await fetch(fullUrl);
-        if (res.status === 401 || res.status === 403) {
-          sawPermissionDenied = true;
-          continue;
-        }
-        if (!res.ok) continue;
-
-        const data = await res.json();
-        if (!data) continue;
-
-        const result = mergeImportedSundaySchoolData(currentData, data);
-        if (result) {
-          return {
-            ok: true,
-            merged: result.merged,
-            summary: result.summary
-          };
-        }
-      } catch {}
-    }
-  }
-
-  if (sawPermissionDenied) {
-    return {
-      ok: false,
-      errorType: 'permission_denied',
-      message:
-        'ዳታቤዙ በRules ተቆልፏል (Permission Denied)። JSON ፋይሉን ከFirebase Console በExport JSON አውርደው እዚህ ይጫኑ።'
-    };
-  }
-
-  return {
-    ok: false,
-    errorType: 'not_found',
-    message: 'በተሰጠው Firebase አድራሻ ውስጥ መረጃ አልተገኘም።'
-  };
-};
-
-// Scan active project cloud data
-export const scanAndRecoverPreviousCloudData = async (): Promise<{
-  found: boolean;
-  projectLabel?: string;
-  projectId?: string;
-  data?: AppData;
-  studentCount?: number;
-}> => {
-  for (const proj of KNOWN_PROJECTS) {
-    try {
-      const tempAppName = `scanner_${proj.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      const tempApp = getApps().find((a) => a.name === tempAppName) || initializeApp(proj.config, tempAppName);
-
-      const urls = [proj.config.databaseURL, proj.config.databaseURL_alt, proj.config.databaseURL_alt2].filter(Boolean) as string[];
-      for (const u of urls) {
-        try {
-          const tempRtdb = getDatabase(tempApp, u);
-          const dataRef = ref(tempRtdb, DB_KEY);
-          const snap = await Promise.race([
-            get(dataRef),
-            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-          ]);
-          if (snap && snap.exists()) {
-            const val = snap.val();
-            const count = countStudentsInData(val);
-            if (count > 0 || (val?.teachers && val.teachers.length > 0)) {
-              return {
-                found: true,
-                projectLabel: proj.label,
-                projectId: proj.id,
-                data: val,
-                studentCount: count
-              };
-            }
-          }
-        } catch {}
-      }
-
-      try {
-        const tempFirestore = getFirestore(tempApp);
-        const docRef = doc(tempFirestore, 'church_data', DB_KEY);
-        const snap = await Promise.race([
-          getDoc(docRef),
-          new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-        ]);
-        if (snap && snap.exists()) {
-          const val = await readChunksFromFirestore(tempFirestore, snap.data());
-          const count = countStudentsInData(val);
-          if (count > 0 || (val?.teachers && val.teachers.length > 0)) {
-            return {
-              found: true,
-              projectLabel: proj.label,
-              projectId: proj.id,
-              data: val as AppData,
-              studentCount: count
-            };
-          }
-        }
-      } catch {}
-    } catch {}
-  }
-  return { found: false };
-};
-
 export { countStudentsInData };
 
 // Full Backup JSON Exporter
@@ -954,7 +820,7 @@ export const exportBackupJSON = (data: AppData) => {
   URL.revokeObjectURL(url);
 };
 
-// Full Backup / Firebase Export JSON Importer
+// Full Backup / Export JSON Importer
 export const importBackupJSON = (
   jsonString: string,
   currentData?: AppData,
@@ -978,10 +844,10 @@ export const importBackupJSON = (
           chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) }
         },
         students: source.students || {},
-        teachers: (source.teachers && source.teachers.length > 0) ? source.teachers : INITIAL_APP_DATA.teachers,
-        subjects: (source.subjects && source.subjects.length > 0) ? source.subjects : INITIAL_APP_DATA.subjects,
+        teachers: source.teachers && source.teachers.length > 0 ? source.teachers : INITIAL_APP_DATA.teachers,
+        subjects: source.subjects && source.subjects.length > 0 ? source.subjects : INITIAL_APP_DATA.subjects,
         classSubjects: source.classSubjects || {},
-        plans: (source.plans && source.plans.length > 0) ? source.plans : INITIAL_APP_DATA.plans,
+        plans: source.plans && source.plans.length > 0 ? source.plans : INITIAL_APP_DATA.plans,
         attendance: source.attendance || [],
         choirMembers: source.choirMembers || [],
         spiritualMembers: source.spiritualMembers || [],

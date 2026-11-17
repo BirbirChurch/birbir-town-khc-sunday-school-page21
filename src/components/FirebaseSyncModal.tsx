@@ -39,7 +39,6 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [jsonText, setJsonText] = useState<string>('');
   const [showPasteBox, setShowPasteBox] = useState<boolean>(false);
-  const [copiedRtdbRules, setCopiedRtdbRules] = useState(false);
   const [copiedFirestoreRules, setCopiedFirestoreRules] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusIsError, setStatusIsError] = useState(false);
@@ -69,7 +68,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
       setShowPasteBox(false);
     } else {
       setStatusIsError(true);
-      setStatusMessage('የገባው JSON ፋይል/ጽሑፍ ትክክለኛ ፎርማት አይደለም! እባክዎ ትክክለኛ Firebase Export JSON ወይም Backup JSON መሆኑን ያረጋግጡ።');
+      setStatusMessage('የገባው JSON ፋይል/ጽሑፍ ትክክለኛ ፎርማት አይደለም! እባክዎ ትክክለኛ Export JSON ወይም Backup JSON መሆኑን ያረጋግጡ።');
     }
   };
 
@@ -99,13 +98,6 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
       return;
     }
     applyJsonPayload(jsonText);
-  };
-
-  const copyRtdbRules = () => {
-    const rulesText = `{\n  "rules": {\n    ".read": true,\n    ".write": true\n  }\n}`;
-    navigator.clipboard.writeText(rulesText);
-    setCopiedRtdbRules(true);
-    setTimeout(() => setCopiedRtdbRules(false), 2500);
   };
 
   const copyFirestoreRules = () => {
@@ -307,38 +299,20 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
             </div>
           </div>
 
-          {/* Section 3: Firebase Rules Instructions */}
+          {/* Section 3: Cloud Firestore Rules Instructions */}
           <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-3">
             <h4 className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 text-amber-600" />
-              3. የFirebase ዳታቤዝ ፍቃድ ማስተካከያ ({activeProfile.id} Rules)
+              3. የCloud Firestore ዳታቤዝ ፍቃድ ማስተካከያ ({activeProfile.id} Rules)
             </h4>
             <p className="text-slate-600 text-[11px] leading-relaxed">
-              በአዲሱ Firebase Console ውስጥ Realtime Database / Firestore Rules መከፈቱን ያረጋግጡ፦
+              በFirebase Console ውስጥ <strong>Firestore Database → Rules</strong> ክፍል መከፈቱን ያረጋግጡ፦
             </p>
-
-            {/* RTDB Rules */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-slate-700 text-[11px]">ሀ) ለ Realtime Database፦</span>
-                <button
-                  type="button"
-                  onClick={copyRtdbRules}
-                  className="bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 rounded text-[10px] flex items-center gap-1 cursor-pointer"
-                >
-                  {copiedRtdbRules ? <CheckCircle2 className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
-                  {copiedRtdbRules ? 'ተቀድቷል!' : 'ኮፒ አድርግ'}
-                </button>
-              </div>
-              <div className="bg-slate-900 text-emerald-300 font-mono text-[10px] p-2.5 rounded-xl overflow-x-auto">
-                <pre>{`{\n  "rules": {\n    ".read": true,\n    ".write": true\n  }\n}`}</pre>
-              </div>
-            </div>
 
             {/* Firestore Rules */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-slate-700 text-[11px]">ለ) ለ Cloud Firestore፦</span>
+                <span className="font-bold text-slate-700 text-[11px]">ለ Cloud Firestore Rules፦</span>
                 <button
                   type="button"
                   onClick={copyFirestoreRules}

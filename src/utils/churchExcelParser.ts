@@ -454,11 +454,13 @@ export const detectChurchSheetColumns = (
     const str = normalizeExcelHeader(String(col || ''));
     if (!str) return;
 
-    // Family / Serial Number
+    // Family / Serial Number (exclude explicit memberCode / familyCode columns)
     if (
-      str === 'ተ.ቁ' || str === 'ተ/ቁ' || str === 'ተቁ' ||
-      str === 'no' || str === 'no.' || str === '#' ||
-      str.includes('የቤተሰብቁጥር') || str.includes('መለያ') || str.includes('familyno') || str.includes('hhid')
+      (str === 'ተ.ቁ' || str === 'ተ/ቁ' || str === 'ተቁ' ||
+       str === 'no' || str === 'no.' || str === '#' ||
+       str.includes('የቤተሰብቁጥር') || str.includes('familyno') || str.includes('hhid') ||
+       (str.includes('መለያ') && !str.includes('ኮድ'))) &&
+      !str.includes('ኮድ') && !str.includes('code')
     ) {
       if (seqIdx === -1) seqIdx = idx;
     }
@@ -682,6 +684,16 @@ const isHeadRelation = (relRaw: string): boolean => {
   return (
     r.includes('አባወራ') || r.includes('እማወራ') || r.includes('መሪ') ||
     r.includes('ሃላፊ') || r.includes('head') || r.includes('owner') || r.includes('self')
+  );
+};
+
+const isSoloRelation = (relRaw: string): boolean => {
+  const r = normalizeAmharicSearchText(relRaw);
+  if (!r) return false;
+  return (
+    r.includes('ብቸኛ') || r.includes('ራሱን') || r.includes('ራሷን') ||
+    r === 'ራሱ' || r === 'ራሷ' || r.includes('1 ሰው') || r.includes('አንድ ሰው') ||
+    r.includes('solo') || r.includes('single') || r.includes('individual') || r.includes('standalone')
   );
 };
 
@@ -985,6 +997,8 @@ export const parseChurchWorkbookAllSheets = (
       const sameGroupedSeq =
         (seqIdx !== -1 && rawSeq === '' && currentFamilyHeadName !== '') ||
         (seqBase !== '' && currentFamilySeq !== '' && seqBase === currentFamilySeq);
+      const hasDistinctNewSeq =
+        seqIdx !== -1 && seqBase !== '' && currentFamilySeq !== '' && seqBase !== currentFamilySeq;
 
       const normRawName = normalizeAmharicSearchText(rawName);
       const nameParts = normRawName.split(' ').filter(Boolean);
@@ -1014,15 +1028,29 @@ export const parseChurchWorkbookAllSheets = (
         );
 
       const hadOwnPhoneBeforeFallback = Boolean(directPhone);
+      const hasOwnDifferentPhone = Boolean(
+        hadOwnPhoneBeforeFallback &&
+        currentFamilyPhone &&
+        directPhone !== currentFamilyPhone
+      );
       const isChildOrMinor = ageNum >= 0 && ageNum <= 17;
       const isDependent = isDependentRelation(rel);
       const isExplicitHead = isHeadRelation(rel);
+      const isSolo = isSoloRelation(rel);
 
       let rowHouseholdId = '';
       let linkedHouseholdId: string | undefined = undefined;
 
-      // If this row starts a clearly distinct new adult household (not grouped seq, not dependent, not matching patronym)
-      if (!sameGroupedSeq && !isDependent && !isChildOrMinor && !matchesCurrentHeadPatronym) {
+      // Solo 1-person household, or explicit new serial/household number (without dependent/parent match),
+      // or separate adult/phone-owner MUST start its own standalone household directly (never stacked under someone else).
+      const startsNewHousehold =
+        isSolo ||
+        (hasDistinctNewSeq && !isDependent && !explicitParentMatchesHead) ||
+        (hasOwnDifferentPhone && !sameGroupedSeq && !isDependent && !explicitParentMatchesHead) ||
+        (!sameGroupedSeq && !isDependent && !isChildOrMinor && (!matchesCurrentHeadPatronym || !explicitParentMatchesHead)) ||
+        (!sameGroupedSeq && Boolean(seqBase) && isExplicitHead);
+
+      if (startsNewHousehold) {
         currentFamilySeq = seqBase;
         currentFamilyHeadName = rawName;
         currentFamilyPhone = directPhone || '';
@@ -1032,75 +1060,71 @@ export const parseChurchWorkbookAllSheets = (
         rowHouseholdId = currentHouseholdId;
       } else {
         // Same household or dependent or child
-        if (!sameGroupedSeq && seqBase && isExplicitHead) {
-          currentFamilySeq = seqBase;
-          currentFamilyHeadName = rawName;
-          currentFamilyPhone = directPhone || '';
-          currentFamilyResidence = residence || '';
+        if (!currentFamilyHeadName) currentFamilyHeadName = rawName;
+        if (!currentHouseholdId) {
           householdSeqCounter += 1;
           currentHouseholdId = `hh_${sIdx}_${householdSeqCounter}`;
           rowHouseholdId = currentHouseholdId;
+        } else if (
+          sameGroupedSeq ||
+          isDependent ||
+          explicitParentMatchesHead ||
+          (isChildOrMinor && matchesCurrentHeadPatronym)
+        ) {
+          linkedHouseholdId = currentHouseholdId;
+        } else if (
+          isChildOrMinor &&
+          matchesRecentAdultPatronym &&
+          lastRecentAdultHouseholdId
+        ) {
+          linkedHouseholdId = lastRecentAdultHouseholdId;
         } else {
-          if (!currentFamilyHeadName) currentFamilyHeadName = rawName;
-          if (!currentHouseholdId) {
-            householdSeqCounter += 1;
-            currentHouseholdId = `hh_${sIdx}_${householdSeqCounter}`;
-            rowHouseholdId = currentHouseholdId;
-          } else if (
-            sameGroupedSeq ||
+          // Standalone 1-person minor/adult that shouldn't inherit an unrelated household's familyCode
+          householdSeqCounter += 1;
+          rowHouseholdId = `hh_${sIdx}_${householdSeqCounter}`;
+        }
+
+        const sameResidenceOrBlank =
+          !residence ||
+          !currentFamilyResidence ||
+          normalizeAmharicSearchText(residence) === normalizeAmharicSearchText(currentFamilyResidence);
+
+        if (
+          !directPhone &&
+          currentFamilyPhone &&
+          (sameGroupedSeq ||
             isDependent ||
             explicitParentMatchesHead ||
-            ((isChildOrMinor || !hadOwnPhoneBeforeFallback) && matchesCurrentHeadPatronym)
-          ) {
-            linkedHouseholdId = currentHouseholdId;
-          } else if (
-            isChildOrMinor &&
-            matchesRecentAdultPatronym &&
-            lastRecentAdultHouseholdId
-          ) {
-            linkedHouseholdId = lastRecentAdultHouseholdId;
-          } else {
-            // Standalone minor/adult that shouldn't inherit an unrelated household's familyCode
-            householdSeqCounter += 1;
-            rowHouseholdId = `hh_${sIdx}_${householdSeqCounter}`;
-          }
-
-          const sameResidenceOrBlank =
-            !residence ||
-            !currentFamilyResidence ||
-            normalizeAmharicSearchText(residence) === normalizeAmharicSearchText(currentFamilyResidence);
-
-          if (
-            !directPhone &&
-            currentFamilyPhone &&
-            (sameGroupedSeq ||
-              isDependent ||
-              explicitParentMatchesHead ||
-              matchesCurrentHeadPatronym ||
-              matchesPrevSiblingFather ||
-              (ageNum >= 0 && ageNum <= 14 && sameResidenceOrBlank))
-          ) {
-            directPhone = currentFamilyPhone;
-          } else if (directPhone && !currentFamilyPhone) {
-            currentFamilyPhone = directPhone;
-          }
-          if (
-            !residence &&
-            currentFamilyResidence &&
-            (sameGroupedSeq || isDependent || matchesCurrentHeadPatronym || matchesPrevSiblingFather || (ageNum >= 0 && ageNum <= 14))
-          ) {
-            residence = currentFamilyResidence;
-          } else if (residence && !currentFamilyResidence) {
-            currentFamilyResidence = residence;
-          }
-          if (!parentName && (sameGroupedSeq || isDependent) && currentFamilyHeadName && currentFamilyHeadName !== rawName) {
-            parentName = currentFamilyHeadName;
-          }
+            (isChildOrMinor && (matchesCurrentHeadPatronym || matchesPrevSiblingFather || sameResidenceOrBlank)))
+        ) {
+          directPhone = currentFamilyPhone;
+        } else if (directPhone && !currentFamilyPhone) {
+          currentFamilyPhone = directPhone;
+        }
+        if (
+          !residence &&
+          currentFamilyResidence &&
+          (sameGroupedSeq || isDependent || (isChildOrMinor && (matchesCurrentHeadPatronym || matchesPrevSiblingFather || ageNum <= 14)))
+        ) {
+          residence = currentFamilyResidence;
+        } else if (residence && !currentFamilyResidence) {
+          currentFamilyResidence = residence;
+        }
+        if (!parentName && (sameGroupedSeq || isDependent) && currentFamilyHeadName && currentFamilyHeadName !== rawName) {
+          parentName = currentFamilyHeadName;
         }
       }
 
-      // Consecutive adult-with-phone OR sibling continuity fallback (handles continuous 1, 2, 3 numbering!)
-      if (!directPhone && lastRecentAdultPhone && (matchesRecentAdultPatronym || matchesPrevSiblingFather || (isChildOrMinor && sameGroupedSeq))) {
+      // Consecutive adult-with-phone OR sibling continuity fallback ONLY for dependent/grouped children without their own distinct seq/phone
+      if (
+        !isSolo &&
+        !hasDistinctNewSeq &&
+        !hasOwnDifferentPhone &&
+        isChildOrMinor &&
+        !directPhone &&
+        lastRecentAdultPhone &&
+        (matchesRecentAdultPatronym || matchesPrevSiblingFather || sameGroupedSeq)
+      ) {
         directPhone = lastRecentAdultPhone;
         if (!parentName && lastRecentAdultHeadName && lastRecentAdultHeadName !== rawName) {
           parentName = lastRecentAdultHeadName;
@@ -1111,7 +1135,15 @@ export const parseChurchWorkbookAllSheets = (
         if (!linkedHouseholdId && matchesRecentAdultPatronym && lastRecentAdultHouseholdId) {
           linkedHouseholdId = lastRecentAdultHouseholdId;
         }
-      } else if (!directPhone && matchesPrevSiblingFather && prevMember?.phone) {
+      } else if (
+        !isSolo &&
+        !hasDistinctNewSeq &&
+        !hasOwnDifferentPhone &&
+        isChildOrMinor &&
+        !directPhone &&
+        matchesPrevSiblingFather &&
+        prevMember?.phone
+      ) {
         directPhone = prevMember.phone;
         if (!parentName && prevMember.parentName) parentName = prevMember.parentName;
         if (!residence && prevMember.residence) residence = prevMember.residence;

@@ -18,7 +18,8 @@ import {
   HeartHandshake,
   Database,
   Calendar,
-  Languages
+  Languages,
+  BarChart3
 } from 'lucide-react';
 import {
   Role,
@@ -42,7 +43,8 @@ import {
   getNextFamilySubCode,
   getNextMemberCodeForChapel,
   getRootFamilyBaseCode,
-  normalizeCodeForLookup
+  normalizeCodeForLookup,
+  parseChapelCodeParts
 } from './utils/memberCodeGenerator';
 import {
   applyBulkAgeIncrementToAppData,
@@ -65,6 +67,7 @@ import { SubjectsTab } from './components/SubjectsTab';
 import { PinManageTab } from './components/PinManageTab';
 import { FirebaseSyncModal } from './components/FirebaseSyncModal';
 import { NameTransliteratorModal } from './components/NameTransliteratorModal';
+import { ChurchStatisticsDashboardTab } from './components/ChurchStatisticsDashboardTab';
 import { NameScriptMode } from './utils/amharicTransliterator';
 
 export default function App() {
@@ -1175,7 +1178,10 @@ export default function App() {
             : undefined;
           const prevFamilyNorm = normalizeCodeForLookup(m.familyCode);
           const nextFamilyNorm = normalizeCodeForLookup(resolvedFamilyCode);
+          const prevSubSeq = parseChapelCodeParts(m.memberCode, enforcedChapel)?.subSeq ?? null;
           const familyLinkedChanged = Boolean(nextFamilyNorm) && nextFamilyNorm !== prevFamilyNorm;
+          const familyUnlinkedToStandalone =
+            Boolean(prevFamilyNorm || prevSubSeq !== null) && !nextFamilyNorm;
           const explicitClearCode =
             updatedMember.memberCode === '' || updatedMember.memberCode === undefined;
 
@@ -1184,7 +1190,7 @@ export default function App() {
             chapel: enforcedChapel,
             familyCode: resolvedFamilyCode,
             memberCode:
-              chapelChanged || explicitClearCode || familyLinkedChanged
+              chapelChanged || explicitClearCode || familyLinkedChanged || familyUnlinkedToStandalone
                 ? undefined
                 : updatedMember.memberCode
           };
@@ -1415,6 +1421,7 @@ export default function App() {
   // Navigation tab definitions
   const tabs = [
     { id: 'classesTab', label: 'የክፍል ደረጃዎች & ውጤት', icon: GraduationCap, roles: ['admin', 'leader', 'teacher'] },
+    { id: 'churchOverviewStatsTab', label: 'አጠቃላይ የዳታ ማጠቃለያ (ወ/ሴ/ድምር)', icon: BarChart3, roles: ['admin', 'leader'] },
     { id: 'allStudentsMasterTab', label: 'ሁሉንም የተመዘገቡ ተማሪዎች', icon: Users, roles: ['admin', 'leader'] },
     { id: 'churchMasterTab', label: 'አጠቃላይ የቤተክርስቲያን መረጃ ቋት', icon: Database, roles: ['admin', 'leader'] },
     { id: 'churchChildrenTab', label: 'የቤተክርስቲያኒቱ የልጆች ቋት', icon: HeartHandshake, roles: ['admin', 'leader'] },
@@ -1428,11 +1435,15 @@ export default function App() {
     { id: 'pinManageTab', label: 'የሁሉም መግቢያ ቁልፍ (PIN) ቅንብር', icon: KeyRound, roles: ['admin'] },
   ];
 
-  // Chapel Leaders ONLY see & manage their own Chapel's tabs (churchChildrenTab & churchMasterTab)
+  // Chapel Leaders ONLY see & manage their own Chapel's tabs (plus chapel statistics summary)
   const visibleTabs = tabs.filter((t) => {
     if (!currentUserRole || !t.roles.includes(currentUserRole)) return false;
     if (loggedInChapel) {
-      return t.id === 'churchChildrenTab' || t.id === 'churchMasterTab';
+      return (
+        t.id === 'churchChildrenTab' ||
+        t.id === 'churchMasterTab' ||
+        t.id === 'churchOverviewStatsTab'
+      );
     }
     return true;
   });
@@ -1482,7 +1493,7 @@ export default function App() {
                   ) : (
                     <>
                       <span className="font-bold text-emerald-100">
-                        ✓ ከአዲሱ Firebase (geladestazelulove1628) ጋር ተገናኝቷል!
+                        ✓ ከአዲሱ Firebase (birbirtownkhcchildministrypage) ጋር ተገናኝቷል!
                       </span>
                       <span className="text-emerald-300/90 hidden md:inline">
                         (በስርዓቱ ውስጥ፦ {countStudentsInData(appData)} ተማሪዎች፣ {appData.teachers?.length || 0} መምህራን ተመዝግበዋል)
@@ -1691,7 +1702,22 @@ export default function App() {
                   subjects={appData.subjects}
                   classSubjects={appData.classSubjects || {}}
                   onUpdateClassSubjects={handleUpdateClassSubjects}
+                  churchChildren={appData.churchChildren || []}
+                  churchMembers={appData.churchMembers || []}
                   nameScriptMode={nameScriptMode}
+                />
+              )}
+
+              {activeTab === 'churchOverviewStatsTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                <ChurchStatisticsDashboardTab
+                  currentYear={currentYear}
+                  classList={CLASS_LIST}
+                  studentsByClass={appData.students?.[currentYear] || {}}
+                  churchMembers={appData.churchMembers || []}
+                  churchChildren={appData.churchChildren || []}
+                  chapelList={appData.chapels || DEFAULT_CHAPELS}
+                  loggedInChapel={loggedInChapel}
+                  onNavigateTab={(tabId) => setActiveTab(tabId)}
                 />
               )}
 
@@ -1704,6 +1730,7 @@ export default function App() {
                   choirMembers={appData.choirMembers || []}
                   spiritualMembers={appData.spiritualMembers || []}
                   churchChildren={appData.churchChildren || []}
+                  churchMembers={appData.churchMembers || []}
                   chapelList={appData.chapels || DEFAULT_CHAPELS}
                   onUpdateStudent={handleUpdateStudent}
                   onAddStudentToClass={handleAddStudentToClass}
@@ -1838,6 +1865,10 @@ export default function App() {
                   onImportPlans={handleImportPlans}
                   onGoToAllStudents={() => setActiveTab('allStudentsMasterTab')}
                   totalStudentsCount={countStudentsInData(appData)}
+                  classList={CLASS_LIST}
+                  studentsByClass={appData.students?.[currentYear] || {}}
+                  churchChildren={appData.churchChildren || []}
+                  churchMembers={appData.churchMembers || []}
                 />
               )}
 

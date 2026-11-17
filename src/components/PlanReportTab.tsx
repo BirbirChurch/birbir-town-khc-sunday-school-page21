@@ -1,7 +1,15 @@
-import React, { useState } from 'react';
-import { Target, Plus, Download, Upload, Trash2, Printer, CheckCircle, BarChart3, Users } from 'lucide-react';
-import { AnnualPlanItem } from '../types';
-import { downloadCSV, parseCSVLine, readCSVFile } from '../utils/csv';
+import React, { useState, useMemo } from 'react';
+import { Target, Plus, Download, Upload, Trash2, Printer, BarChart3, Users } from 'lucide-react';
+import { AnnualPlanItem, ChurchChild, ChurchMember, Student } from '../types';
+import { downloadCSV, downloadMultiSheetXLSX, readCSVFile } from '../utils/csv';
+import { SundaySchoolAgeCohortCard } from './SundaySchoolAgeCohortCard';
+import {
+  buildAgeCohortExcelSheets,
+  buildChurchStudentLookup,
+  computePerClassSundaySchoolCohorts,
+  computeSundaySchoolAgeCohorts,
+  enrichStudentWithChurchLookup
+} from '../utils/sundaySchoolAgeStats';
 
 interface PlanReportTabProps {
   currentYear: string;
@@ -12,6 +20,10 @@ interface PlanReportTabProps {
   onImportPlans: (plans: AnnualPlanItem[]) => void;
   onGoToAllStudents?: () => void;
   totalStudentsCount?: number;
+  classList?: string[];
+  studentsByClass?: { [className: string]: Student[] };
+  churchChildren?: ChurchChild[];
+  churchMembers?: ChurchMember[];
 }
 
 export const PlanReportTab: React.FC<PlanReportTabProps> = ({
@@ -22,7 +34,11 @@ export const PlanReportTab: React.FC<PlanReportTabProps> = ({
   onDeletePlan,
   onImportPlans,
   onGoToAllStudents,
-  totalStudentsCount
+  totalStudentsCount,
+  classList = [],
+  studentsByClass = {},
+  churchChildren = [],
+  churchMembers = []
 }) => {
   const [selectedQuarter, setSelectedQuarter] = useState<'q1' | 'q2' | 'q3' | 'q4'>('q1');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -90,6 +106,52 @@ export const PlanReportTab: React.FC<PlanReportTabProps> = ({
     setTask('');
     setYearPlan('12');
     setShowAddModal(false);
+  };
+
+  const allClassNames = useMemo(() => {
+    const set = new Set(classList);
+    Object.keys(studentsByClass || {}).forEach((c) => set.add(c));
+    return Array.from(set);
+  }, [classList, studentsByClass]);
+
+  const { enrichedByClass, allEnrichedStudents } = useMemo(() => {
+    const lookup = buildChurchStudentLookup(churchChildren, churchMembers);
+    const byClass: { [cName: string]: Student[] } = {};
+    const flat: Student[] = [];
+    allClassNames.forEach((cName) => {
+      const list = (studentsByClass[cName] || []).map((st) =>
+        enrichStudentWithChurchLookup(st, lookup, currentYear)
+      );
+      byClass[cName] = list;
+      flat.push(...list);
+    });
+    return { enrichedByClass: byClass, allEnrichedStudents: flat };
+  }, [allClassNames, studentsByClass, churchChildren, churchMembers, currentYear]);
+
+  const sundaySchoolAgeStats = useMemo(
+    () => computeSundaySchoolAgeCohorts(allEnrichedStudents, currentYear),
+    [allEnrichedStudents, currentYear]
+  );
+
+  const perClassAgeCohorts = useMemo(
+    () => computePerClassSundaySchoolCohorts(allClassNames, enrichedByClass, currentYear),
+    [allClassNames, enrichedByClass, currentYear]
+  );
+
+  const handleExportAgeStatsExcel = () => {
+    const { summaryRows, perClassRows } = buildAgeCohortExcelSheets(
+      sundaySchoolAgeStats,
+      perClassAgeCohorts,
+      currentYear,
+      'ሁሉም የሰንበት ት/ቤት ክፍሎች'
+    );
+    downloadMultiSheetXLSX(
+      [
+        { name: 'የዕድሜ ምድብ (0-14) ድምር', data: summaryRows },
+        { name: 'በየክፍሉ የዕድሜ ስታቲስቲክስ', data: perClassRows }
+      ],
+      `የሰንበት_ክፍል_የዕድሜ_ምድብ_ሪፖርት_${currentYear}ዓም.xlsx`
+    );
   };
 
   const handleExportCSV = () => {
@@ -395,6 +457,16 @@ export const PlanReportTab: React.FC<PlanReportTabProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Sunday School Student Age Cohort Breakdown (0-3, 4-6, 7-9, 10-12, 13-14: Male / Female / Total) */}
+      {allClassNames.length > 0 && (
+        <SundaySchoolAgeCohortCard
+          stats={sundaySchoolAgeStats}
+          perClassCohorts={perClassAgeCohorts}
+          scopeLabel="ሁሉም የሰንበት ት/ቤት ክፍሎች"
+          onExportExcel={handleExportAgeStatsExcel}
+        />
+      )}
 
       {/* Official Signatures Box */}
       <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-6 flex flex-col md:flex-row justify-between gap-6 text-sm text-slate-800 shadow-sm">

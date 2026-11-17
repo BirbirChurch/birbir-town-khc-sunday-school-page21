@@ -24,11 +24,24 @@ import {
   PhoneCall,
   Copy
 } from 'lucide-react';
-import { Student, Teacher, ChoirMember, SpiritualMember, Role, ChurchChild } from '../types';
-import { downloadCSV, downloadXLSX } from '../utils/csv';
+import { Student, Teacher, ChoirMember, SpiritualMember, Role, ChurchChild, ChurchMember } from '../types';
+import { downloadCSV, downloadMultiSheetXLSX } from '../utils/csv';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { matchesAmharicSearch } from '../utils/churchExcelParser';
 import { NameScriptMode, transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
+import { SundaySchoolAgeCohortCard } from './SundaySchoolAgeCohortCard';
+import {
+  buildAgeCohortExcelSheets,
+  buildChurchStudentLookup,
+  computePerClassSundaySchoolCohorts,
+  computeSundaySchoolAgeCohorts,
+  enrichStudentWithChurchLookup,
+  getAgeCohortLabel,
+  getStudentAgeCohortKey,
+  normalizeStudentGender,
+  parseSundaySchoolAge,
+  SundaySchoolAgeBucketKey
+} from '../utils/sundaySchoolAgeStats';
 
 interface AllStudentsMasterTabProps {
   currentYear: string;
@@ -38,6 +51,7 @@ interface AllStudentsMasterTabProps {
   choirMembers: ChoirMember[];
   spiritualMembers: SpiritualMember[];
   churchChildren?: ChurchChild[];
+  churchMembers?: ChurchMember[];
   chapelList?: string[];
   onUpdateStudent: (student: Student) => void;
   onAddStudentToClass: (targetClass: string, student: Omit<Student, 'id'>) => void;
@@ -68,6 +82,7 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
   choirMembers,
   spiritualMembers,
   churchChildren = [],
+  churchMembers = [],
   chapelList = DEFAULT_CHAPELS,
   onUpdateStudent,
   onAddStudentToClass,
@@ -81,6 +96,7 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [selectedChapelFilter, setSelectedChapelFilter] = useState<string>('all');
   const [selectedGenderFilter, setSelectedGenderFilter] = useState<string>('all');
+  const [selectedAgeFilter, setSelectedAgeFilter] = useState<SundaySchoolAgeBucketKey | 'all'>('all');
   const [selectedServiceFilter, setSelectedServiceFilter] = useState<'all' | 'choir' | 'spiritual' | 'both'>('all');
   const [sortBy, setSortBy] = useState<'class' | 'name' | 'score' | 'age'>('class');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -150,24 +166,8 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
       if (t.assignedClass) teacherMap.set(t.assignedClass, t.name);
     });
 
-    // Cross-reference map from Church Children database
-    const normalizeAmharic = (str: string) =>
-      (str || '')
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .replace(/[ሐኀ]/g, 'ሀ')
-        .replace(/ሠ/g, 'ሰ')
-        .replace(/ፀ/g, 'ጸ')
-        .replace(/ዐ/g, 'አ');
-
-    const churchChildMap = new Map<string, ChurchChild>();
-    (churchChildren || []).forEach((c) => {
-      if (c.name) {
-        churchChildMap.set(c.name.trim().toLowerCase(), c);
-        churchChildMap.set(normalizeAmharic(c.name), c);
-      }
-    });
+    // Cross-reference map from Church Children & Church Members repositories (fills missing age, gender, chapel, parentName, phone)
+    const churchLookup = buildChurchStudentLookup(churchChildren, churchMembers);
 
     allClasses.forEach((cName) => {
       const list = studentsByClass[cName] || [];
@@ -175,15 +175,13 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
 
       list.forEach((s) => {
         const cleanName = (s.name || '').trim().toLowerCase();
-        const normName = normalizeAmharic(s.name);
         const choirGroup = choirMap.get(cleanName);
         const spiritualGroup = spiritualMap.get(cleanName);
 
-        // Lookup from Church Children repository
-        const matchedChild = churchChildMap.get(cleanName) || churchChildMap.get(normName);
-        const chapel = s.chapel || matchedChild?.chapel || 'ዋናው ማዕከል ቻፕል';
-        const parentName = s.parentName || matchedChild?.parentName || '-';
-        const parentPhone = s.phone || matchedChild?.phone || '-';
+        const enriched = enrichStudentWithChurchLookup(s, churchLookup, currentYear);
+        const chapel = enriched.chapel || 'ዋናው ማዕከል ቻፕል';
+        const parentName = enriched.parentName || '-';
+        const parentPhone = enriched.phone || '-';
 
         const m1 = Number(s.m1) || 0;
         const m2 = Number(s.m2) || 0;
@@ -196,7 +194,7 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
         const hasScore = m1 > 0 || m2 > 0 || m3 > 0 || m4 > 0 || m5 > 0 || m6 > 0 || m7 > 0;
 
         result.push({
-          ...s,
+          ...enriched,
           className: cName,
           teacherName,
           choirGroup,
@@ -211,22 +209,22 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
     });
 
     return result;
-  }, [allClasses, studentsByClass, teachers, choirMembers, spiritualMembers, churchChildren]);
+  }, [allClasses, studentsByClass, teachers, choirMembers, spiritualMembers, churchChildren, churchMembers, currentYear]);
 
   // High-level statistics
   const stats = useMemo(() => {
     const total = allMasterStudents.length;
-    const male = allMasterStudents.filter((s) => s.gender === 'ወ').length;
-    const female = allMasterStudents.filter((s) => s.gender === 'ሴ').length;
-    const unspecified = allMasterStudents.filter((s) => s.gender !== 'ወ' && s.gender !== 'ሴ').length;
+    const male = allMasterStudents.filter((s) => normalizeStudentGender(s.gender) === 'male').length;
+    const female = allMasterStudents.filter((s) => normalizeStudentGender(s.gender) === 'female').length;
+    const unspecified = allMasterStudents.filter((s) => normalizeStudentGender(s.gender) === 'unspecified').length;
     const inChoir = allMasterStudents.filter((s) => s.choirGroup).length;
     const inSpiritual = allMasterStudents.filter((s) => s.spiritualGroup).length;
 
     // Per-class stats
     const classStats = allClasses.map((cName) => {
-      const classStudents = studentsByClass[cName] || [];
-      const cMale = classStudents.filter((s) => s.gender === 'ወ').length;
-      const cFemale = classStudents.filter((s) => s.gender === 'ሴ').length;
+      const classStudents = allMasterStudents.filter((s) => s.className === cName);
+      const cMale = classStudents.filter((s) => normalizeStudentGender(s.gender) === 'male').length;
+      const cFemale = classStudents.filter((s) => normalizeStudentGender(s.gender) === 'female').length;
       const teacher = teachers.find((t) => t.assignedClass === cName);
       return {
         className: cName,
@@ -249,7 +247,42 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
       activeClasses,
       classStats
     };
-  }, [allMasterStudents, allClasses, studentsByClass, teachers]);
+  }, [allMasterStudents, allClasses, teachers]);
+
+  // Students matching active Class & Chapel scope for the Age Cohort Breakdown
+  const ageScopeStudents = useMemo(() => {
+    return allMasterStudents.filter((s) => {
+      if (selectedClassFilter !== 'all' && s.className !== selectedClassFilter) return false;
+      if (selectedChapelFilter !== 'all' && (s.chapel || 'ዋናው ማዕከል ቻፕል') !== selectedChapelFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [allMasterStudents, selectedClassFilter, selectedChapelFilter]);
+
+  const ageCohortStats = useMemo(
+    () => computeSundaySchoolAgeCohorts(ageScopeStudents, currentYear),
+    [ageScopeStudents, currentYear]
+  );
+
+  const perClassAgeCohorts = useMemo(() => {
+    const grouped: { [cName: string]: EnrichedStudent[] } = {};
+    ageScopeStudents.forEach((s) => {
+      if (!grouped[s.className]) grouped[s.className] = [];
+      grouped[s.className].push(s);
+    });
+    const scopedClasses = allClasses.filter(
+      (cName) => selectedClassFilter === 'all' || cName === selectedClassFilter
+    );
+    return computePerClassSundaySchoolCohorts(scopedClasses, grouped, currentYear);
+  }, [allClasses, ageScopeStudents, selectedClassFilter, currentYear]);
+
+  const ageScopeLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (selectedClassFilter !== 'all') parts.push(`ክፍል፦ ${selectedClassFilter}`);
+    if (selectedChapelFilter !== 'all') parts.push(`ቻፕል፦ ${selectedChapelFilter}`);
+    return parts.length > 0 ? parts.join(' | ') : 'ሁሉም የሰንበት ክፍሎች እና ቻፕሎች';
+  }, [selectedClassFilter, selectedChapelFilter]);
 
   // Filtered & Sorted Students
   const filteredStudents = useMemo(() => {
@@ -267,6 +300,13 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
       result = result.filter((s) => s.gender === 'ሴ');
     } else if (selectedGenderFilter === 'none') {
       result = result.filter((s) => s.gender !== 'ወ' && s.gender !== 'ሴ');
+    }
+
+    // Filter by Age Bracket (0-3, 4-6, 7-9, 10-12, 13-14, 15+, unknown)
+    if (selectedAgeFilter !== 'all') {
+      result = result.filter(
+        (s) => getStudentAgeCohortKey(s.age, currentYear) === selectedAgeFilter
+      );
     }
 
     // Filter by Service
@@ -315,8 +355,8 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
         const diff = (b.totalScore || 0) - (a.totalScore || 0);
         return sortOrder === 'asc' ? -diff : diff;
       } else if (sortBy === 'age') {
-        const ageA = Number(a.age) || 0;
-        const ageB = Number(b.age) || 0;
+        const ageA = parseSundaySchoolAge(a.age, currentYear) ?? 999;
+        const ageB = parseSundaySchoolAge(b.age, currentYear) ?? 999;
         const diff = ageA - ageB;
         return sortOrder === 'asc' ? diff : -diff;
       }
@@ -324,17 +364,27 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
     });
 
     return result;
-  }, [allMasterStudents, selectedClassFilter, selectedGenderFilter, selectedServiceFilter, selectedChapelFilter, searchQuery, sortBy, sortOrder, classList]);
+  }, [
+    allMasterStudents,
+    selectedClassFilter,
+    selectedGenderFilter,
+    selectedAgeFilter,
+    selectedServiceFilter,
+    selectedChapelFilter,
+    searchQuery,
+    sortBy,
+    sortOrder,
+    classList,
+    currentYear
+  ]);
 
-  // When printing, we include all filtered students (or all students if search was clear)
+  // When printing, respect active dropdown filters so filtered age/chapel/class reports print cleanly
   const studentsToRender = useMemo(() => {
     if (isPrinting) {
-      // If user had a specific class filter selected, respect that; otherwise print the full master roster
-      if (selectedClassFilter === 'all') return allMasterStudents;
-      return allMasterStudents.filter((s) => s.className === selectedClassFilter);
+      return filteredStudents;
     }
     return filteredStudents;
-  }, [isPrinting, filteredStudents, allMasterStudents, selectedClassFilter]);
+  }, [isPrinting, filteredStudents]);
 
   // Handle Add Student Submit
   const handleAddSubmit = (e: React.FormEvent) => {
@@ -404,7 +454,24 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
     }
   };
 
-  // Export to Excel (XLSX)
+  // Dedicated Excel export for Sunday School Age Cohort Summary (0-3 .. 13-14)
+  const handleExportAgeStatsExcel = () => {
+    const { summaryRows, perClassRows } = buildAgeCohortExcelSheets(
+      ageCohortStats,
+      perClassAgeCohorts,
+      currentYear,
+      ageScopeLabel
+    );
+    downloadMultiSheetXLSX(
+      [
+        { name: 'የዕድሜ ምድብ (0-14) ድምር', data: summaryRows },
+        { name: 'በየክፍሉ የዕድሜ ስታቲስቲክስ', data: perClassRows }
+      ],
+      `የሰንበት_ክፍል_የዕድሜ_ምድብ_ስታቲስቲክስ_${currentYear}ዓም.xlsx`
+    );
+  };
+
+  // Export to Excel (XLSX) — includes Students Master + Age Cohort Summary + Per-Class Breakdown
   const handleExportExcel = () => {
     const headers = [
       'ተ.ቁ',
@@ -459,7 +526,20 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
     });
 
     const data = [headers, ...rows];
-    downloadXLSX(data, `የብርብር_ቃለሕይወት_ጠቅላላ_ተማሪዎች_ማስተር_${currentYear}ዓም.xlsx`, 'ጠቅላላ ተማሪዎች ማስተር');
+    const { summaryRows, perClassRows } = buildAgeCohortExcelSheets(
+      ageCohortStats,
+      perClassAgeCohorts,
+      currentYear,
+      ageScopeLabel
+    );
+    downloadMultiSheetXLSX(
+      [
+        { name: 'ጠቅላላ ተማሪዎች ማስተር', data },
+        { name: 'የዕድሜ ምድብ (0-14) ድምር', data: summaryRows },
+        { name: 'በየክፍሉ የዕድሜ ስታቲስቲክስ', data: perClassRows }
+      ],
+      `የብርብር_ቃለሕይወት_ጠቅላላ_ተማሪዎች_ማስተር_${currentYear}ዓም.xlsx`
+    );
   };
 
   // Export to CSV
@@ -712,6 +792,16 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
         </div>
       </div>
 
+      {/* Sunday School Age Cohort Summary (0-3, 4-6, 7-9, 10-12, 13-14: Male / Female / Total — Visible on Screen & Print) */}
+      <SundaySchoolAgeCohortCard
+        stats={ageCohortStats}
+        perClassCohorts={perClassAgeCohorts}
+        scopeLabel={ageScopeLabel}
+        selectedAgeBucket={selectedAgeFilter}
+        onSelectAgeBucket={setSelectedAgeFilter}
+        onExportExcel={handleExportAgeStatsExcel}
+      />
+
       {/* Search & Comprehensive Filters Bar (Screen only) */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-sm print:hidden">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
@@ -790,6 +880,28 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
               </select>
             </div>
 
+            {/* Age Cohort Dropdown (0-3, 4-6, 7-9, 10-12, 13-14) */}
+            <div>
+              <select
+                value={selectedAgeFilter}
+                onChange={(e) => setSelectedAgeFilter(e.target.value as SundaySchoolAgeBucketKey | 'all')}
+                className="bg-slate-50 border border-slate-300 text-slate-800 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="all">ሁሉም ዕድሜ ({ageCohortStats.grandTotal.total})</option>
+                {ageCohortStats.cohorts.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label} ({c.total})
+                  </option>
+                ))}
+                {ageCohortStats.over14.total > 0 && (
+                  <option value="15+">ከ15 ዓመት በላይ ({ageCohortStats.over14.total})</option>
+                )}
+                {ageCohortStats.unknownAge.total > 0 && (
+                  <option value="unknown">ዕድሜ ያልተገለጸ ({ageCohortStats.unknownAge.total})</option>
+                )}
+              </select>
+            </div>
+
             {/* Service Dropdown */}
             <div>
               <select
@@ -848,15 +960,21 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
                 ጾታ፦ {selectedGenderFilter === 'ወ' ? 'ወንድ' : selectedGenderFilter === 'ሴ' ? 'ሴት' : '-'}
               </span>
             )}
+            {selectedAgeFilter !== 'all' && (
+              <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-semibold text-[11px]">
+                ዕድሜ፦ {getAgeCohortLabel(selectedAgeFilter)}
+              </span>
+            )}
           </div>
 
-          {(selectedClassFilter !== 'all' || selectedChapelFilter !== 'all' || selectedGenderFilter !== 'all' || selectedServiceFilter !== 'all' || searchQuery) && (
+          {(selectedClassFilter !== 'all' || selectedChapelFilter !== 'all' || selectedGenderFilter !== 'all' || selectedAgeFilter !== 'all' || selectedServiceFilter !== 'all' || searchQuery) && (
             <button
               type="button"
               onClick={() => {
                 setSelectedClassFilter('all');
                 setSelectedChapelFilter('all');
                 setSelectedGenderFilter('all');
+                setSelectedAgeFilter('all');
                 setSelectedServiceFilter('all');
                 setSearchQuery('');
               }}

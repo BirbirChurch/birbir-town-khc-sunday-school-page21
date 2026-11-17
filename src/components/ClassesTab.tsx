@@ -21,7 +21,7 @@ import {
   AlertCircle,
   Users
 } from 'lucide-react';
-import { Student, Teacher, Role } from '../types';
+import { Student, Teacher, Role, ChurchChild, ChurchMember } from '../types';
 import {
   downloadCSV,
   downloadXLSX,
@@ -32,6 +32,15 @@ import {
 } from '../utils/csv';
 import { matchesAmharicSearch } from '../utils/churchExcelParser';
 import { NameScriptMode, transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
+import { SundaySchoolAgeCohortCard } from './SundaySchoolAgeCohortCard';
+import {
+  buildChurchStudentLookup,
+  computeSundaySchoolAgeCohorts,
+  enrichStudentWithChurchLookup,
+  getStudentAgeCohortKey,
+  normalizeStudentGender,
+  SundaySchoolAgeBucketKey
+} from '../utils/sundaySchoolAgeStats';
 
 interface ClassesTabProps {
   currentYear: string;
@@ -62,6 +71,8 @@ interface ClassesTabProps {
   subjects?: string[];
   classSubjects?: { [className: string]: string[] };
   onUpdateClassSubjects?: (classSubjects: { [className: string]: string[] }) => void;
+  churchChildren?: ChurchChild[];
+  churchMembers?: ChurchMember[];
   nameScriptMode?: NameScriptMode;
 }
 
@@ -87,9 +98,13 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
   subjects = [],
   classSubjects = {},
   onUpdateClassSubjects,
+  churchChildren = [],
+  churchMembers = [],
   nameScriptMode = 'am'
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedAgeFilter, setSelectedAgeFilter] = useState<SundaySchoolAgeBucketKey | 'all'>('all');
+  const [showAgeStatsPanel, setShowAgeStatsPanel] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
@@ -174,21 +189,110 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
     return { rankedStudents: ranked, studentsWithScores: withScores };
   }, [students]);
 
+  const churchLookup = useMemo(
+    () => buildChurchStudentLookup(churchChildren, churchMembers),
+    [churchChildren, churchMembers]
+  );
+
+  const enrichedRankedStudents = useMemo(
+    () =>
+      rankedStudents.map((s) =>
+        enrichStudentWithChurchLookup(s, churchLookup, currentYear)
+      ),
+    [rankedStudents, churchLookup, currentYear]
+  );
+
+  const classAgeCohortStats = useMemo(
+    () => computeSundaySchoolAgeCohorts(enrichedRankedStudents, currentYear),
+    [enrichedRankedStudents, currentYear]
+  );
+
   const filteredStudents = useMemo(() => {
-    if (!searchQuery.trim()) return rankedStudents;
-    return rankedStudents.filter((s) => matchesAmharicSearch(searchQuery, s.name));
-  }, [rankedStudents, searchQuery]);
+    let list = enrichedRankedStudents;
+    if (selectedAgeFilter !== 'all') {
+      list = list.filter(
+        (s) => getStudentAgeCohortKey(s.age, currentYear) === selectedAgeFilter
+      );
+    }
+    if (searchQuery.trim()) {
+      list = list.filter((s) => matchesAmharicSearch(searchQuery, s.name));
+    }
+    return list;
+  }, [enrichedRankedStudents, selectedAgeFilter, searchQuery, currentYear]);
 
   // When printing/exporting to PDF, ensure ALL students of the class are included
   const studentsToRender = useMemo(() => {
-    if (isPrinting) return rankedStudents;
+    if (isPrinting) return enrichedRankedStudents;
     return filteredStudents;
-  }, [isPrinting, rankedStudents, filteredStudents]);
+  }, [isPrinting, enrichedRankedStudents, filteredStudents]);
+
+  const handleExportClassAgeStatsExcel = () => {
+    const denom = classAgeCohortStats.grandTotal.total;
+    const pctStr = (n: number) => (denom > 0 ? `${Math.round((n / denom) * 100)}%` : '0%');
+    const rows: (string | number)[][] = [
+      [`የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን - ${selectedClass} የዕድሜ ምድብ ማጠቃለያ (${currentYear} ዓ/ም)`],
+      [],
+      ['የዕድሜ ምድብ', 'ወንድ', 'ሴት', 'ያልተገለጸ ጾታ', 'ድምር', 'ድርሻ (%)'],
+      ...classAgeCohortStats.cohorts.map((c) => [
+        c.label,
+        c.male,
+        c.female,
+        c.unspecifiedGender,
+        c.total,
+        pctStr(c.total)
+      ]),
+      [
+        'ከ0 - 14 ዓመት ንዑስ ድምር (0-14)',
+        classAgeCohortStats.subtotal0to14.male,
+        classAgeCohortStats.subtotal0to14.female,
+        classAgeCohortStats.subtotal0to14.unspecifiedGender,
+        classAgeCohortStats.subtotal0to14.total,
+        pctStr(classAgeCohortStats.subtotal0to14.total)
+      ],
+      ...(classAgeCohortStats.over14.total > 0
+        ? [
+            [
+              classAgeCohortStats.over14.label,
+              classAgeCohortStats.over14.male,
+              classAgeCohortStats.over14.female,
+              classAgeCohortStats.over14.unspecifiedGender,
+              classAgeCohortStats.over14.total,
+              pctStr(classAgeCohortStats.over14.total)
+            ]
+          ]
+        : []),
+      ...(classAgeCohortStats.unknownAge.total > 0
+        ? [
+            [
+              classAgeCohortStats.unknownAge.label,
+              classAgeCohortStats.unknownAge.male,
+              classAgeCohortStats.unknownAge.female,
+              classAgeCohortStats.unknownAge.unspecifiedGender,
+              classAgeCohortStats.unknownAge.total,
+              pctStr(classAgeCohortStats.unknownAge.total)
+            ]
+          ]
+        : []),
+      [
+        'ጠቅላላ የክፍሉ ተማሪዎች ድምር',
+        classAgeCohortStats.grandTotal.male,
+        classAgeCohortStats.grandTotal.female,
+        classAgeCohortStats.grandTotal.unspecifiedGender,
+        classAgeCohortStats.grandTotal.total,
+        denom > 0 ? '100%' : '0%'
+      ]
+    ];
+    downloadXLSX(
+      rows,
+      `${selectedClass}_የዕድሜ_ምድብ_ስታቲስቲክስ_${currentYear}ዓም.xlsx`,
+      'የዕድሜ ምድብ (0-14)'
+    );
+  };
 
   // Stats
-  const totalCount = rankedStudents.length;
-  const maleCount = rankedStudents.filter((s) => s.gender === 'ወ').length;
-  const femaleCount = rankedStudents.filter((s) => s.gender === 'ሴ').length;
+  const totalCount = enrichedRankedStudents.length;
+  const maleCount = enrichedRankedStudents.filter((s) => normalizeStudentGender(s.gender) === 'male').length;
+  const femaleCount = enrichedRankedStudents.filter((s) => normalizeStudentGender(s.gender) === 'female').length;
   const gradedCount = studentsWithScores.length;
   const avgScore =
     gradedCount > 0
@@ -915,13 +1019,83 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-3 text-slate-500 text-[11px]">
-            <span>ጠቅላላ፦ <strong className="text-slate-800">{totalCount}</strong></span>
+          <div className="flex items-center gap-3 text-slate-500 text-[11px] flex-wrap">
+            <span>ጠቅላላ፦ <strong className="text-slate-800">{totalCount}</strong> (ወንድ፦ <strong className="text-blue-800">{maleCount}</strong> | ሴት፦ <strong className="text-rose-800">{femaleCount}</strong>)</span>
             <span>ውጤት የገባቸው፦ <strong className="text-teal-700">{gradedCount}</strong></span>
             <span>አማካይ፦ <strong className="text-blue-800">{avgScore}</strong></span>
+            <button
+              type="button"
+              onClick={() => setShowAgeStatsPanel((v) => !v)}
+              className={`px-2.5 py-1 rounded-lg font-bold transition border cursor-pointer ${
+                showAgeStatsPanel || selectedAgeFilter !== 'all'
+                  ? 'bg-blue-900 text-white border-blue-900'
+                  : 'bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100'
+              }`}
+              title="ከ0-3፣ ከ4-6፣ ከ7-9፣ ከ10-12 እና ከ13-14 ያሉትን ወንድ ሴት ድምር ዝርዝር ሰንጠረዥ አሳይ"
+            >
+              📊 የዕድሜ ዝርዝር (0-14) {showAgeStatsPanel ? '▾' : '▸'}
+            </button>
           </div>
         </div>
+
+        {/* Always-Visible Compact 0-3 .. 13-14 Male/Female/Total Strip (Screen only) */}
+        <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-extrabold text-slate-700 mr-1">
+            የክፍሉ የዕድሜ ምድብ (ወ/ሴ/ድ)፦
+          </span>
+          {classAgeCohortStats.cohorts.map((coh) => {
+            const isSelected = selectedAgeFilter === coh.key;
+            return (
+              <button
+                key={`strip-${coh.key}`}
+                type="button"
+                onClick={() =>
+                  setSelectedAgeFilter(isSelected ? 'all' : coh.key)
+                }
+                className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  isSelected
+                    ? 'bg-blue-900 text-white border-blue-900 shadow-xs'
+                    : coh.total > 0
+                    ? 'bg-slate-50 text-slate-800 border-slate-200 hover:bg-blue-50 hover:border-blue-300'
+                    : 'bg-slate-50/50 text-slate-400 border-slate-200/70'
+                }`}
+                title={`${coh.label} — ወንድ፦ ${coh.male}፣ ሴት፦ ${coh.female}፣ ድምር፦ ${coh.total}`}
+              >
+                <span>{coh.key}፦</span>
+                <span className={isSelected ? 'text-cyan-200' : 'text-blue-700'}>ወ {coh.male}</span>
+                <span className="opacity-40">|</span>
+                <span className={isSelected ? 'text-rose-200' : 'text-rose-700'}>ሴ {coh.female}</span>
+                <span className="opacity-40">|</span>
+                <span className={isSelected ? 'text-amber-300' : 'text-slate-900 font-extrabold'}>
+                  ድ {coh.total}
+                </span>
+              </button>
+            );
+          })}
+          <span className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-950 text-[11px] font-extrabold">
+            0–14 ድምር፦ {classAgeCohortStats.subtotal0to14.total} (ወ {classAgeCohortStats.subtotal0to14.male} / ሴ {classAgeCohortStats.subtotal0to14.female})
+          </span>
+          <button
+            type="button"
+            onClick={handleExportClassAgeStatsExcel}
+            className="ml-auto px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3 h-3" />
+            <span>የዕድሜ Excel</span>
+          </button>
+        </div>
       </div>
+
+      {/* Full Class Age Cohort Table (Interactive when expanded on screen; ALWAYS included when printing) */}
+      <SundaySchoolAgeCohortCard
+        stats={classAgeCohortStats}
+        scopeLabel={`ክፍል፦ ${selectedClass}`}
+        selectedAgeBucket={selectedAgeFilter}
+        onSelectAgeBucket={setSelectedAgeFilter}
+        onExportExcel={handleExportClassAgeStatsExcel}
+        compact
+        className={showAgeStatsPanel || selectedAgeFilter !== 'all' ? 'block' : 'hidden print:block'}
+      />
 
       {/* Main Table with Sticky Header & Sticky Columns */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden print:border-none print:shadow-none print:overflow-visible">
