@@ -383,6 +383,9 @@ export interface DetectedSheetColumns {
   phoneIdx: number;
   residenceIdxs: number[];
   residenceIdx: number;
+  baptizedIdx: number;
+  lordsSupperIdx: number;
+  titheIdx: number;
 }
 
 export const detectChurchSheetColumns = (
@@ -441,6 +444,9 @@ export const detectChurchSheetColumns = (
   let parentIdx = -1;
   const phoneIdxs: number[] = [];
   const residenceIdxs: number[] = [];
+  let baptizedIdx = -1;
+  let lordsSupperIdx = -1;
+  let titheIdx = -1;
 
   const headerRow = headerIdx >= 0 ? rawRows[headerIdx] || [] : [];
   const maxCols = rawRows.reduce((m, r) => Math.max(m, Array.isArray(r) ? r.length : 0), headerRow.length);
@@ -547,6 +553,26 @@ export const detectChurchSheetColumns = (
     ) {
       if (!residenceIdxs.includes(idx)) residenceIdxs.push(idx);
     }
+
+    if (
+      str.includes('ጥምቀት') || str.includes('ተጠምቅ') || str.includes('የተጠመቅ') ||
+      str.includes('ተጠመቀ') || str.includes('bapti')
+    ) {
+      if (baptizedIdx === -1) baptizedIdx = idx;
+    }
+
+    if (
+      str.includes('ጌታእራት') || str.includes('የጌታእራት') || str.includes('ቁርባን') ||
+      str.includes('supper') || str.includes('communion') || str.includes('eucharist')
+    ) {
+      if (lordsSupperIdx === -1) lordsSupperIdx = idx;
+    }
+
+    if (
+      str.includes('አስራት') || str.includes('ዐስራት') || str.includes('tith')
+    ) {
+      if (titheIdx === -1) titheIdx = idx;
+    }
   });
 
   const sampleStart = headerIdx + 1;
@@ -645,8 +671,71 @@ export const detectChurchSheetColumns = (
     phoneIdxs,
     phoneIdx: phoneIdxs.length > 0 ? phoneIdxs[0] : -1,
     residenceIdxs,
-    residenceIdx: residenceIdxs.length > 0 ? residenceIdxs[0] : -1
+    residenceIdx: residenceIdxs.length > 0 ? residenceIdxs[0] : -1,
+    baptizedIdx,
+    lordsSupperIdx,
+    titheIdx
   };
+};
+
+export const parseChurchBooleanStatus = (raw: unknown): boolean | undefined => {
+  if (typeof raw === 'boolean') return raw;
+  if (typeof raw === 'number') {
+    if (raw === 1) return true;
+    if (raw === 0) return false;
+    return undefined;
+  }
+  const s = normalizeAmharicSearchText(String(raw ?? ''));
+  if (!s || s === '-' || s === '—' || s === 'ያልተገለጸ') return undefined;
+  if (
+    s === 'አዎ' ||
+    s === 'አው' ||
+    s === 'yes' ||
+    s === 'y' ||
+    s === 'true' ||
+    s === '1' ||
+    s === '✓' ||
+    s === '✔' ||
+    s === 'ነው' ||
+    s === 'ናት' ||
+    s === 'የተጠመቀ' ||
+    s === 'የተጠመቀች' ||
+    s === 'ተጠምቋል' ||
+    s === 'ተጠምቃለች' ||
+    s === 'ይካፈላል' ||
+    s === 'ትካፈላለች' ||
+    s === 'የሚካፈል' ||
+    s === 'የምትካፈል' ||
+    s === 'ይከፍላል' ||
+    s === 'ትከፍላለች' ||
+    s === 'የሚከፍል' ||
+    s === 'የምትከፍል'
+  ) {
+    return true;
+  }
+  if (
+    s === 'አይ' ||
+    s === 'አይደለም' ||
+    s === 'አይደለችም' ||
+    s === 'no' ||
+    s === 'n' ||
+    s === 'false' ||
+    s === '0' ||
+    s === '✗' ||
+    s === '✘' ||
+    s === 'አልተጠመቀም' ||
+    s === 'አልተጠመቀችም' ||
+    s === 'ያልተጠመቀ' ||
+    s === 'አይካፈልም' ||
+    s === 'አትካፈልም' ||
+    s === 'የማይካፈል' ||
+    s === 'አይከፍልም' ||
+    s === 'አትከፍልም' ||
+    s === 'የማይከፍል'
+  ) {
+    return false;
+  }
+  return undefined;
 };
 
 const isRepeatedHeaderOrSummaryName = (rawName: string): boolean => {
@@ -820,6 +909,9 @@ export const parseChurchWorkbookAllSheets = (
     const educationIdx = ov?.educationIdx ?? detected.educationIdx;
     const occupationIdx = ov?.occupationIdx ?? detected.occupationIdx;
     const relationIdx = detected.relationIdx;
+    const baptizedIdx = detected.baptizedIdx;
+    const lordsSupperIdx = detected.lordsSupperIdx;
+    const titheIdx = detected.titheIdx;
     const parentIdx = ov?.parentIdx ?? detected.parentIdx;
     const residenceIdxs =
       ov?.residenceIdx !== undefined
@@ -1192,6 +1284,13 @@ export const parseChurchWorkbookAllSheets = (
       const existingFamilyCode =
         familyCodeIdx !== -1 && row[familyCodeIdx] ? String(row[familyCodeIdx]).trim() : undefined;
 
+      const isBaptized =
+        baptizedIdx !== -1 ? parseChurchBooleanStatus(row[baptizedIdx]) : undefined;
+      const takesLordsSupper =
+        lordsSupperIdx !== -1 ? parseChurchBooleanStatus(row[lordsSupperIdx]) : undefined;
+      const paysTithe =
+        titheIdx !== -1 ? parseChurchBooleanStatus(row[titheIdx]) : undefined;
+
       sheetMembers.push({
         id: generateUniqueId(),
         memberCode: existingMemberCode || undefined,
@@ -1201,6 +1300,9 @@ export const parseChurchWorkbookAllSheets = (
         age: ageNum,
         educationLevel: edu,
         occupation: occ,
+        ...(isBaptized !== undefined ? { isBaptized } : {}),
+        ...(takesLordsSupper !== undefined ? { takesLordsSupper } : {}),
+        ...(paysTithe !== undefined ? { paysTithe } : {}),
         chapel: officialChapel,
         parentName,
         phone: directPhone,

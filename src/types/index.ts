@@ -123,6 +123,9 @@ export interface ChurchMember {
   age?: number | string; // ዕድሜ
   educationLevel?: string; // የትምህርት ደረጃ
   occupation?: string; // የስራ ዓይነት
+  isBaptized?: boolean; // የተጠመቀ/ች
+  takesLordsSupper?: boolean; // የጌታ እራት የሚካፈል/ምትካፈል
+  paysTithe?: boolean; // አስራት የሚከፍል/ምትከፍል
   chapel?: string; // ቻፕል/አጥቢያ
   parentName?: string; // የወላጅ/የቤተሰብ መሪ ስም
   phone?: string; // የወላጅ/አባል ስልክ ቁጥር

@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { ChurchChild, ChurchMember, Student } from '../types';
 import { computeChurchOverviewStatistics } from '../utils/churchOverviewStats';
+import { resolveOfficialChapel } from '../utils/memberCodeGenerator';
+import { ChurchMemberBreakdownSection } from './ChurchMemberBreakdownSection';
 
 interface ChurchStatisticsDashboardTabProps {
   currentYear: string;
@@ -26,7 +28,7 @@ interface ChurchStatisticsDashboardTabProps {
   onNavigateTab?: (tabId: string) => void;
 }
 
-type ViewFilter = 'all' | 'chapels' | 'sunday_school';
+type ViewFilter = 'all' | 'chapels' | 'sunday_school' | 'members_detail';
 
 export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTabProps> = ({
   currentYear,
@@ -41,6 +43,14 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showChapelChildAgeBreakdown, setShowChapelChildAgeBreakdown] = useState<boolean>(false);
+
+  const scopedChurchMembers = useMemo(() => {
+    if (!loggedInChapel) return churchMembers;
+    const targetChapel = resolveOfficialChapel(loggedInChapel);
+    return churchMembers.filter(
+      (m) => resolveOfficialChapel(m.chapel || '') === targetChapel
+    );
+  }, [churchMembers, loggedInChapel]);
 
   const stats = useMemo(
     () =>
@@ -385,6 +395,17 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                 የሰንበት ት/ቤት ተማሪዎች ({stats.sundaySchoolPerClass.length} ክፍሎች)
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setViewFilter('members_detail')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                viewFilter === 'members_detail'
+                  ? 'bg-white text-blue-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              ጥምቀት / ትምህርት / ስራ
+            </button>
           </div>
 
           {onNavigateTab && (
@@ -1063,6 +1084,14 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
             </section>
           )}
         </div>
+      )}
+
+      {/* Section 5: Spiritual Participation (Baptized / Lord's Supper / Tithe) + Education Level & Occupation Breakdown */}
+      {(viewFilter === 'all' || viewFilter === 'members_detail') && (
+        <ChurchMemberBreakdownSection
+          members={scopedChurchMembers}
+          scopeLabel={loggedInChapel || 'ሁሉም አጥቢያ ቤተክርስቲያን (10 ቻፕሎች)'}
+        />
       )}
 
       {/* Print-only Sign-off Block */}
