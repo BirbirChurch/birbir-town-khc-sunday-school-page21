@@ -14,14 +14,21 @@ import {
 } from 'lucide-react';
 import { Teacher } from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
+import { CHURCH_ORG_UNITS, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 
 interface PinManageTabProps {
   adminPin: string;
   leaderPin: string;
   chapelPins?: { [chapelName: string]: string };
+  unitPins?: { [unitId: string]: string };
   chapelList?: string[];
   teachers?: Teacher[];
-  onSavePins: (adminPin: string, leaderPin: string, chapelPins: { [chapelName: string]: string }) => void;
+  onSavePins: (
+    adminPin: string,
+    leaderPin: string,
+    chapelPins: { [chapelName: string]: string },
+    unitPins?: { [unitId: string]: string }
+  ) => void;
   onUpdateTeacher?: (teacher: Teacher) => void;
 }
 
@@ -29,6 +36,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   adminPin,
   leaderPin,
   chapelPins = DEFAULT_CHAPEL_PINS,
+  unitPins = DEFAULT_ORG_UNIT_PINS,
   chapelList = DEFAULT_CHAPELS,
   teachers = [],
   onSavePins,
@@ -40,6 +48,17 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     const initial: { [k: string]: string } = {};
     chapelList.forEach((ch, idx) => {
       initial[ch] = chapelPins?.[ch] || DEFAULT_CHAPEL_PINS[ch] || String(2001 + idx);
+    });
+    return initial;
+  });
+  const [editedUnitPins, setEditedUnitPins] = useState<{ [unitId: string]: string }>(() => {
+    const initial: { [k: string]: string } = {};
+    CHURCH_ORG_UNITS.forEach((u) => {
+      if (u.id === 'children_ministry') {
+        initial[u.id] = unitPins?.[u.id] || leaderPin || u.defaultPin;
+      } else {
+        initial[u.id] = unitPins?.[u.id] || u.defaultPin;
+      }
     });
     return initial;
   });
@@ -60,8 +79,21 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     setEditedChapelPins(next);
   }, [chapelPins, chapelList]);
 
+  useEffect(() => {
+    const next: { [k: string]: string } = {};
+    CHURCH_ORG_UNITS.forEach((u) => {
+      if (u.id === 'children_ministry') {
+        next[u.id] = unitPins?.[u.id] || leaderPin || u.defaultPin;
+      } else {
+        next[u.id] = unitPins?.[u.id] || u.defaultPin;
+      }
+    });
+    setEditedUnitPins(next);
+  }, [unitPins, leaderPin]);
+
   const [showAdminPin, setShowAdminPin] = useState(false);
   const [showLeaderPin, setShowLeaderPin] = useState(false);
+  const [showUnitPins, setShowUnitPins] = useState(true);
   const [showChapelPins, setShowChapelPins] = useState(true);
   const [showTeacherPins, setShowTeacherPins] = useState(true);
   const [teacherSearch, setTeacherSearch] = useState('');
@@ -128,8 +160,9 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAdminPin.trim() || !newLeaderPin.trim()) {
-      alert('እባክዎን የአስተባባሪ እና የመሪዎች PIN ቁጥሮችን ያስገቡ!');
+    const resolvedChildrenPin = (editedUnitPins.children_ministry || newLeaderPin || '').trim();
+    if (!newAdminPin.trim() || !resolvedChildrenPin) {
+      alert('እባክዎን የዋና አዲሚን እና የልጆች አገልግሎት PIN ቁጥሮችን ያስገቡ!');
       return;
     }
 
@@ -143,8 +176,21 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
       cleanedChapelPins[ch] = val;
     }
 
-    onSavePins(newAdminPin.trim(), newLeaderPin.trim(), cleanedChapelPins);
-    setSavedSuccess('✓ የዋና አስተባባሪ፣ የመሪዎች እና የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs) በተሳካ ሁኔታ ተቀምጠዋል!');
+    const cleanedUnitPins: { [k: string]: string } = {};
+    for (const u of CHURCH_ORG_UNITS) {
+      const val =
+        u.id === 'children_ministry'
+          ? resolvedChildrenPin
+          : (editedUnitPins[u.id] || '').trim();
+      if (!val) {
+        alert(`እባክዎን የ"${u.name}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
+        return;
+      }
+      cleanedUnitPins[u.id] = val;
+    }
+
+    onSavePins(newAdminPin.trim(), resolvedChildrenPin, cleanedChapelPins, cleanedUnitPins);
+    setSavedSuccess('✓ የዋና አዲሚን፣ የሁሉም መዋቅር ክፍሎች እና የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs) ተቀምጠዋል!');
     setTimeout(() => setSavedSuccess(''), 4000);
   };
 
@@ -157,6 +203,20 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
       next[ch] = p;
     });
     setEditedChapelPins(next);
+  };
+
+  const handleRegenerateAllUnitPins = () => {
+    const next: { [k: string]: string } = {};
+    const used = new Set<string>([newAdminPin.trim()]);
+    CHURCH_ORG_UNITS.forEach((u) => {
+      const p = generateUniquePin(used);
+      used.add(p);
+      next[u.id] = p;
+    });
+    setEditedUnitPins(next);
+    if (next.children_ministry) {
+      setNewLeaderPin(next.children_ministry);
+    }
   };
 
   return (
@@ -190,7 +250,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
           <h4 className="text-sm font-extrabold text-slate-900 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100">
             <Shield className="w-4 h-4 text-blue-800" />
-            <span>1. የዋና አስተባባሪና የቤተክርስቲያን መሪዎች መግቢያ ቁልፍ (PIN)</span>
+            <span>የዋና አስተባባሪና የቤተክርስቲያን መሪዎች መግቢያ ቁልፍ (PIN)</span>
           </h4>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -220,13 +280,20 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-teal-700" />
-                የቤተክርስቲያን መሪዎች (Leader) መግቢያ ቁልፍ፦
+                የልጆች አገልግሎት / መሪዎች (Leader) መግቢያ ቁልፍ፦
               </label>
               <div className="relative">
                 <input
                   type={showLeaderPin ? 'text' : 'password'}
                   value={newLeaderPin}
-                  onChange={(e) => setNewLeaderPin(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewLeaderPin(val);
+                    setEditedUnitPins((prev) => ({
+                      ...prev,
+                      children_ministry: val
+                    }));
+                  }}
                   placeholder="መሪዎች PIN"
                   className="w-full px-3.5 py-2.5 pr-10 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-teal-600"
                 />
@@ -242,13 +309,111 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
           </div>
         </div>
 
-        {/* Section 2: All 10 Chapels PINs */}
+        {/* Section 2: All 18 Church Organizational Units PINs (1 - 1.2.7.6) */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100">
+            <div>
+              <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-blue-800" />
+                <span>የቤተክርስቲያን መዋቅር መምሪያዎች እና አገልግሎቶች መግቢያ ቁልፎች</span>
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                እያንዳንዱ መምሪያና አገልግሎት ራሱን ችሎ በራሱ ገጽ እንዲገባ የሚያገለግል ልዩ የመግቢያ ቁልፍ (PIN)
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowUnitPins(!showUnitPins)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              >
+                {showUnitPins ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span>{showUnitPins ? 'ቁልፎችን ደብቅ' : 'ቁልፎችን አሳይ'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleRegenerateAllUnitPins}
+                className="bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>ለሁሉም አዲስ ቁልፍ ፍጠር</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {CHURCH_ORG_UNITS.map((unit) => (
+              <div
+                key={`pin_unit_${unit.id}`}
+                className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/90"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100 text-blue-900 flex items-center justify-center shrink-0">
+                    <Shield className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-extrabold text-xs text-slate-900 truncate">{unit.name}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      {unit.id === 'children_ministry'
+                        ? 'ከመሪዎች PIN ጋር የተያያዘ'
+                        : unit.hasChurchRegistry
+                        ? 'የቤተክርስቲያን መረጃ ቋትን ያካትታል'
+                        : unit.id === 'chapels_dept'
+                        ? '10ሩም ቻፕሎች በዚህ ስር'
+                        : 'ራሱን የቻለ መምሪያ ገጽ'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <input
+                    type={showUnitPins ? 'text' : 'password'}
+                    value={editedUnitPins[unit.id] || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditedUnitPins((prev) => ({
+                        ...prev,
+                        [unit.id]: val
+                      }));
+                      if (unit.id === 'children_ministry') {
+                        setNewLeaderPin(val);
+                      }
+                    }}
+                    className="w-24 text-center px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fresh = generateUniquePin(
+                        new Set([newAdminPin.trim(), ...Object.values(editedUnitPins)])
+                      );
+                      setEditedUnitPins((prev) => ({
+                        ...prev,
+                        [unit.id]: fresh
+                      }));
+                      if (unit.id === 'children_ministry') {
+                        setNewLeaderPin(fresh);
+                      }
+                    }}
+                    className="p-1.5 text-slate-500 hover:text-blue-800 hover:bg-blue-100 rounded-lg transition cursor-pointer"
+                    title="አዲስ ባለ 4-አሃዝ ቁልፍ ፍጠር"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Section 3: All 10 Chapels PINs */}
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100">
             <div>
               <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                 <Church className="w-4 h-4 text-amber-700" />
-                <span>2. የ10ሩም ቻፕሎች (Chapels) መግቢያ ቁልፎች (PINs)</span>
+                <span>የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs)</span>
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 እያንዳንዱ ቻፕል የራሱን መረጃ ብቻ እንዲያስተዳድር የተመደበለት ልዩ መግቢያ ቁልፍ
@@ -276,14 +441,14 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3">
-            {chapelList.map((chapelName, idx) => (
+            {chapelList.map((chapelName) => (
               <div
                 key={`pin_ch_${chapelName}`}
                 className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/90"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-900 text-[11px] font-black flex items-center justify-center shrink-0">
-                    {idx + 1}
+                  <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center shrink-0">
+                    <Church className="w-3.5 h-3.5 text-amber-700" />
                   </span>
                   <span className="font-extrabold text-xs text-slate-900 truncate">{chapelName}</span>
                 </div>
@@ -324,20 +489,20 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
               className="bg-blue-900 hover:bg-blue-800 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition duration-200 text-xs flex items-center gap-2 cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4 text-amber-300" />
-              <span>የአስተባባሪ፣ የመሪዎችና የ10ሩም ቻፕሎች PIN አስቀምጥ</span>
+              <span>የዋና አዲሚን፣ የ18ቱ መዋቅር ክፍሎችና የ10ሩም ቻፕሎች PIN አስቀምጥ</span>
             </button>
           </div>
         </div>
       </form>
 
-      {/* Section 3: All Teachers PIN Management (Live Controlled by Admin) */}
+      {/* Section 4: All Teachers PIN Management (Live Controlled by Admin) */}
       {teachers.length > 0 && onUpdateTeacher && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100">
             <div>
               <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                 <GraduationCap className="w-4 h-4 text-indigo-700" />
-                <span>3. የሁሉም መምህራን መግቢያ ቁልፎች (Teacher PINs - {teachers.length})</span>
+                <span>የልጆች አገልግሎት መምህራን መግቢያ ቁልፎች (Teacher PINs - {teachers.length})</span>
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 መምህራን በምስጥር ቁጥር (PIN) ብቻ ስለሚገቡ የእያንዳንዱ መምህር PIN የተለየ መሆን አለበት

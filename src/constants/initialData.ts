@@ -1,4 +1,5 @@
 import { AnnualPlanItem, AppData, ChurchChild } from '../types';
+import { DEFAULT_ORG_UNIT_PINS } from './churchStructure';
 
 export const CLASS_LIST: string[] = [
   "ማቆያ ክፍል",
@@ -146,13 +147,15 @@ export const INITIAL_CHURCH_CHILDREN: ChurchChild[] = [
   { id: 120, name: "ኤልሳ አሰገደች", gender: "ሴ", age: 14, educationLevel: "8ኛ ክፍል", occupation: "ተማሪ", chapel: "አዶናይ ቻፕል", parentName: "አሰገደች አየለ", phone: "0988779900", residence: "ቀበሌ 03", fellowshipOrVillage: "ጽዮን ህብረት", notes: "", registeredDate: "2019-01-22" }
 ];
 
+
 export const INITIAL_APP_DATA: AppData = {
   years: ["2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "2028", "2029", "2030"],
   ageReferenceYear: 2017,
   pins: {
     admin: "1234",
     leader: "5678",
-    chapels: DEFAULT_CHAPEL_PINS
+    chapels: DEFAULT_CHAPEL_PINS,
+    units: DEFAULT_ORG_UNIT_PINS
   },
   teachers: INITIAL_TEACHERS.map((name, index) => ({
     id: index + 1,
@@ -171,6 +174,7 @@ export const INITIAL_APP_DATA: AppData = {
   plans: DEFAULT_ANNUAL_PLAN,
   students: {},
   chapels: DEFAULT_CHAPELS,
-  churchChildren: INITIAL_CHURCH_CHILDREN
+  churchChildren: INITIAL_CHURCH_CHILDREN,
+  departmentData: {},
+  submissions: []
 };
-

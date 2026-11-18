@@ -2,6 +2,7 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore, doc, onSnapshot, setDoc, getDoc, Firestore, setLogLevel } from 'firebase/firestore';
 import { AppData } from '../types';
 import { INITIAL_APP_DATA, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
+import { DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 import { sanitizeAndDeduplicateAppData } from '../utils/idGenerator';
 import { normalizeAmharicSearchText, mapToOfficialChapelStrict } from '../utils/churchExcelParser';
 
@@ -147,7 +148,8 @@ export const loadStoredLocalData = (): AppData => {
       pins: {
         admin: source.pins?.admin || INITIAL_APP_DATA.pins.admin,
         leader: source.pins?.leader || INITIAL_APP_DATA.pins.leader,
-        chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) }
+        chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) },
+        units: { ...DEFAULT_ORG_UNIT_PINS, ...(source.pins?.units || {}) }
       },
       teachers: source.teachers && source.teachers.length > 0 ? source.teachers : INITIAL_APP_DATA.teachers,
       plans: source.plans && source.plans.length > 0 ? source.plans : INITIAL_APP_DATA.plans,
@@ -168,7 +170,9 @@ export const loadStoredLocalData = (): AppData => {
         source.churchChildren && source.churchChildren.length > 0
           ? source.churchChildren
           : INITIAL_APP_DATA.churchChildren || [],
-      churchMembers: Array.isArray(source.churchMembers) ? source.churchMembers : []
+      churchMembers: Array.isArray(source.churchMembers) ? source.churchMembers : [],
+      departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
+      submissions: Array.isArray(source.submissions) ? source.submissions : []
     };
 
     return sanitizeAndDeduplicateAppData(rawData);
@@ -342,6 +346,11 @@ export const subscribeToAppData = (
             ...DEFAULT_CHAPEL_PINS,
             ...(currentLocal.pins?.chapels || {}),
             ...(val.pins?.chapels || {})
+          },
+          units: {
+            ...DEFAULT_ORG_UNIT_PINS,
+            ...(currentLocal.pins?.units || {}),
+            ...(val.pins?.units || {})
           }
         },
         teachers: val.teachers && val.teachers.length > 0 ? val.teachers : currentLocal.teachers,
@@ -365,6 +374,14 @@ export const subscribeToAppData = (
           val.churchMembers && val.churchMembers.length > 0
             ? val.churchMembers
             : currentLocal.churchMembers || [],
+        departmentData:
+          val.departmentData && typeof val.departmentData === 'object'
+            ? val.departmentData
+            : currentLocal.departmentData || {},
+        submissions:
+          Array.isArray(val.submissions) && val.submissions.length > 0
+            ? val.submissions
+            : currentLocal.submissions || [],
         years: val.years && val.years.length > 0 ? val.years : currentLocal.years
       };
 
@@ -515,6 +532,8 @@ const hasRecognizableAppFields = (obj: any): boolean => {
       obj.weeklyAttendance ||
       obj.choirMembers ||
       obj.spiritualMembers ||
+      obj.departmentData ||
+      obj.submissions ||
       obj.pins ||
       obj.years
   );
@@ -636,6 +655,11 @@ export const mergeImportedSundaySchoolData = (
           ...DEFAULT_CHAPEL_PINS,
           ...(currentData.pins?.chapels || {}),
           ...(source.pins?.chapels || {})
+        },
+        units: {
+          ...DEFAULT_ORG_UNIT_PINS,
+          ...(currentData.pins?.units || {}),
+          ...(source.pins?.units || {})
         }
       },
       teachers: incomingTeachers.length > 0 ? incomingTeachers : currentData.teachers,
@@ -664,7 +688,9 @@ export const mergeImportedSundaySchoolData = (
       churchMembers: incomingChurchMembers.map((m: any) => ({
         ...m,
         chapel: mapToOfficialChapelStrict(m.chapel || '')
-      }))
+      })),
+      departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
+      submissions: Array.isArray(source.submissions) ? source.submissions : []
     });
 
     saveToLocalStorage(replacedData);
@@ -753,6 +779,11 @@ export const mergeImportedSundaySchoolData = (
         ...DEFAULT_CHAPEL_PINS,
         ...(currentData.pins?.chapels || {}),
         ...(source.pins?.chapels || {})
+      },
+      units: {
+        ...DEFAULT_ORG_UNIT_PINS,
+        ...(currentData.pins?.units || {}),
+        ...(source.pins?.units || {})
       }
     },
     teachers: mergedTeachers,
@@ -784,7 +815,15 @@ export const mergeImportedSundaySchoolData = (
         : currentData.spiritualMembers,
     chapels: DEFAULT_CHAPELS,
     churchChildren: mergedChurchChildren,
-    churchMembers: mergedChurchMembers
+    churchMembers: mergedChurchMembers,
+    departmentData: {
+      ...(currentData.departmentData || {}),
+      ...(source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {})
+    },
+    submissions:
+      Array.isArray(source.submissions) && source.submissions.length > 0
+        ? source.submissions
+        : currentData.submissions || []
   };
 
   const sanitized = sanitizeAndDeduplicateAppData(mergedData);
@@ -841,7 +880,8 @@ export const importBackupJSON = (
         pins: {
           admin: source.pins?.admin || INITIAL_APP_DATA.pins.admin,
           leader: source.pins?.leader || INITIAL_APP_DATA.pins.leader,
-          chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) }
+          chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) },
+          units: { ...DEFAULT_ORG_UNIT_PINS, ...(source.pins?.units || {}) }
         },
         students: source.students || {},
         teachers: source.teachers && source.teachers.length > 0 ? source.teachers : INITIAL_APP_DATA.teachers,
@@ -853,6 +893,8 @@ export const importBackupJSON = (
         spiritualMembers: source.spiritualMembers || [],
         churchChildren: source.churchChildren || [],
         churchMembers: source.churchMembers || [],
+        departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
+        submissions: Array.isArray(source.submissions) ? source.submissions : [],
         chapels: DEFAULT_CHAPELS
       });
       saveToLocalStorage(validData);

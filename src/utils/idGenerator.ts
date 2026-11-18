@@ -3,8 +3,9 @@
  * Prevents timestamp collision even when called many times in the same millisecond or inside tight CSV import loops.
  */
 
-import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild } from '../types';
+import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission } from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
+import { CHURCH_ORG_UNITS, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
 
 let _lastUniqueId = Math.max(Date.now(), 1792849000000);
@@ -168,16 +169,67 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     modified = true;
   }
 
-  // 10. Ensure pins & chapel PINs exist
+  // 10. Ensure pins, chapel PINs & org unit PINs exist
   const existingChapelPins = data.pins?.chapels || {};
   const mergedChapelPins: { [chapelName: string]: string } = { ...DEFAULT_CHAPEL_PINS, ...existingChapelPins };
+  const existingUnitPins = data.pins?.units || {};
+  const mergedUnitPins: { [unitId: string]: string } = {
+    ...DEFAULT_ORG_UNIT_PINS,
+    ...existingUnitPins
+  };
+  if (!existingUnitPins.children_ministry && data.pins?.leader) {
+    mergedUnitPins.children_ministry = data.pins.leader;
+  }
   const pinsNeedUpdate =
     !data.pins ||
     !data.pins.chapels ||
-    DEFAULT_CHAPELS.some((ch) => !existingChapelPins[ch]);
+    !data.pins.units ||
+    DEFAULT_CHAPELS.some((ch) => !existingChapelPins[ch]) ||
+    CHURCH_ORG_UNITS.some((u) => !mergedUnitPins[u.id]);
   if (pinsNeedUpdate) {
     modified = true;
   }
+
+  // 10b. Sanitize departmentData record IDs without losing fields
+  const rawDeptData = data.departmentData && typeof data.departmentData === 'object' ? data.departmentData : {};
+  const sanitizedDepartmentData: { [unitId: string]: DepartmentWorkspaceData } = {};
+  Object.entries(rawDeptData).forEach(([unitId, ws]) => {
+    if (!ws || typeof ws !== 'object') return;
+    sanitizedDepartmentData[unitId] = {
+      members: Array.isArray(ws.members)
+        ? ws.members.map((m) => {
+            const checkedId = ensureUniqueId(m?.id);
+            return checkedId !== m?.id ? { ...m, id: checkedId } : m;
+          })
+        : [],
+      activities: Array.isArray(ws.activities)
+        ? ws.activities.map((a) => {
+            const checkedId = ensureUniqueId(a?.id);
+            return checkedId !== a?.id ? { ...a, id: checkedId } : a;
+          })
+        : [],
+      finances: Array.isArray(ws.finances)
+        ? ws.finances.map((f) => {
+            const checkedId = ensureUniqueId(f?.id);
+            return checkedId !== f?.id ? { ...f, id: checkedId } : f;
+          })
+        : [],
+      plans: Array.isArray(ws.plans)
+        ? ws.plans.map((p) => {
+            const checkedId = ensureUniqueId(p?.id);
+            return checkedId !== p?.id ? { ...p, id: checkedId } : p;
+          })
+        : []
+    };
+  });
+
+  // 10c. Sanitize submissions array
+  const sanitizedSubmissions: MinistrySubmission[] = Array.isArray(data.submissions)
+    ? data.submissions.map((sub) => {
+        const checkedId = ensureUniqueId(sub?.id);
+        return checkedId !== sub?.id ? { ...sub, id: checkedId } : sub;
+      })
+    : [];
 
   // 11. Ensure every teacher has a non-empty PIN (since teachers log in solely by PIN)
   const usedTeacherPins = new Set<string>(
@@ -212,8 +264,9 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     ageReferenceYear: typeof data.ageReferenceYear === 'number' && data.ageReferenceYear > 1990 ? data.ageReferenceYear : 2017,
     pins: {
       admin: data.pins?.admin || '1234',
-      leader: data.pins?.leader || '5678',
-      chapels: mergedChapelPins
+      leader: mergedUnitPins.children_ministry || data.pins?.leader || '5678',
+      chapels: mergedChapelPins,
+      units: mergedUnitPins
     },
     weeklyAttendance: data.weeklyAttendance || {},
     weekDates: data.weekDates || {},
@@ -225,6 +278,8 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     plans: sanitizedPlans,
     chapels: DEFAULT_CHAPELS,
     churchChildren: sanitizedChurchChildren,
-    churchMembers: sanitizedChurchMembers
+    churchMembers: sanitizedChurchMembers,
+    departmentData: sanitizedDepartmentData,
+    submissions: sanitizedSubmissions
   };
 };

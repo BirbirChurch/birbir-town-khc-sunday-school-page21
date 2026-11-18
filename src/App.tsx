@@ -5,24 +5,17 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  GraduationCap,
-  CalendarCheck2,
-  Music,
-  BookOpen,
-  Award,
-  Target,
-  UserCheck,
-  BookMarked,
+  Shield,
   KeyRound,
-  Users,
-  HeartHandshake,
-  Database,
   Calendar,
   Languages,
-  BarChart3
+  BarChart3,
+  X,
+  Building2
 } from 'lucide-react';
 import {
   Role,
+  OrgUnitId,
   Teacher,
   Student,
   AbsenteeRecord,
@@ -32,9 +25,17 @@ import {
   AppData,
   WeeklyAttendanceStatus,
   ChurchChild,
-  ChurchMember
+  ChurchMember,
+  DepartmentWorkspaceData,
+  MinistrySubmission
 } from './types';
-import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from './constants/initialData';
+import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from './constants/initialData';
+import {
+  CHURCH_ORG_UNITS,
+  DEFAULT_ORG_UNIT_PINS,
+  createEmptyDepartmentWorkspaceData,
+  getOrgUnitById
+} from './constants/churchStructure';
 import { subscribeToAppData, syncAppDataToFirebase, saveToLocalStorage, countStudentsInData, exportBackupJSON, importBackupJSON } from './services/firebase';
 import { generateUniqueId, sanitizeAndDeduplicateAppData } from './utils/idGenerator';
 import { normalizeAmharicSearchText } from './utils/churchExcelParser';
@@ -53,21 +54,15 @@ import {
 } from './utils/ageUpdater';
 import { Header } from './components/Header';
 import { LoginPortal } from './components/LoginPortal';
-import { ClassesTab } from './components/ClassesTab';
-import { AllStudentsMasterTab } from './components/AllStudentsMasterTab';
-import { ChurchChildrenTab, mapToOfficialChapel } from './components/ChurchChildrenTab';
-import { ChurchMasterTab } from './components/ChurchMasterTab';
-import { AttendanceTab } from './components/AttendanceTab';
-import { ChoirTab } from './components/ChoirTab';
-import { SpiritualTab } from './components/SpiritualTab';
-import { TopAchieversTab } from './components/TopAchieversTab';
-import { PlanReportTab } from './components/PlanReportTab';
-import { TeachersTab } from './components/TeachersTab';
-import { SubjectsTab } from './components/SubjectsTab';
+import { mapToOfficialChapel } from './components/ChurchChildrenTab';
 import { PinManageTab } from './components/PinManageTab';
 import { FirebaseSyncModal } from './components/FirebaseSyncModal';
 import { NameTransliteratorModal } from './components/NameTransliteratorModal';
 import { ChurchStatisticsDashboardTab } from './components/ChurchStatisticsDashboardTab';
+import { SuperAdminDashboard } from './components/SuperAdminDashboard';
+import { DepartmentWorkspacePage } from './components/DepartmentWorkspacePage';
+import { ChildrenMinistryPortal } from './components/ChildrenMinistryPortal';
+import { ChapelsHubPage } from './components/ChapelsHubPage';
 import { NameScriptMode } from './utils/amharicTransliterator';
 
 export default function App() {
@@ -77,7 +72,12 @@ export default function App() {
   const [currentUserRole, setCurrentUserRole] = useState<Role | null>(null);
   const [loggedInTeacher, setLoggedInTeacher] = useState<Teacher | null>(null);
   const [selectedClass, setSelectedClass] = useState<string>(CLASS_LIST[3]); // 1ኛ ክፍል ሀ
-  const [activeTab, setActiveTab] = useState<string>('classesTab');
+  const [loggedInUnit, setLoggedInUnit] = useState<OrgUnitId | null>(null);
+  const [activeOrgUnit, setActiveOrgUnit] = useState<OrgUnitId>('office');
+  const [activeAdminView, setActiveAdminView] = useState<
+    'adminOverview' | 'pinManageTab' | 'churchOverviewStatsTab' | 'unitPage'
+  >('adminOverview');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
   const [isTransliteratorModalOpen, setIsTransliteratorModalOpen] = useState<boolean>(false);
   const [nameScriptMode, setNameScriptMode] = useState<NameScriptMode>(() => {
@@ -188,20 +188,35 @@ export default function App() {
   const [loggedInChapel, setLoggedInChapel] = useState<string | null>(null);
 
   // Handlers for Login
-  const handleLoginSuccess = (role: Role, teacher?: Teacher, chapel?: string) => {
+  const handleLoginSuccess = (
+    role: Role,
+    teacher?: Teacher,
+    chapel?: string,
+    unitId?: OrgUnitId
+  ) => {
     setCurrentUserRole(role);
-    if (role === 'teacher' && teacher) {
+    setIsMobileSidebarOpen(false);
+    if (role === 'admin') {
+      setLoggedInTeacher(null);
+      setLoggedInChapel(null);
+      setLoggedInUnit(null);
+      setActiveAdminView('adminOverview');
+      setActiveOrgUnit('office');
+    } else if (role === 'teacher' && teacher) {
       setLoggedInTeacher(teacher);
       setSelectedClass(teacher.assignedClass);
       setLoggedInChapel(null);
-      setActiveTab('classesTab');
+      setLoggedInUnit('children_ministry');
+      setActiveOrgUnit('children_ministry');
     } else {
       setLoggedInTeacher(null);
       setLoggedInChapel(chapel || null);
-      if (chapel) {
-        setActiveTab('churchChildrenTab');
-      } else {
-        setActiveTab('classesTab');
+      const resolvedUnit: OrgUnitId =
+        unitId || (chapel ? 'chapels_dept' : 'children_ministry');
+      setLoggedInUnit(resolvedUnit);
+      setActiveOrgUnit(resolvedUnit);
+      if (resolvedUnit === 'elders_council') {
+        setActiveAdminView('unitPage');
       }
     }
   };
@@ -210,8 +225,223 @@ export default function App() {
     setCurrentUserRole(null);
     setLoggedInTeacher(null);
     setLoggedInChapel(null);
-    setActiveTab('classesTab');
+    setLoggedInUnit(null);
+    setActiveAdminView('adminOverview');
+    setActiveOrgUnit('office');
+    setIsMobileSidebarOpen(false);
   };
+
+  const canNavigateToUnit = useCallback(
+    (targetUnitId: OrgUnitId): boolean => {
+      if (currentUserRole === 'admin') return true;
+      if (currentUserRole === 'teacher' || loggedInChapel) return false;
+      if (!loggedInUnit) return false;
+      if (targetUnitId === loggedInUnit) return true;
+      if (loggedInUnit === 'elders_council') return true;
+      if (loggedInUnit === 'office') {
+        return targetUnitId === 'holistic_community' || targetUnitId === 'admin_finance';
+      }
+      if (loggedInUnit === 'spiritual_council') {
+        const target = getOrgUnitById(targetUnitId);
+        return target?.parentId === 'spiritual_council';
+      }
+      return false;
+    },
+    [currentUserRole, loggedInChapel, loggedInUnit]
+  );
+
+  const handleSelectUnit = useCallback(
+    (targetUnitId: OrgUnitId) => {
+      if (!canNavigateToUnit(targetUnitId)) return;
+      setActiveOrgUnit(targetUnitId);
+      if (currentUserRole === 'admin' || loggedInUnit === 'elders_council') {
+        setActiveAdminView('unitPage');
+      }
+      setIsMobileSidebarOpen(false);
+    },
+    [canNavigateToUnit, currentUserRole, loggedInUnit]
+  );
+
+  const handleUpdateDepartmentData = useCallback(
+    (
+      unitId: OrgUnitId,
+      updater: (prev: DepartmentWorkspaceData) => DepartmentWorkspaceData
+    ) => {
+      updateAppData(
+        (prev) => {
+          const currentMap = prev.departmentData || {};
+          const existing = currentMap[unitId] || createEmptyDepartmentWorkspaceData();
+          return {
+            ...prev,
+            departmentData: {
+              ...currentMap,
+              [unitId]: updater(existing)
+            }
+          };
+        },
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  // Ministry Plans, Reports & Letters Workflow Handlers
+  const handleCreateSubmission = useCallback(
+    (payload: Omit<MinistrySubmission, 'id' | 'status' | 'submittedAt'>) => {
+      const now = new Date().toISOString();
+      const newSubmission: MinistrySubmission = {
+        ...payload,
+        id: generateUniqueId(),
+        status: 'pending_spiritual',
+        submittedAt: now
+      };
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          submissions: [newSubmission, ...(prev.submissions || [])]
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleResubmitSubmission = useCallback(
+    (id: number, updates: Partial<MinistrySubmission>) => {
+      const now = new Date().toISOString();
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          submissions: (prev.submissions || []).map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  ...updates,
+                  status: 'pending_spiritual',
+                  updatedAt: now
+                }
+              : s
+          )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleDeleteSubmission = useCallback(
+    (id: number) => {
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          submissions: (prev.submissions || []).filter((s) => s.id !== id)
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleSpiritualApproveSubmission = useCallback(
+    (id: number, note?: string, forwardToAdmin?: boolean, forwardNote?: string) => {
+      const now = new Date().toISOString();
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          submissions: (prev.submissions || []).map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  status: forwardToAdmin ? 'forwarded_to_admin' : 'approved_spiritual',
+                  updatedAt: now,
+                  spiritualReviewedAt: now,
+                  spiritualNote: note ?? s.spiritualNote,
+                  forwardedToAdmin: Boolean(forwardToAdmin) || s.forwardedToAdmin,
+                  forwardedToAdminAt: forwardToAdmin ? now : s.forwardedToAdminAt,
+                  forwardedToAdminNote: forwardToAdmin ? forwardNote : s.forwardedToAdminNote
+                }
+              : s
+          )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleSpiritualReturnSubmission = useCallback(
+    (id: number, note: string) => {
+      const now = new Date().toISOString();
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          submissions: (prev.submissions || []).map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  status: 'returned_by_spiritual',
+                  updatedAt: now,
+                  spiritualReviewedAt: now,
+                  spiritualNote: note
+                }
+              : s
+          )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleForwardSubmissionToAdmin = useCallback(
+    (id: number, note?: string) => {
+      const now = new Date().toISOString();
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          submissions: (prev.submissions || []).map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  status: 'forwarded_to_admin',
+                  updatedAt: now,
+                  spiritualReviewedAt: s.spiritualReviewedAt || now,
+                  forwardedToAdmin: true,
+                  forwardedToAdminAt: now,
+                  forwardedToAdminNote: note ?? s.forwardedToAdminNote
+                }
+              : s
+          )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleAdminAcknowledgeSubmission = useCallback(
+    (id: number, note?: string) => {
+      const now = new Date().toISOString();
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          submissions: (prev.submissions || []).map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  status: 'acknowledged_by_admin',
+                  updatedAt: now,
+                  adminReviewedAt: now,
+                  adminNote: note ?? s.adminNote
+                }
+              : s
+          )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
 
   // Add academic year
   const handleAddYear = (newYear: string) => {
@@ -1251,11 +1481,12 @@ export default function App() {
     }));
   };
 
-  const handleClearChurchMembers = () => {
+  const handleClearChurchMembers = (chapelFilter?: string) => {
     updateAppData(
       (prev) => {
-        if (loggedInChapel) {
-          const targetChapel = mapToOfficialChapel(loggedInChapel);
+        const scoped = loggedInChapel || chapelFilter;
+        if (scoped) {
+          const targetChapel = mapToOfficialChapel(scoped);
           return {
             ...prev,
             churchMembers: (prev.churchMembers || []).filter(
@@ -1364,21 +1595,31 @@ export default function App() {
     }));
   };
 
-  // Save Role & Chapel PINs (Admin Controlled)
+  // Save Role, Organizational Units & Chapel PINs (Super Admin Controlled)
   const handleSavePins = (
     adminPin: string,
     leaderPin: string,
-    chapelPins?: { [chapelName: string]: string }
+    chapelPins?: { [chapelName: string]: string },
+    unitPins?: { [unitId: string]: string }
   ) => {
     updateAppData(
-      (prev) => ({
-        ...prev,
-        pins: {
-          admin: adminPin,
-          leader: leaderPin,
-          chapels: chapelPins || prev.pins?.chapels || DEFAULT_CHAPEL_PINS
-        }
-      }),
+      (prev) => {
+        const mergedUnits = {
+          ...DEFAULT_ORG_UNIT_PINS,
+          ...(prev.pins?.units || {}),
+          ...(unitPins || {}),
+          children_ministry: unitPins?.children_ministry || leaderPin
+        };
+        return {
+          ...prev,
+          pins: {
+            admin: adminPin,
+            leader: mergedUnits.children_ministry || leaderPin,
+            chapels: chapelPins || prev.pins?.chapels || DEFAULT_CHAPEL_PINS,
+            units: mergedUnits
+          }
+        };
+      },
       { immediate: true }
     );
   };
@@ -1418,97 +1659,80 @@ export default function App() {
     );
   }
 
-  // Navigation tab definitions
-  const tabs = [
-    { id: 'classesTab', label: 'የክፍል ደረጃዎች & ውጤት', icon: GraduationCap, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'churchOverviewStatsTab', label: 'አጠቃላይ የዳታ ማጠቃለያ (ወ/ሴ/ድምር)', icon: BarChart3, roles: ['admin', 'leader'] },
-    { id: 'allStudentsMasterTab', label: 'ሁሉንም የተመዘገቡ ተማሪዎች', icon: Users, roles: ['admin', 'leader'] },
-    { id: 'churchMasterTab', label: 'አጠቃላይ የቤተክርስቲያን መረጃ ቋት', icon: Database, roles: ['admin', 'leader'] },
-    { id: 'churchChildrenTab', label: 'የቤተክርስቲያኒቱ የልጆች ቋት', icon: HeartHandshake, roles: ['admin', 'leader'] },
-    { id: 'attendanceTab', label: 'የተማሪዎች አተንዳንስ & መቆጣጠሪያ', icon: CalendarCheck2, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'choirTab', label: 'የመዘምራንና ኪነ-ጥበብ ቡድኖች', icon: Music, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'spiritualTab', label: 'መንፈሳዊ ትምህርት ቡድኖች', icon: BookOpen, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'topAchieversTab', label: 'ከ1ኛ - 3ኛ ደረጃዎች', icon: Award, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'planReportTab', label: 'የዓመት ዕቅድ & ሩብ ሪፖርት', icon: Target, roles: ['admin'] },
-    { id: 'teachersTab', label: 'የመምህራን ዝርዝር & PIN', icon: UserCheck, roles: ['admin', 'leader'] },
-    { id: 'subjectsTab', label: 'የትምህርት ዓይነቶች', icon: BookMarked, roles: ['admin', 'leader'] },
-    { id: 'pinManageTab', label: 'የሁሉም መግቢያ ቁልፍ (PIN) ቅንብር', icon: KeyRound, roles: ['admin'] },
-  ];
-
-  // Chapel Leaders ONLY see & manage their own Chapel's tabs (plus chapel statistics summary)
-  const visibleTabs = tabs.filter((t) => {
-    if (!currentUserRole || !t.roles.includes(currentUserRole)) return false;
-    if (loggedInChapel) {
-      return (
-        t.id === 'churchChildrenTab' ||
-        t.id === 'churchMasterTab' ||
-        t.id === 'churchOverviewStatsTab'
-      );
-    }
-    return true;
-  });
+  const sidebarUnits = CHURCH_ORG_UNITS.filter((u) => canNavigateToUnit(u.id));
+  const showSidebar =
+    currentUserRole === 'admin' ||
+    (currentUserRole === 'leader' && !loggedInChapel && sidebarUnits.length > 1);
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans print:min-h-0 print:bg-white print:block">
       {!currentUserRole ? (
         // CLEAN OUTSIDE LOGIN SCREEN: Nothing from dashboard/database is visible outside!
-        <div className="flex-1 flex flex-col justify-center items-center py-10 px-4">
+        <div className="flex-1 flex flex-col justify-center items-center py-8 px-4">
           <LoginPortal
             teachers={appData.teachers}
             adminPin={appData.pins?.admin || '1234'}
             leaderPin={appData.pins?.leader || '5678'}
             chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
+            unitPins={appData.pins?.units || DEFAULT_ORG_UNIT_PINS}
             chapelList={appData.chapels || DEFAULT_CHAPELS}
-            churchMembers={appData.churchMembers || []}
-            onAddChurchMember={handleAddChurchMember}
             onLoginSuccess={handleLoginSuccess}
           />
         </div>
       ) : (
-        // INSIDE DASHBOARD (Full management controls, header with year selector, backup tools, student counts, and system tabs)
         <>
           <Header
-            currentYear={currentYear}
-            years={appData?.years || ['2019']}
-            onYearChange={setCurrentYear}
-            onAddYear={handleAddYear}
             currentUserRole={currentUserRole}
             loggedInTeacherName={loggedInTeacher?.name}
             loggedInChapel={loggedInChapel}
+            loggedInUnit={loggedInUnit}
             onLogout={handleLogout}
             syncStatus={syncStatus}
-            onOpenSyncModal={!loggedInChapel && currentUserRole !== 'teacher' ? () => setIsSyncModalOpen(true) : undefined}
+            onOpenSyncModal={
+              currentUserRole === 'admin' ||
+              (!loggedInChapel &&
+                currentUserRole !== 'teacher' &&
+                (loggedInUnit === 'elders_council' ||
+                  loggedInUnit === 'office' ||
+                  loggedInUnit === 'spiritual_council' ||
+                  loggedInUnit === 'children_ministry'))
+                ? () => setIsSyncModalOpen(true)
+                : undefined
+            }
+            onToggleSidebar={showSidebar ? () => setIsMobileSidebarOpen(!isMobileSidebarOpen) : undefined}
           />
 
-          {/* Reassurance, JSON Import/Export & Chapel Scope Banner */}
+          {/* Reassurance, JSON Import/Export & Scope Banner */}
           {appData && (
-            <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 text-white px-4 py-2.5 border-b border-emerald-700/50 print:hidden text-xs shadow-sm">
+            <div className="bg-slate-900 text-white px-4 py-2 border-b border-slate-800 print:hidden text-xs">
               <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
                   {loggedInChapel ? (
                     <span className="font-bold text-amber-200">
-                      🏛️ የ{loggedInChapel} የተለየ መግቢያ — የ{loggedInChapel}ን መረጃ ብቻ ያስተዳድራሉ
+                      {loggedInChapel} — የቻፕሉ መረጃ ብቻ ገጽ
+                    </span>
+                  ) : loggedInUnit ? (
+                    <span className="font-bold text-slate-100">
+                      {(() => {
+                        const u = getOrgUnitById(loggedInUnit);
+                        return u ? u.name : 'የቤተክርስቲያን ፖርታል';
+                      })()}
                     </span>
                   ) : (
-                    <>
-                      <span className="font-bold text-emerald-100">
-                        ✓ ከአዲሱ Firebase (birbirtownkhcchildministrypage) ጋር ተገናኝቷል!
-                      </span>
-                      <span className="text-emerald-300/90 hidden md:inline">
-                        (በስርዓቱ ውስጥ፦ {countStudentsInData(appData)} ተማሪዎች፣ {appData.teachers?.length || 0} መምህራን ተመዝግበዋል)
-                      </span>
-                    </>
+                    <span className="font-bold text-emerald-200 tabular-nums">
+                      ዋና አዲሚን (Super Admin) — የቤተክርስቲያን አባላት፦ {(appData.churchMembers || []).length} · ልጆች፦ {(appData.churchChildren || []).length} · ሰንበት ተማሪዎች፦ {countStudentsInData(appData)}
+                    </span>
                   )}
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Direct Amharic <-> English Name Script Mode Switcher + Converter Modal */}
                   <div
-                    className="flex items-center gap-1 bg-slate-900/70 border border-emerald-700/60 rounded-lg p-0.5"
+                    className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-0.5"
                     title="ስሞችን ያለ ትርጉም በቀጥታ ወደ እንግሊዝኛ ፊደል መቀየሪያ ምርጫ"
                   >
-                    <span className="px-1.5 text-[10px] font-bold text-emerald-200 flex items-center gap-1">
+                    <span className="px-1.5 text-[10px] font-bold text-slate-300 flex items-center gap-1">
                       <Languages className="w-3 h-3 text-amber-300" />
                       <span className="hidden sm:inline">ስም፦</span>
                     </span>
@@ -1516,7 +1740,7 @@ export default function App() {
                       type="button"
                       onClick={() => handleChangeNameScriptMode('am')}
                       className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
-                        nameScriptMode === 'am' ? 'bg-amber-400 text-slate-950 shadow-2xs' : 'text-emerald-100 hover:bg-white/10'
+                        nameScriptMode === 'am' ? 'bg-amber-400 text-slate-950' : 'text-slate-200 hover:bg-white/10'
                       }`}
                     >
                       አማርኛ
@@ -1525,7 +1749,7 @@ export default function App() {
                       type="button"
                       onClick={() => handleChangeNameScriptMode('both')}
                       className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
-                        nameScriptMode === 'both' ? 'bg-amber-400 text-slate-950 shadow-2xs' : 'text-emerald-100 hover:bg-white/10'
+                        nameScriptMode === 'both' ? 'bg-amber-400 text-slate-950' : 'text-slate-200 hover:bg-white/10'
                       }`}
                     >
                       አማ+EN
@@ -1534,7 +1758,7 @@ export default function App() {
                       type="button"
                       onClick={() => handleChangeNameScriptMode('en')}
                       className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
-                        nameScriptMode === 'en' ? 'bg-amber-400 text-slate-950 shadow-2xs' : 'text-emerald-100 hover:bg-white/10'
+                        nameScriptMode === 'en' ? 'bg-amber-400 text-slate-950' : 'text-slate-200 hover:bg-white/10'
                       }`}
                     >
                       English
@@ -1544,14 +1768,14 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsTransliteratorModalOpen(true)}
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer border border-cyan-400/50"
+                    className="bg-cyan-700 hover:bg-cyan-600 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition flex items-center gap-1 cursor-pointer"
                     title="ማንኛውንም ስም ያለ ትርጉም ቀጥታ ወደ እንግሊዝኛ መቀየሪያ መሳሪያ"
                   >
                     <Languages className="w-3.5 h-3.5" />
                     <span>ስም ወደ EN ቀይር</span>
                   </button>
 
-                  {!loggedInChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                  {currentUserRole === 'admin' && (
                     <>
                       <input
                         ref={quickJsonInputRef}
@@ -1563,26 +1787,23 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => quickJsonInputRef.current?.click()}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
-                        title="የFirebase Export ወይም Backup JSON ፋይል በቀጥታ ይጫኑ"
+                        className="bg-indigo-700 hover:bg-indigo-600 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition cursor-pointer"
                       >
-                        <span>📂 JSON ጫን</span>
+                        JSON ጫን
                       </button>
                       <button
                         type="button"
                         onClick={() => exportBackupJSON(appData)}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 shadow cursor-pointer"
-                        title="የሰሩትን ሙሉ መረጃ በJSON ወደ ኮምፒዩተርዎ ያውርዱ"
+                        className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition cursor-pointer"
                       >
-                        <span>💾 ባክአፕ አውርድ (JSON)</span>
+                        ባክአፕ አውርድ (JSON)
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsSyncModalOpen(true)}
-                        className="bg-blue-800 hover:bg-blue-700 text-amber-300 font-bold px-3 py-1 rounded-lg text-[11px] transition flex items-center gap-1 border border-blue-700 shadow cursor-pointer"
-                        title="የJSON ፋይል መጫኛ እና የአዲሱ Firebase ማስተካከያ"
+                        className="bg-blue-800 hover:bg-blue-700 text-amber-300 font-bold px-3 py-1 rounded-lg text-[11px] transition border border-blue-700 cursor-pointer"
                       >
-                        <span>⚙️ ዳታቤዝ & JSON መቀበያ</span>
+                        ዳታቤዝ & JSON መቀበያ
                       </button>
                     </>
                   )}
@@ -1601,10 +1822,15 @@ export default function App() {
             </div>
           )}
 
-          {/* Annual Age Increment Banner (shown to Admin/Leader when currentYear > ageReferenceYear, e.g. 2017 -> 2019) */}
+          {/* Annual Age Increment Banner (shown to Admin / Office / Elders / Spiritual / Children Leaders) */}
           {appData &&
             !loggedInChapel &&
-            (currentUserRole === 'admin' || currentUserRole === 'leader') &&
+            currentUserRole !== 'teacher' &&
+            (currentUserRole === 'admin' ||
+              loggedInUnit === 'elders_council' ||
+              loggedInUnit === 'office' ||
+              loggedInUnit === 'spiritual_council' ||
+              loggedInUnit === 'children_ministry') &&
             (parseInt(currentYear, 10) || 0) > (appData.ageReferenceYear || 2017) &&
             dismissedAgeBannerYear !== currentYear && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 print:hidden text-xs">
@@ -1635,9 +1861,9 @@ export default function App() {
                           });
                         }
                       }}
-                      className="bg-amber-600 hover:bg-amber-500 text-white font-black text-[11px] px-3 py-1.5 rounded-lg shadow-xs transition cursor-pointer"
+                      className="bg-amber-600 hover:bg-amber-500 text-white font-black text-[11px] px-3 py-1.5 rounded-lg transition cursor-pointer"
                     >
-                      ⚡ +{(parseInt(currentYear, 10) || 2019) - (appData.ageReferenceYear || 2017)} ዓመት አሁን ጨምር
+                      +{(parseInt(currentYear, 10) || 2019) - (appData.ageReferenceYear || 2017)} ዓመት አሁን ጨምር
                     </button>
                     <button
                       type="button"
@@ -1651,266 +1877,332 @@ export default function App() {
               </div>
             )}
 
-          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:max-w-none print:w-full print:p-0 print:m-0">
-            <div className="space-y-6 print:space-y-0">
-              {/* Top Navigation Tabs */}
-              <div className="bg-white p-2 rounded-2xl border border-slate-200/80 shadow-sm print:hidden">
-                <nav className="flex space-x-1 sm:space-x-2 overflow-x-auto scrollbar-thin py-1 px-1">
-                {visibleTabs.map((tab) => {
-                  const Icon = tab.icon;
-                  const isActive = activeTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-150 ${
-                        isActive
-                          ? 'bg-blue-900 text-white shadow-md'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                      }`}
-                    >
-                      <Icon className={`w-4 h-4 ${isActive ? 'text-amber-300' : 'text-slate-400'}`} />
-                      <span>{tab.label}</span>
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
+          <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:max-w-none print:w-full print:p-0 print:m-0">
+            <div className={showSidebar ? 'flex flex-col lg:flex-row gap-6 items-start' : 'space-y-6'}>
+              {/* Hierarchical Sidebar (Super Admin & Governing Councils) */}
+              {showSidebar && (
+                <>
+                  {isMobileSidebarOpen && (
+                    <div
+                      className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+                      onClick={() => setIsMobileSidebarOpen(false)}
+                    />
+                  )}
+                  <aside
+                    className={`${
+                      isMobileSidebarOpen
+                        ? 'fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 p-4 overflow-y-auto'
+                        : 'hidden lg:block lg:w-72 shrink-0 bg-white border border-slate-200 rounded-2xl p-3.5 sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto'
+                    } print:hidden`}
+                  >
+                    <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 lg:hidden">
+                      <span className="text-xs font-extrabold text-slate-900">የአጥቢያ መዋቅር ማውጫ</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsMobileSidebarOpen(false)}
+                        className="p-1 text-slate-500 hover:text-slate-800 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
 
-            {/* Tab Contents */}
-            <div>
-              {activeTab === 'classesTab' && (
-                <ClassesTab
-                  currentYear={currentYear}
-                  classList={CLASS_LIST}
-                  selectedClass={selectedClass}
-                  onSelectClass={setSelectedClass}
-                  teachers={appData.teachers}
-                  students={currentClassStudents}
-                  onUpdateStudent={handleUpdateStudent}
-                  onAddStudent={handleAddStudent}
-                  onAddStudentsBatch={handleAddStudentsBatch}
-                  onAddStudentsMultiClass={handleAddStudentsMultiClass}
-                  onDeleteStudent={handleDeleteStudent}
-                  onClearClassStudents={handleClearClassStudents}
-                  onClearClassScores={handleClearClassScores}
-                  onSetClassAge={handleSetClassAge}
-                  onGoToAttendance={() => setActiveTab('attendanceTab')}
-                  onGoToAllStudents={() => setActiveTab('allStudentsMasterTab')}
-                  currentUserRole={currentUserRole}
-                  loggedInTeacher={loggedInTeacher}
-                  subjects={appData.subjects}
-                  classSubjects={appData.classSubjects || {}}
-                  onUpdateClassSubjects={handleUpdateClassSubjects}
-                  churchChildren={appData.churchChildren || []}
-                  churchMembers={appData.churchMembers || []}
-                  nameScriptMode={nameScriptMode}
-                />
+                    {currentUserRole === 'admin' && (
+                      <div className="space-y-1 pb-3 mb-3 border-b border-slate-200">
+                        <div className="px-2 pb-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                          የዋና አዲሚን መቆጣጠሪያ
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveAdminView('adminOverview');
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                            activeAdminView === 'adminOverview'
+                              ? 'bg-blue-900 text-white'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <Shield className="w-3.5 h-3.5 shrink-0" />
+                          <span>የዋና አዲሚን ገጽ (Overview)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveAdminView('churchOverviewStatsTab');
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                            activeAdminView === 'churchOverviewStatsTab'
+                              ? 'bg-blue-900 text-white'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+                          <span>አጠቃላይ ስታቲስቲክስ (ወ/ሴ/ድምር)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveAdminView('pinManageTab');
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                            activeAdminView === 'pinManageTab'
+                              ? 'bg-blue-900 text-white'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                          <span>የሁሉም መግቢያ ቁልፎች (PINs)</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {currentUserRole !== 'admin' && loggedInUnit === 'elders_council' && (
+                      <div className="space-y-1 pb-3 mb-3 border-b border-slate-200">
+                        <div className="px-2 pb-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                          የሽማግሌዎች ጉባኤ አጠቃላይ እይታ
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveAdminView('churchOverviewStatsTab');
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                            activeAdminView === 'churchOverviewStatsTab'
+                              ? 'bg-blue-900 text-white'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+                          <span>አጠቃላይ ስታቲስቲክስ (ወ/ሴ/ድምር)</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <div className="px-2 pb-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <Building2 className="w-3 h-3" />
+                        <span>የቤተ ክርስቲያን መዋቅር</span>
+                      </div>
+                      {sidebarUnits.map((u) => {
+                        const isActive =
+                          ((currentUserRole !== 'admin' && loggedInUnit !== 'elders_council') ||
+                            activeAdminView === 'unitPage') &&
+                          activeOrgUnit === u.id;
+                        const indentPx = Math.max(0, (u.level - 1) * 12);
+                        return (
+                          <button
+                            key={`nav_unit_${u.id}`}
+                            type="button"
+                            onClick={() => handleSelectUnit(u.id)}
+                            style={{ paddingLeft: `${10 + indentPx}px` }}
+                            className={`w-full text-left pr-2.5 py-2 rounded-xl text-xs transition flex items-center gap-2 cursor-pointer ${
+                              isActive
+                                ? 'bg-blue-900 text-white font-bold'
+                                : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                isActive
+                                  ? 'bg-amber-300'
+                                  : u.level === 1
+                                  ? 'bg-blue-900'
+                                  : u.level === 2
+                                  ? 'bg-blue-600'
+                                  : 'bg-slate-400'
+                              }`}
+                            />
+                            <span className="leading-snug">{u.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </aside>
+                </>
               )}
 
-              {activeTab === 'churchOverviewStatsTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
-                <ChurchStatisticsDashboardTab
-                  currentYear={currentYear}
-                  classList={CLASS_LIST}
-                  studentsByClass={appData.students?.[currentYear] || {}}
-                  churchMembers={appData.churchMembers || []}
-                  churchChildren={appData.churchChildren || []}
-                  chapelList={appData.chapels || DEFAULT_CHAPELS}
-                  loggedInChapel={loggedInChapel}
-                  onNavigateTab={(tabId) => setActiveTab(tabId)}
-                />
-              )}
-
-              {activeTab === 'allStudentsMasterTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
-                <AllStudentsMasterTab
-                  currentYear={currentYear}
-                  classList={CLASS_LIST}
-                  teachers={appData.teachers}
-                  studentsByClass={appData.students?.[currentYear] || {}}
-                  choirMembers={appData.choirMembers || []}
-                  spiritualMembers={appData.spiritualMembers || []}
-                  churchChildren={appData.churchChildren || []}
-                  churchMembers={appData.churchMembers || []}
-                  chapelList={appData.chapels || DEFAULT_CHAPELS}
-                  onUpdateStudent={handleUpdateStudent}
-                  onAddStudentToClass={handleAddStudentToClass}
-                  onDeleteStudent={handleDeleteStudent}
-                  onMoveStudentClass={handleMoveStudentClass}
-                  onGoToClass={(cName) => {
-                    setSelectedClass(cName);
-                    setActiveTab('classesTab');
-                  }}
-                  currentUserRole={currentUserRole}
-                  nameScriptMode={nameScriptMode}
-                />
-              )}
-
-              {activeTab === 'churchMasterTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
-                <ChurchMasterTab
-                  currentYear={currentYear}
-                  ageReferenceYear={appData.ageReferenceYear || 2017}
-                  churchMembers={appData.churchMembers || []}
-                  chapelList={appData.chapels || DEFAULT_CHAPELS}
-                  churchChildren={appData.churchChildren || []}
-                  studentsByClass={appData.students?.[currentYear] || {}}
-                  classList={CLASS_LIST}
-                  onBatchAddMembers={handleBatchAddChurchMembers}
-                  onAddMember={handleAddChurchMember}
-                  onUpdateMember={handleUpdateChurchMember}
-                  onDeleteMember={handleDeleteChurchMember}
-                  onClearChurchMembers={handleClearChurchMembers}
-                  onExtractChildrenToChildrenTab={handleBatchAddChurchChildren}
-                  onBulkIncrementAges={!loggedInChapel ? handleBulkIncrementAges : undefined}
-                  currentUserRole={currentUserRole}
-                  loggedInChapel={loggedInChapel}
-                  nameScriptMode={nameScriptMode}
-                  onChangeNameScriptMode={handleChangeNameScriptMode}
-                  onOpenTransliterator={() => setIsTransliteratorModalOpen(true)}
-                />
-              )}
-
-              {activeTab === 'churchChildrenTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
-                <ChurchChildrenTab
-                  currentYear={currentYear}
-                  ageReferenceYear={appData.ageReferenceYear || 2017}
-                  classList={CLASS_LIST}
-                  churchChildren={appData.churchChildren || []}
-                  churchMembers={appData.churchMembers || []}
-                  chapelList={appData.chapels || DEFAULT_CHAPELS}
-                  studentsByClass={appData.students?.[currentYear] || {}}
-                  onAddChild={handleAddChurchChild}
-                  onAddChurchMember={handleAddChurchMember}
-                  onUpdateChild={handleUpdateChurchChild}
-                  onDeleteChild={handleDeleteChurchChild}
-                  onClearChurchChildren={handleClearChurchChildren}
-                  onBatchAddChildren={handleBatchAddChurchChildren}
-                  onEnrollToSundaySchool={handleEnrollChildToSundaySchool}
-                  onImportMissingStudentsToChurchChildren={handleImportMissingStudentsToChurchChildren}
-                  onBulkIncrementAges={!loggedInChapel ? handleBulkIncrementAges : undefined}
-                  currentUserRole={currentUserRole}
-                  loggedInChapel={loggedInChapel}
-                  onDeleteChapel={handleDeleteChapel}
-                  nameScriptMode={nameScriptMode}
-                  onChangeNameScriptMode={handleChangeNameScriptMode}
-                  onOpenTransliterator={() => setIsTransliteratorModalOpen(true)}
-                />
-              )}
-
-              {activeTab === 'attendanceTab' && (
-                <AttendanceTab
-                  currentYear={currentYear}
-                  classList={CLASS_LIST}
-                  studentsByClass={appData.students?.[currentYear] || {}}
-                  weeklyAttendance={appData.weeklyAttendance?.[currentYear] || {}}
-                  weekDates={appData.weekDates?.[currentYear] || {}}
-                  attendance={appData.attendance || []}
-                  onUpdateStudentWeeklyAttendance={handleUpdateStudentWeeklyAttendance}
-                  onBatchUpdateWeeklyAttendance={handleBatchUpdateWeeklyAttendance}
-                  onSetWeekDate={handleSetWeekDate}
-                  onClearWeekAttendance={handleClearWeekAttendance}
-                  onAddAttendance={handleAddAttendance}
-                  onAddAttendanceBatch={handleAddAttendanceBatch}
-                  onDeleteAttendance={handleDeleteAttendance}
-                  onAddStudentToClass={handleAddStudentToClass}
-                  onUpdateStudent={handleUpdateStudent}
-                  onDeleteStudent={handleDeleteStudent}
-                  onClearClassStudents={handleClearClassStudents}
-                  onSetClassAge={handleSetClassAge}
-                  currentUserRole={currentUserRole}
-                  loggedInTeacher={loggedInTeacher}
-                  nameScriptMode={nameScriptMode}
-                />
-              )}
-
-              {activeTab === 'choirTab' && (
-                <ChoirTab
-                  groups={appData.choirGroups || []}
-                  members={appData.choirMembers || []}
-                  onAddMember={handleAddChoirMember}
-                  onAddMembersBatch={handleAddChoirMembersBatch}
-                  onDeleteMember={handleDeleteChoirMember}
-                  onAddGroup={handleAddChoirGroup}
-                  currentUserRole={currentUserRole}
-                />
-              )}
-
-              {activeTab === 'spiritualTab' && (
-                <SpiritualTab
-                  groups={appData.spiritualGroups || []}
-                  members={appData.spiritualMembers || []}
-                  onAddMember={handleAddSpiritualMember}
-                  onAddMembersBatch={handleAddSpiritualMembersBatch}
-                  onDeleteMember={handleDeleteSpiritualMember}
-                  onAddGroup={handleAddSpiritualGroup}
-                  currentUserRole={currentUserRole}
-                />
-              )}
-
-              {activeTab === 'topAchieversTab' && (
-                <TopAchieversTab
-                  currentYear={currentYear}
-                  classList={CLASS_LIST}
-                  studentsByClass={appData.students?.[currentYear] || {}}
-                  nameScriptMode={nameScriptMode}
-                />
-              )}
-
-              {activeTab === 'planReportTab' && currentUserRole === 'admin' && (
-                <PlanReportTab
-                  currentYear={currentYear}
-                  plans={appData.plans || DEFAULT_ANNUAL_PLAN}
-                  onUpdatePlan={handleUpdatePlan}
-                  onAddPlan={handleAddPlan}
-                  onDeletePlan={handleDeletePlan}
-                  onImportPlans={handleImportPlans}
-                  onGoToAllStudents={() => setActiveTab('allStudentsMasterTab')}
-                  totalStudentsCount={countStudentsInData(appData)}
-                  classList={CLASS_LIST}
-                  studentsByClass={appData.students?.[currentYear] || {}}
-                  churchChildren={appData.churchChildren || []}
-                  churchMembers={appData.churchMembers || []}
-                />
-              )}
-
-              {activeTab === 'teachersTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
-                <TeachersTab
-                  teachers={appData.teachers}
-                  classList={CLASS_LIST}
-                  subjects={appData.subjects}
-                  currentUserRole={currentUserRole}
-                  onUpdateTeacher={handleUpdateTeacher}
-                  onAddTeacher={handleAddTeacher}
-                  onDeleteTeacher={handleDeleteTeacher}
-                  onReorderTeachers={handleReorderTeachers}
-                />
-              )}
-
-              {activeTab === 'subjectsTab' && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
-                <SubjectsTab
-                  subjects={appData.subjects}
-                  classList={CLASS_LIST}
-                  classSubjects={appData.classSubjects || {}}
-                  onUpdateClassSubjects={handleUpdateClassSubjects}
-                  onAddSubject={handleAddSubject}
-                  onDeleteSubject={handleDeleteSubject}
-                  currentUserRole={currentUserRole}
-                />
-              )}
-
-              {activeTab === 'pinManageTab' && currentUserRole === 'admin' && (
-                <PinManageTab
-                  adminPin={appData.pins?.admin || '1234'}
-                  leaderPin={appData.pins?.leader || '5678'}
-                  chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
-                  chapelList={appData.chapels || DEFAULT_CHAPELS}
-                  teachers={appData.teachers}
-                  onSavePins={handleSavePins}
-                  onUpdateTeacher={handleUpdateTeacher}
-                />
-              )}
+              {/* Main Content Area */}
+              <main className="flex-1 min-w-0 w-full">
+                {currentUserRole === 'admin' && activeAdminView === 'adminOverview' ? (
+                  <SuperAdminDashboard
+                    appData={appData}
+                    currentYear={currentYear}
+                    onOpenUnit={handleSelectUnit}
+                    onOpenPinManager={() => setActiveAdminView('pinManageTab')}
+                    onOpenOverviewStats={() => setActiveAdminView('churchOverviewStatsTab')}
+                    onOpenSyncModal={() => setIsSyncModalOpen(true)}
+                  />
+                ) : currentUserRole === 'admin' && activeAdminView === 'pinManageTab' ? (
+                  <PinManageTab
+                    adminPin={appData.pins?.admin || '1234'}
+                    leaderPin={appData.pins?.leader || '5678'}
+                    chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
+                    unitPins={appData.pins?.units || DEFAULT_ORG_UNIT_PINS}
+                    chapelList={appData.chapels || DEFAULT_CHAPELS}
+                    teachers={appData.teachers}
+                    onSavePins={handleSavePins}
+                    onUpdateTeacher={handleUpdateTeacher}
+                  />
+                ) : (currentUserRole === 'admin' || loggedInUnit === 'elders_council') &&
+                  activeAdminView === 'churchOverviewStatsTab' ? (
+                  <ChurchStatisticsDashboardTab
+                    currentYear={currentYear}
+                    classList={CLASS_LIST}
+                    studentsByClass={appData.students?.[currentYear] || {}}
+                    churchMembers={appData.churchMembers || []}
+                    churchChildren={appData.churchChildren || []}
+                    chapelList={appData.chapels || DEFAULT_CHAPELS}
+                    loggedInChapel={loggedInChapel}
+                    onNavigateTab={(tabId) => {
+                      if (tabId === 'churchMasterTab') {
+                        handleSelectUnit('office');
+                      } else if (tabId === 'churchChildrenTab' || tabId === 'allStudentsMasterTab') {
+                        handleSelectUnit('children_ministry');
+                      }
+                    }}
+                  />
+                ) : activeOrgUnit === 'children_ministry' || currentUserRole === 'teacher' ? (
+                  <ChildrenMinistryPortal
+                    appData={appData}
+                    currentYear={currentYear}
+                    years={appData.years || ['2019']}
+                    onYearChange={setCurrentYear}
+                    onAddYear={handleAddYear}
+                    classList={CLASS_LIST}
+                    selectedClass={selectedClass}
+                    onSelectClass={setSelectedClass}
+                    currentClassStudents={currentClassStudents}
+                    currentUserRole={currentUserRole}
+                    loggedInTeacher={loggedInTeacher}
+                    nameScriptMode={nameScriptMode}
+                    onChangeNameScriptMode={handleChangeNameScriptMode}
+                    onOpenTransliterator={() => setIsTransliteratorModalOpen(true)}
+                    onUpdateStudent={handleUpdateStudent}
+                    onAddStudent={handleAddStudent}
+                    onAddStudentToClass={handleAddStudentToClass}
+                    onAddStudentsBatch={handleAddStudentsBatch}
+                    onAddStudentsMultiClass={handleAddStudentsMultiClass}
+                    onDeleteStudent={handleDeleteStudent}
+                    onMoveStudentClass={handleMoveStudentClass}
+                    onClearClassStudents={handleClearClassStudents}
+                    onClearClassScores={handleClearClassScores}
+                    onSetClassAge={handleSetClassAge}
+                    onAddChild={handleAddChurchChild}
+                    onAddChurchMember={handleAddChurchMember}
+                    onUpdateChild={handleUpdateChurchChild}
+                    onDeleteChild={handleDeleteChurchChild}
+                    onClearChurchChildren={handleClearChurchChildren}
+                    onBatchAddChildren={handleBatchAddChurchChildren}
+                    onEnrollToSundaySchool={handleEnrollChildToSundaySchool}
+                    onImportMissingStudentsToChurchChildren={handleImportMissingStudentsToChurchChildren}
+                    onBulkIncrementAges={handleBulkIncrementAges}
+                    onDeleteChapel={handleDeleteChapel}
+                    onUpdateStudentWeeklyAttendance={handleUpdateStudentWeeklyAttendance}
+                    onBatchUpdateWeeklyAttendance={handleBatchUpdateWeeklyAttendance}
+                    onSetWeekDate={handleSetWeekDate}
+                    onClearWeekAttendance={handleClearWeekAttendance}
+                    onAddAttendance={handleAddAttendance}
+                    onAddAttendanceBatch={handleAddAttendanceBatch}
+                    onDeleteAttendance={handleDeleteAttendance}
+                    onAddChoirMember={handleAddChoirMember}
+                    onAddChoirMembersBatch={handleAddChoirMembersBatch}
+                    onDeleteChoirMember={handleDeleteChoirMember}
+                    onAddChoirGroup={handleAddChoirGroup}
+                    onAddSpiritualMember={handleAddSpiritualMember}
+                    onAddSpiritualMembersBatch={handleAddSpiritualMembersBatch}
+                    onDeleteSpiritualMember={handleDeleteSpiritualMember}
+                    onAddSpiritualGroup={handleAddSpiritualGroup}
+                    onUpdatePlan={handleUpdatePlan}
+                    onAddPlan={handleAddPlan}
+                    onDeletePlan={handleDeletePlan}
+                    onImportPlans={handleImportPlans}
+                    onUpdateTeacher={handleUpdateTeacher}
+                    onAddTeacher={handleAddTeacher}
+                    onDeleteTeacher={handleDeleteTeacher}
+                    onReorderTeachers={handleReorderTeachers}
+                    onUpdateClassSubjects={handleUpdateClassSubjects}
+                    onAddSubject={handleAddSubject}
+                    onDeleteSubject={handleDeleteSubject}
+                    submissions={appData.submissions || []}
+                    onCreateSubmission={handleCreateSubmission}
+                    onResubmitSubmission={handleResubmitSubmission}
+                    onDeleteSubmission={handleDeleteSubmission}
+                  />
+                ) : activeOrgUnit === 'chapels_dept' || loggedInChapel ? (
+                  <ChapelsHubPage
+                    currentYear={currentYear}
+                    ageReferenceYear={appData.ageReferenceYear || 2017}
+                    currentUserRole={currentUserRole}
+                    chapelList={appData.chapels || DEFAULT_CHAPELS}
+                    classList={CLASS_LIST}
+                    studentsByClass={appData.students?.[currentYear] || {}}
+                    churchMembers={appData.churchMembers || []}
+                    churchChildren={appData.churchChildren || []}
+                    lockedChapel={loggedInChapel}
+                    onBatchAddMembers={handleBatchAddChurchMembers}
+                    onAddMember={handleAddChurchMember}
+                    onUpdateMember={handleUpdateChurchMember}
+                    onDeleteMember={handleDeleteChurchMember}
+                    onClearChurchMembers={handleClearChurchMembers}
+                    onAddChild={handleAddChurchChild}
+                    onUpdateChild={handleUpdateChurchChild}
+                    onDeleteChild={handleDeleteChurchChild}
+                    onClearChurchChildren={handleClearChurchChildren}
+                    onBatchAddChildren={handleBatchAddChurchChildren}
+                    onEnrollToSundaySchool={handleEnrollChildToSundaySchool}
+                    onImportMissingStudentsToChurchChildren={handleImportMissingStudentsToChurchChildren}
+                    onBulkIncrementAges={!loggedInChapel ? handleBulkIncrementAges : undefined}
+                    onDeleteChapel={handleDeleteChapel}
+                    nameScriptMode={nameScriptMode}
+                    onChangeNameScriptMode={handleChangeNameScriptMode}
+                    onOpenTransliterator={() => setIsTransliteratorModalOpen(true)}
+                    submissions={appData.submissions || []}
+                    onCreateSubmission={handleCreateSubmission}
+                    onResubmitSubmission={handleResubmitSubmission}
+                    onDeleteSubmission={handleDeleteSubmission}
+                  />
+                ) : (
+                  <DepartmentWorkspacePage
+                    unitId={activeOrgUnit}
+                    currentYear={currentYear}
+                    ageReferenceYear={appData.ageReferenceYear || 2017}
+                    currentUserRole={currentUserRole}
+                    departmentDataMap={appData.departmentData || {}}
+                    onUpdateDepartmentData={handleUpdateDepartmentData}
+                    canNavigateToUnit={canNavigateToUnit}
+                    onSelectUnit={handleSelectUnit}
+                    churchMembers={appData.churchMembers || []}
+                    churchChildren={appData.churchChildren || []}
+                    chapelList={appData.chapels || DEFAULT_CHAPELS}
+                    classList={CLASS_LIST}
+                    studentsByClass={appData.students?.[currentYear] || {}}
+                    onBatchAddMembers={handleBatchAddChurchMembers}
+                    onAddMember={handleAddChurchMember}
+                    onUpdateMember={handleUpdateChurchMember}
+                    onDeleteMember={handleDeleteChurchMember}
+                    onClearChurchMembers={handleClearChurchMembers}
+                    onExtractChildrenToChildrenTab={handleBatchAddChurchChildren}
+                    onBulkIncrementAges={handleBulkIncrementAges}
+                    nameScriptMode={nameScriptMode}
+                    onChangeNameScriptMode={handleChangeNameScriptMode}
+                    onOpenTransliterator={() => setIsTransliteratorModalOpen(true)}
+                    submissions={appData.submissions || []}
+                    onCreateSubmission={handleCreateSubmission}
+                    onResubmitSubmission={handleResubmitSubmission}
+                    onDeleteSubmission={handleDeleteSubmission}
+                    onSpiritualApprove={handleSpiritualApproveSubmission}
+                    onSpiritualReturn={handleSpiritualReturnSubmission}
+                    onForwardToAdmin={handleForwardSubmissionToAdmin}
+                    onAdminAcknowledge={handleAdminAcknowledgeSubmission}
+                  />
+                )}
+              </main>
             </div>
           </div>
-        </main>
         </>
       )}
 

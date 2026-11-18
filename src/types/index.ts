@@ -135,12 +135,121 @@ export interface ChurchMember {
   registeredDate?: string;
 }
 
+export type OrgUnitId =
+  | 'elders_council'
+  | 'office'
+  | 'holistic_community'
+  | 'admin_finance'
+  | 'spiritual_council'
+  | 'evangelism'
+  | 'deacons'
+  | 'women_ministry'
+  | 'youth_ministry'
+  | 'children_ministry'
+  | 'chapels_dept'
+  | 'love_compassion'
+  | 'development'
+  | 'bible_school'
+  | 'rehoboth_school'
+  | 'men_fellowship'
+  | 'women_fellowship';
+
+export interface DepartmentMemberRecord {
+  id: number;
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  age?: number | string;
+  phone?: string;
+  roleOrClass: string;
+  educationOrLevel?: string;
+  status: string;
+  joinDate?: string;
+  notes?: string;
+}
+
+export interface DepartmentActivityRecord {
+  id: number;
+  date: string;
+  title: string;
+  category: string;
+  locationOrGroup?: string;
+  participantsCount?: number;
+  status: 'ታቅዷል' | 'በሂደት ላይ' | 'ተጠናቋል';
+  summary?: string;
+}
+
+export interface DepartmentFinanceRecord {
+  id: number;
+  date: string;
+  type: 'ገቢ' | 'ወጪ';
+  category: string;
+  description: string;
+  amount: number;
+  receiptOrRef?: string;
+  recordedBy?: string;
+}
+
+export interface DepartmentWorkspaceData {
+  members: DepartmentMemberRecord[];
+  activities: DepartmentActivityRecord[];
+  finances: DepartmentFinanceRecord[];
+  plans: AnnualPlanItem[];
+}
+
+export type SubmissionType = 'plan' | 'report' | 'letter';
+
+export type SubmissionStatus =
+  | 'pending_spiritual'
+  | 'returned_by_spiritual'
+  | 'approved_spiritual'
+  | 'forwarded_to_admin'
+  | 'acknowledged_by_admin';
+
+export interface SubmissionAttachment {
+  id: string;
+  name: string;
+  size?: number;
+  mimeType?: string;
+  storageKey?: string;
+  dataUrl?: string;
+}
+
+export interface MinistrySubmission {
+  id: number;
+  type: SubmissionType;
+  title: string;
+  year: string;
+  period?: string;
+  referenceNumber?: string;
+  content: string;
+  senderUnitId: OrgUnitId;
+  senderUnitName: string;
+  senderChapel?: string;
+  senderPersonName?: string;
+  attachedPlans?: AnnualPlanItem[];
+  attachmentName?: string;
+  attachmentDataUrl?: string;
+  attachmentKey?: string;
+  attachments?: SubmissionAttachment[];
+  status: SubmissionStatus;
+  submittedAt: string;
+  updatedAt?: string;
+  spiritualReviewedAt?: string;
+  spiritualNote?: string;
+  forwardedToAdmin?: boolean;
+  forwardedToAdminAt?: string;
+  forwardedToAdminNote?: string;
+  adminReviewedAt?: string;
+  adminNote?: string;
+}
+
 export interface AppData {
   years: string[];
   pins: {
     admin: string;
     leader: string;
     chapels?: { [chapelName: string]: string };
+    units?: { [unitId: string]: string };
   };
   teachers: Teacher[];
   subjects: string[];
@@ -163,7 +272,7 @@ export interface AppData {
   chapels?: string[];
   churchChildren?: ChurchChild[];
   churchMembers?: ChurchMember[];
+  departmentData?: { [unitId: string]: DepartmentWorkspaceData };
+  submissions?: MinistrySubmission[];
   ageReferenceYear?: number; // የአባላት ዕድሜ የተዘጋጀበት መነሻ ዓ/ም (ለምሳሌ 2017)
 }
-
-
