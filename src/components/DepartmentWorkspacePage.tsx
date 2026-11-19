@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Users,
@@ -32,6 +32,7 @@ import {
   DepartmentWorkspaceData,
   MinistrySubmission,
   OrgUnitId,
+  PlanDispatchItem,
   Role,
   Student
 } from '../types';
@@ -54,6 +55,11 @@ import { AdminHRPanel, AdminAssetsPanel } from './AdminHRAssetsPanel';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
 import { buildHouseholdContextMap, isMarriedWife } from '../utils/chapelDemographics';
+import type { AutoApplyDispatchMode } from './PlanDispatchPanel';
+
+const PlanBulkSenderPanel = lazy(() =>
+  import('./PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
+);
 
 interface DepartmentWorkspacePageProps {
   unitId: OrgUnitId;
@@ -100,6 +106,15 @@ interface DepartmentWorkspacePageProps {
   onSpiritualReturn?: (id: number, note: string) => void;
   onForwardToAdmin?: (id: number, note?: string) => void;
   onAdminAcknowledge?: (id: number, note?: string) => void;
+  // Bulk 2019 Plan Sender & Sector Receiver props
+  planDispatches?: PlanDispatchItem[];
+  onDispatchPlans?: (
+    packets: Omit<PlanDispatchItem, 'id' | 'sentAt' | 'status'>[],
+    autoApplyMode?: AutoApplyDispatchMode
+  ) => void;
+  onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
+  onReturnDispatch?: (dispatchId: number, note: string) => void;
+  onDeleteDispatch?: (id: number) => void;
 }
 
 type SubTabId =
@@ -112,6 +127,7 @@ type SubTabId =
   | 'hr'
   | 'assets'
   | 'plans'
+  | 'plan_dispatch'
   | 'consolidated_plans'
   | 'send_to_spiritual'
   | 'spiritual_review'
@@ -151,7 +167,12 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   onSpiritualApprove,
   onSpiritualReturn,
   onForwardToAdmin,
-  onAdminAcknowledge
+  onAdminAcknowledge,
+  planDispatches = [],
+  onDispatchPlans,
+  onAcceptDispatch,
+  onReturnDispatch,
+  onDeleteDispatch
 }) => {
   const { t, unitName: getUnitLabel, unitDesc: getUnitDescLabel } = useLanguage();
   const unit = getOrgUnitById(unitId);
@@ -627,6 +648,11 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     [submissions, unitId]
   );
 
+  const pendingUnitDispatches = useMemo(
+    () => planDispatches.filter((d) => d.targetUnitId === unitId && d.status === 'pending'),
+    [planDispatches, unitId]
+  );
+
   const departmentSummaryText = useMemo(() => {
     const completedActs = ws.activities.filter((a) => a.status === 'ተጠናቋል').length;
     const recentActs = ws.activities
@@ -731,16 +757,55 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           }
         ]
       : []),
+    ...(unitId === 'elders_council' || unitId === 'office' || unitId === 'spiritual_council'
+      ? [
+          {
+            id: 'plan_dispatch' as SubTabId,
+            label: t(`የ${currentYear} ዕቅድ መላኪያ (${planDispatches.length})`, `${currentYear} Plan Dispatcher (${planDispatches.length})`),
+            icon: Send
+          }
+        ]
+      : []),
     { id: 'members' as SubTabId, label: t(`የአባላት ዝርዝር (${ws.members.length})`, `Members (${ws.members.length})`), icon: Users },
     { id: 'activities' as SubTabId, label: t(`የአገልግሎት ተግባራት (${ws.activities.length})`, `Activities (${ws.activities.length})`), icon: ClipboardList },
     ...(unit.supportsFinance
       ? [{ id: 'finances' as SubTabId, label: t(`ፋይናንስና ሂሳብ (${ws.finances.length})`, `Finance & Budget (${ws.finances.length})`), icon: Wallet }]
       : []),
-    { id: 'plans' as SubTabId, label: t(`ዕቅድና ክንውን (${ws.plans.length})`, `Plans & Execution (${ws.plans.length})`), icon: Target }
+    {
+      id: 'plans' as SubTabId,
+      label:
+        pendingUnitDispatches.length > 0
+          ? t(
+              `ዕቅድና ክንውን (${ws.plans.length}) · ${pendingUnitDispatches.length} አዲስ`,
+              `Plans & Execution (${ws.plans.length}) · ${pendingUnitDispatches.length} New`
+            )
+          : t(`ዕቅድና ክንውን (${ws.plans.length})`, `Plans & Execution (${ws.plans.length})`),
+      icon: Target
+    }
   ];
 
   return (
     <div className="space-y-6">
+      {pendingUnitDispatches.length > 0 && activeSubTab !== 'plans' && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <div className="text-xs font-extrabold text-amber-950 flex items-center gap-2">
+            <Inbox className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>
+              {t(
+                `ከማዕከል የተላከ ${pendingUnitDispatches.length} አዲስ የ${getUnitLabel(unitId, unit.name)} ዕቅድ መቀበያ ውስጥ ይጠብቃል!`,
+                `${pendingUnitDispatches.length} new dispatched plan(s) waiting in ${getUnitLabel(unitId, unit.name)} inbox!`
+              )}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('plans')}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-extrabold cursor-pointer"
+          >
+            {t('ዕቅዱን ክፈትና ተቀበል →', 'Open & Accept Plan →')}
+          </button>
+        </div>
+      )}
       {/* Department Header & Contextual Breadcrumb */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -1407,8 +1472,28 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             onUpdateDepartmentData(unitId, (prev) => ({ ...prev, plans: nextPlans }))
           }
           onSendToSpiritual={isUnderSpiritualCouncil(unitId) ? onCreateSubmission : undefined}
+          planDispatches={planDispatches}
+          onAcceptDispatch={onAcceptDispatch}
+          onReturnDispatch={onReturnDispatch}
         />
       )}
+
+      {/* Sub-view: Central 2019 Plan Bulk Sender & Sector Distributor */}
+      {activeSubTab === 'plan_dispatch' &&
+        (unitId === 'elders_council' || unitId === 'office' || unitId === 'spiritual_council') &&
+        onDispatchPlans && (
+          <Suspense fallback={null}>
+            <PlanBulkSenderPanel
+              currentYear={currentYear}
+              sentByUnitId={unitId}
+              sentByName={getUnitLabel(unitId, unit.name)}
+              chapelList={chapelList}
+              dispatches={planDispatches}
+              onDispatchPlans={onDispatchPlans}
+              onDeleteDispatch={onDeleteDispatch}
+            />
+          </Suspense>
+        )}
 
       {/* Sub-view: Send Plans, Reports & Letters to Spiritual Council */}
       {activeSubTab === 'send_to_spiritual' && isUnderSpiritualCouncil(unitId) && (

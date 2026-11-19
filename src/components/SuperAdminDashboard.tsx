@@ -9,7 +9,8 @@ import {
   GraduationCap,
   Wallet,
   ArrowUpRight,
-  Search
+  Search,
+  Send
 } from 'lucide-react';
 import { AppData, OrgUnitId } from '../types';
 import {
@@ -27,6 +28,7 @@ interface SuperAdminDashboardProps {
   onOpenPinManager: () => void;
   onOpenOverviewStats: () => void;
   onOpenSyncModal: () => void;
+  onOpenPlanDispatcher?: () => void;
 }
 
 export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
@@ -35,7 +37,8 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   onOpenUnit,
   onOpenPinManager,
   onOpenOverviewStats,
-  onOpenSyncModal
+  onOpenSyncModal,
+  onOpenPlanDispatcher
 }) => {
   const { t, unitName, unitDesc } = useLanguage();
   const [unitSearch, setUnitSearch] = useState('');
@@ -96,6 +99,16 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {onOpenPlanDispatcher && (
+              <button
+                type="button"
+                onClick={onOpenPlanDispatcher}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-900 hover:bg-indigo-800 text-white transition cursor-pointer whitespace-nowrap"
+              >
+                <Send className="w-3.5 h-3.5 text-amber-300" />
+                <span>{t(`የ${currentYear} ዕቅድ መላኪያ`, `${currentYear} Plan Sender`)}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onOpenPinManager}
@@ -302,6 +315,14 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                     <td className="py-3 px-3 text-right text-slate-700 tabular-nums">
                       {u.id === 'children_ministry'
                         ? (appData.plans || []).length.toLocaleString()
+                        : u.id === 'chapels_dept'
+                        ? (
+                            ws.plans.length +
+                            Object.values(ws.chapelPlans || {}).reduce(
+                              (sum, list) => sum + (Array.isArray(list) ? list.length : 0),
+                              0
+                            )
+                          ).toLocaleString()
                         : ws.plans.length.toLocaleString()}
                     </td>
                     <td className="py-3 px-3 text-right font-semibold tabular-nums text-slate-800">

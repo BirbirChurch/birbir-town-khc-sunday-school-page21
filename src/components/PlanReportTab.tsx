@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Users } from 'lucide-react';
-import { AnnualPlanItem, ChurchChild, ChurchMember, MinistrySubmission, Student } from '../types';
+import { AnnualPlanItem, ChurchChild, ChurchMember, MinistrySubmission, PlanDispatchItem, Student } from '../types';
 import { downloadMultiSheetXLSX } from '../utils/csv';
 import { SundaySchoolAgeCohortCard } from './SundaySchoolAgeCohortCard';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
@@ -29,6 +29,9 @@ interface PlanReportTabProps {
   studentsByClass?: { [className: string]: Student[] };
   churchChildren?: ChurchChild[];
   churchMembers?: ChurchMember[];
+  planDispatches?: PlanDispatchItem[];
+  onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
+  onReturnDispatch?: (dispatchId: number, note: string) => void;
 }
 
 export const PlanReportTab: React.FC<PlanReportTabProps> = ({
@@ -41,7 +44,10 @@ export const PlanReportTab: React.FC<PlanReportTabProps> = ({
   classList = [],
   studentsByClass = {},
   churchChildren = [],
-  churchMembers = []
+  churchMembers = [],
+  planDispatches = [],
+  onAcceptDispatch,
+  onReturnDispatch
 }) => {
   const { t, unitName } = useLanguage();
 
@@ -114,6 +120,9 @@ export const PlanReportTab: React.FC<PlanReportTabProps> = ({
         plans={plans}
         onSavePlans={onImportPlans}
         onSendToSpiritual={onSendToSpiritual}
+        planDispatches={planDispatches}
+        onAcceptDispatch={onAcceptDispatch}
+        onReturnDispatch={onReturnDispatch}
       />
 
       {/* Sunday School Student Age Cohort Breakdown (0-3, 4-6, 7-9, 10-12, 13-14: Male / Female / Total) */}

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Shield,
   KeyRound,
@@ -11,7 +11,8 @@ import {
   Languages,
   BarChart3,
   X,
-  Building2
+  Building2,
+  Send
 } from 'lucide-react';
 import {
   Role,
@@ -27,8 +28,10 @@ import {
   ChurchChild,
   ChurchMember,
   DepartmentWorkspaceData,
-  MinistrySubmission
+  MinistrySubmission,
+  PlanDispatchItem
 } from './types';
+import type { AutoApplyDispatchMode } from './components/PlanDispatchPanel';
 import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from './constants/initialData';
 import {
   CHURCH_ORG_UNITS,
@@ -38,7 +41,7 @@ import {
 } from './constants/churchStructure';
 import { subscribeToAppData, syncAppDataToFirebase, saveToLocalStorage, countStudentsInData, exportBackupJSON, importBackupJSON } from './services/firebase';
 import { generateUniqueId, sanitizeAndDeduplicateAppData } from './utils/idGenerator';
-import { normalizeAmharicSearchText } from './utils/churchExcelParser';
+import { normalizeAmharicSearchText, mapToOfficialChapel } from './utils/amharicSearchAndChapel';
 import {
   assignSequentialCodesAndSortMembers,
   getNextFamilySubCode,
@@ -54,17 +57,42 @@ import {
 } from './utils/ageUpdater';
 import { Header } from './components/Header';
 import { LoginPortal } from './components/LoginPortal';
-import { mapToOfficialChapel } from './components/ChurchChildrenTab';
-import { PinManageTab } from './components/PinManageTab';
-import { FirebaseSyncModal } from './components/FirebaseSyncModal';
-import { NameTransliteratorModal } from './components/NameTransliteratorModal';
-import { ChurchStatisticsDashboardTab } from './components/ChurchStatisticsDashboardTab';
-import { SuperAdminDashboard } from './components/SuperAdminDashboard';
-import { DepartmentWorkspacePage } from './components/DepartmentWorkspacePage';
-import { ChildrenMinistryPortal } from './components/ChildrenMinistryPortal';
-import { ChapelsHubPage } from './components/ChapelsHubPage';
 import { NameScriptMode } from './utils/amharicTransliterator';
 import { useLanguage } from './context/LanguageContext';
+
+const PinManageTab = lazy(() =>
+  import('./components/PinManageTab').then((m) => ({ default: m.PinManageTab }))
+);
+const FirebaseSyncModal = lazy(() =>
+  import('./components/FirebaseSyncModal').then((m) => ({ default: m.FirebaseSyncModal }))
+);
+const NameTransliteratorModal = lazy(() =>
+  import('./components/NameTransliteratorModal').then((m) => ({ default: m.NameTransliteratorModal }))
+);
+const ChurchStatisticsDashboardTab = lazy(() =>
+  import('./components/ChurchStatisticsDashboardTab').then((m) => ({
+    default: m.ChurchStatisticsDashboardTab
+  }))
+);
+const SuperAdminDashboard = lazy(() =>
+  import('./components/SuperAdminDashboard').then((m) => ({ default: m.SuperAdminDashboard }))
+);
+const DepartmentWorkspacePage = lazy(() =>
+  import('./components/DepartmentWorkspacePage').then((m) => ({
+    default: m.DepartmentWorkspacePage
+  }))
+);
+const ChildrenMinistryPortal = lazy(() =>
+  import('./components/ChildrenMinistryPortal').then((m) => ({
+    default: m.ChildrenMinistryPortal
+  }))
+);
+const ChapelsHubPage = lazy(() =>
+  import('./components/ChapelsHubPage').then((m) => ({ default: m.ChapelsHubPage }))
+);
+const PlanBulkSenderPanel = lazy(() =>
+  import('./components/PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
+);
 
 export default function App() {
   const { t, unitName, chapelLabel } = useLanguage();
@@ -77,7 +105,7 @@ export default function App() {
   const [loggedInUnit, setLoggedInUnit] = useState<OrgUnitId | null>(null);
   const [activeOrgUnit, setActiveOrgUnit] = useState<OrgUnitId>('office');
   const [activeAdminView, setActiveAdminView] = useState<
-    'adminOverview' | 'pinManageTab' | 'churchOverviewStatsTab' | 'unitPage'
+    'adminOverview' | 'pinManageTab' | 'churchOverviewStatsTab' | 'planDispatchTab' | 'unitPage'
   >('adminOverview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
@@ -463,6 +491,146 @@ export default function App() {
                 }
               : s
           )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  // 2019 Master Plan Distribution (Sender -> Sector Receiver Inbox & DB)
+  const applyPlansToTargetUnit = (
+    prev: AppData,
+    targetUnitId: OrgUnitId,
+    targetChapel: string | undefined,
+    incomingPlans: AnnualPlanItem[],
+    mode: 'append' | 'replace'
+  ): AppData => {
+    const stamped = incomingPlans.map((p) => ({
+      ...p,
+      id: generateUniqueId()
+    }));
+
+    if (targetUnitId === 'children_ministry') {
+      const nextPlans =
+        mode === 'replace' ? stamped : [...(prev.plans || []), ...stamped];
+      return { ...prev, plans: nextPlans };
+    }
+
+    const deptMap = { ...(prev.departmentData || {}) };
+    if (targetUnitId === 'chapels_dept' && targetChapel) {
+      const ws = deptMap.chapels_dept || createEmptyDepartmentWorkspaceData();
+      const chPlansMap = { ...(ws.chapelPlans || {}) };
+      const existingCh = chPlansMap[targetChapel] || [];
+      chPlansMap[targetChapel] = mode === 'replace' ? stamped : [...existingCh, ...stamped];
+      deptMap.chapels_dept = { ...ws, chapelPlans: chPlansMap };
+      return { ...prev, departmentData: deptMap };
+    }
+
+    const ws = deptMap[targetUnitId] || createEmptyDepartmentWorkspaceData();
+    deptMap[targetUnitId] = {
+      ...ws,
+      plans: mode === 'replace' ? stamped : [...(ws.plans || []), ...stamped]
+    };
+    return { ...prev, departmentData: deptMap };
+  };
+
+  const handleDispatchPlans = useCallback(
+    (
+      packets: Omit<PlanDispatchItem, 'id' | 'sentAt' | 'status'>[],
+      autoApplyMode: AutoApplyDispatchMode = 'inbox_only'
+    ) => {
+      if (!packets.length) return;
+      const now = new Date().toISOString();
+      const isDirectPush = autoApplyMode === 'push_append' || autoApplyMode === 'push_replace';
+      const applyMode: 'append' | 'replace' =
+        autoApplyMode === 'push_replace' ? 'replace' : 'append';
+
+      updateAppData(
+        (prev) => {
+          let nextState = { ...prev };
+          const created: PlanDispatchItem[] = packets.map((pkt) => {
+            if (isDirectPush) {
+              nextState = applyPlansToTargetUnit(
+                nextState,
+                pkt.targetUnitId,
+                pkt.targetChapel,
+                pkt.plans,
+                applyMode
+              );
+            }
+            return {
+              ...pkt,
+              id: generateUniqueId(),
+              sentAt: now,
+              status: isDirectPush ? 'accepted' : 'pending',
+              ...(isDirectPush ? { acceptedAt: now, acceptedMode: applyMode } : {})
+            };
+          });
+
+          return {
+            ...nextState,
+            planDispatches: [...created, ...(nextState.planDispatches || [])]
+          };
+        },
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleAcceptDispatchedPlan = useCallback(
+    (dispatchId: number, mode: 'append' | 'replace') => {
+      const now = new Date().toISOString();
+      updateAppData(
+        (prev) => {
+          const target = (prev.planDispatches || []).find((d) => d.id === dispatchId);
+          if (!target) return prev;
+
+          const nextWithPlans = applyPlansToTargetUnit(
+            prev,
+            target.targetUnitId,
+            target.targetChapel,
+            target.plans || [],
+            mode
+          );
+
+          return {
+            ...nextWithPlans,
+            planDispatches: (nextWithPlans.planDispatches || []).map((d) =>
+              d.id === dispatchId
+                ? { ...d, status: 'accepted', acceptedAt: now, acceptedMode: mode }
+                : d
+            )
+          };
+        },
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleReturnDispatchedPlan = useCallback(
+    (dispatchId: number, note: string) => {
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          planDispatches: (prev.planDispatches || []).map((d) =>
+            d.id === dispatchId ? { ...d, status: 'returned', receiverNote: note } : d
+          )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleDeleteDispatchedPlan = useCallback(
+    (dispatchId: number) => {
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          planDispatches: (prev.planDispatches || []).filter((d) => d.id !== dispatchId)
         }),
         { immediate: true }
       );
@@ -2000,6 +2168,21 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
+                            setActiveAdminView('planDispatchTab');
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                            activeAdminView === 'planDispatchTab'
+                              ? 'bg-blue-900 text-white'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <Send className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t(`የ${currentYear} ዕቅድ መላኪያ`, `${currentYear} Plan Sender`)}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
                             setActiveAdminView('pinManageTab');
                             setIsMobileSidebarOpen(false);
                           }}
@@ -2083,6 +2266,16 @@ export default function App() {
 
               {/* Main Content Area */}
               <main className="flex-1 min-w-0 w-full">
+                <Suspense
+                  fallback={
+                    <div className="bg-white border border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 text-slate-600">
+                      <div className="w-8 h-8 border-3 border-blue-900 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-xs font-bold">
+                        {t('ገጹ በመከፈት ላይ ነው...', 'Loading workspace...')}
+                      </span>
+                    </div>
+                  }
+                >
                 {currentUserRole === 'admin' && activeAdminView === 'adminOverview' ? (
                   <SuperAdminDashboard
                     appData={appData}
@@ -2091,6 +2284,16 @@ export default function App() {
                     onOpenPinManager={() => setActiveAdminView('pinManageTab')}
                     onOpenOverviewStats={() => setActiveAdminView('churchOverviewStatsTab')}
                     onOpenSyncModal={() => setIsSyncModalOpen(true)}
+                    onOpenPlanDispatcher={() => setActiveAdminView('planDispatchTab')}
+                  />
+                ) : currentUserRole === 'admin' && activeAdminView === 'planDispatchTab' ? (
+                  <PlanBulkSenderPanel
+                    currentYear={currentYear}
+                    sentByName={t('ዋና አዲሚን (Super Admin)', 'Super Admin')}
+                    chapelList={appData.chapels || DEFAULT_CHAPELS}
+                    dispatches={appData.planDispatches || []}
+                    onDispatchPlans={handleDispatchPlans}
+                    onDeleteDispatch={handleDeleteDispatchedPlan}
                   />
                 ) : currentUserRole === 'admin' && activeAdminView === 'pinManageTab' ? (
                   <PinManageTab
@@ -2191,6 +2394,9 @@ export default function App() {
                     childrenCoordinatorPin={appData.pins?.childrenCoordinator || '5679'}
                     childrenLeaderPin={appData.pins?.units?.children_ministry || appData.pins?.leader || '5678'}
                     onSaveChildrenPins={handleSaveChildrenPins}
+                    planDispatches={appData.planDispatches || []}
+                    onAcceptDispatch={handleAcceptDispatchedPlan}
+                    onReturnDispatch={handleReturnDispatchedPlan}
                   />
                 ) : activeOrgUnit === 'chapels_dept' || loggedInChapel ? (
                   <ChapelsHubPage
@@ -2228,6 +2434,9 @@ export default function App() {
                     onUpdateChapelPlans={handleUpdateChapelPlans}
                     departmentDataMap={appData.departmentData || {}}
                     childrenPlans={appData.plans || DEFAULT_ANNUAL_PLAN}
+                    planDispatches={appData.planDispatches || []}
+                    onAcceptDispatch={handleAcceptDispatchedPlan}
+                    onReturnDispatch={handleReturnDispatchedPlan}
                   />
                 ) : (
                   <DepartmentWorkspacePage
@@ -2263,8 +2472,14 @@ export default function App() {
                     onSpiritualReturn={handleSpiritualReturnSubmission}
                     onForwardToAdmin={handleForwardSubmissionToAdmin}
                     onAdminAcknowledge={handleAdminAcknowledgeSubmission}
+                    planDispatches={appData.planDispatches || []}
+                    onDispatchPlans={handleDispatchPlans}
+                    onAcceptDispatch={handleAcceptDispatchedPlan}
+                    onReturnDispatch={handleReturnDispatchedPlan}
+                    onDeleteDispatch={handleDeleteDispatchedPlan}
                   />
                 )}
+                </Suspense>
               </main>
             </div>
           </div>
@@ -2277,7 +2492,7 @@ export default function App() {
             © {currentYear}{' '}
             {t(
               'የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን — አጥቢያዊ መዋቅር እና አገልግሎት ፖርታል',
-              'Birbir Town Kale Heywot Church — Parish Structure & Ministry Portal'
+              'Birbir Town Kale Heywet Church — Parish Structure & Ministry Portal'
             )}
           </span>
           <span className="text-[11px] text-slate-400">
@@ -2289,42 +2504,46 @@ export default function App() {
         </div>
       </footer>
 
-      {appData && (
-        <FirebaseSyncModal
-          isOpen={isSyncModalOpen}
-          onClose={() => setIsSyncModalOpen(false)}
-          appData={appData}
-          onDataRestored={(newData) => {
-            setAppData(newData);
-            syncAppDataToFirebase(newData);
-          }}
-          syncStatus={syncStatus}
-        />
+      {appData && isSyncModalOpen && (
+        <Suspense fallback={null}>
+          <FirebaseSyncModal
+            isOpen={isSyncModalOpen}
+            onClose={() => setIsSyncModalOpen(false)}
+            appData={appData}
+            onDataRestored={(newData) => {
+              setAppData(newData);
+              syncAppDataToFirebase(newData);
+            }}
+            syncStatus={syncStatus}
+          />
+        </Suspense>
       )}
 
-      {appData && (
-        <NameTransliteratorModal
-          isOpen={isTransliteratorModalOpen}
-          onClose={() => setIsTransliteratorModalOpen(false)}
-          churchMembers={
-            loggedInChapel
-              ? (appData.churchMembers || []).filter(
-                  (m) => mapToOfficialChapel(m.chapel || '') === mapToOfficialChapel(loggedInChapel)
-                )
-              : currentUserRole === 'teacher'
-              ? []
-              : appData.churchMembers || []
-          }
-          churchChildren={
-            loggedInChapel
-              ? (appData.churchChildren || []).filter(
-                  (c) => mapToOfficialChapel(c.chapel || '') === mapToOfficialChapel(loggedInChapel)
-                )
-              : currentUserRole === 'teacher'
-              ? []
-              : appData.churchChildren || []
-          }
-        />
+      {appData && isTransliteratorModalOpen && (
+        <Suspense fallback={null}>
+          <NameTransliteratorModal
+            isOpen={isTransliteratorModalOpen}
+            onClose={() => setIsTransliteratorModalOpen(false)}
+            churchMembers={
+              loggedInChapel
+                ? (appData.churchMembers || []).filter(
+                    (m) => mapToOfficialChapel(m.chapel || '') === mapToOfficialChapel(loggedInChapel)
+                  )
+                : currentUserRole === 'teacher'
+                ? []
+                : appData.churchMembers || []
+            }
+            churchChildren={
+              loggedInChapel
+                ? (appData.churchChildren || []).filter(
+                    (c) => mapToOfficialChapel(c.chapel || '') === mapToOfficialChapel(loggedInChapel)
+                  )
+                : currentUserRole === 'teacher'
+                ? []
+                : appData.churchChildren || []
+            }
+          />
+        </Suspense>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Target,
@@ -16,7 +16,7 @@ import {
   BarChart3,
   Loader2
 } from 'lucide-react';
-import { AnnualPlanItem, MinistrySubmission, OrgUnitId, SubmissionType } from '../types';
+import { AnnualPlanItem, MinistrySubmission, OrgUnitId, PlanDispatchItem, SubmissionType } from '../types';
 import { generateUniqueId } from '../utils/idGenerator';
 import {
   PLAN_PERIOD_META,
@@ -31,6 +31,10 @@ import {
 } from '../utils/planParser';
 import { useLanguage } from '../context/LanguageContext';
 
+const PlanSectorReceiverPanel = lazy(() =>
+  import('./PlanDispatchPanel').then((m) => ({ default: m.PlanSectorReceiverPanel }))
+);
+
 interface UnifiedPlanManagerProps {
   unitId: OrgUnitId;
   unitName: string;
@@ -41,6 +45,9 @@ interface UnifiedPlanManagerProps {
   onSendToSpiritual?: (
     payload: Omit<MinistrySubmission, 'id' | 'status' | 'submittedAt'>
   ) => void;
+  planDispatches?: PlanDispatchItem[];
+  onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
+  onReturnDispatch?: (dispatchId: number, note: string) => void;
 }
 
 const PERIOD_TABS: PlanPeriodKey[] = ['year', 'h1', 'h2', 'q1', 'q2', 'q3', 'q4'];
@@ -52,7 +59,10 @@ export const UnifiedPlanManager: React.FC<UnifiedPlanManagerProps> = ({
   plans,
   chapelName = null,
   onSavePlans,
-  onSendToSpiritual
+  onSendToSpiritual,
+  planDispatches = [],
+  onAcceptDispatch,
+  onReturnDispatch
 }) => {
   const { lang, t } = useLanguage();
   const [workMode, setWorkMode] = useState<'plan' | 'execution'>('plan');
@@ -100,7 +110,7 @@ export const UnifiedPlanManager: React.FC<UnifiedPlanManagerProps> = ({
     if (!file) return;
     setIsImporting(true);
     try {
-      const parsed = await parseAnnualPlanFile(file, chapelName || unitName);
+      const parsed = await parseAnnualPlanFile(file, chapelName || unitName, currentYear);
       if (parsed.length === 0) {
         showNotice(
           t(
@@ -187,6 +197,7 @@ export const UnifiedPlanManager: React.FC<UnifiedPlanManagerProps> = ({
     if (!pTask.trim()) return;
     const item: AnnualPlanItem = {
       id: editingId ?? generateUniqueId(),
+      year: currentYear,
       task: pTask.trim(),
       unit: pUnit.trim() || 'በቁጥር',
       yearPlan: Number(pYearPlan) || 0,
@@ -389,6 +400,19 @@ export const UnifiedPlanManager: React.FC<UnifiedPlanManagerProps> = ({
 
   return (
     <div className="space-y-4">
+      {onAcceptDispatch && (
+        <Suspense fallback={null}>
+          <PlanSectorReceiverPanel
+            unitId={unitId}
+            unitName={unitName}
+            chapelName={chapelName}
+            currentYear={currentYear}
+            dispatches={planDispatches}
+            onAcceptDispatch={onAcceptDispatch}
+            onReturnDispatch={onReturnDispatch}
+          />
+        </Suspense>
+      )}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>

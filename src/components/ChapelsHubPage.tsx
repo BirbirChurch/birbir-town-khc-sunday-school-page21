@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
 import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target, Sparkles, HeartHandshake } from 'lucide-react';
 import {
   AnnualPlanItem,
@@ -6,6 +6,7 @@ import {
   ChurchMember,
   DepartmentWorkspaceData,
   MinistrySubmission,
+  PlanDispatchItem,
   Role,
   Student
 } from '../types';
@@ -15,13 +16,18 @@ import { computeChapelYouthWomenStats } from '../utils/chapelDemographics';
 import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
 import { NameScriptMode } from '../utils/amharicTransliterator';
 import { useLanguage } from '../context/LanguageContext';
+import { mapToOfficialChapel } from '../utils/amharicSearchAndChapel';
 import { ChurchMasterTab } from './ChurchMasterTab';
-import { ChurchChildrenTab, mapToOfficialChapel } from './ChurchChildrenTab';
+import { ChurchChildrenTab } from './ChurchChildrenTab';
 import { ChurchStatisticsDashboardTab } from './ChurchStatisticsDashboardTab';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
 import { ChapelYouthRegistryTab, ChapelWomenRegistryTab } from './ChapelYouthWomenTabs';
+
+const PlanSectorReceiverPanel = lazy(() =>
+  import('./PlanDispatchPanel').then((m) => ({ default: m.PlanSectorReceiverPanel }))
+);
 
 interface ChapelsHubPageProps {
   currentYear: string;
@@ -68,6 +74,9 @@ interface ChapelsHubPageProps {
   onUpdateChapelPlans?: (chapelName: string, plans: AnnualPlanItem[]) => void;
   departmentDataMap?: { [unitId: string]: DepartmentWorkspaceData };
   childrenPlans?: AnnualPlanItem[];
+  planDispatches?: PlanDispatchItem[];
+  onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
+  onReturnDispatch?: (dispatchId: number, note: string) => void;
 }
 
 type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'youth' | 'women' | 'plans' | 'submissions';
@@ -106,7 +115,10 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   chapelPlansMap = {},
   onUpdateChapelPlans,
   departmentDataMap = {},
-  childrenPlans = []
+  childrenPlans = [],
+  planDispatches = [],
+  onAcceptDispatch,
+  onReturnDispatch
 }) => {
   const { t, unitName, chapelLabel } = useLanguage();
   const officialLockedChapel = lockedChapel ? mapToOfficialChapel(lockedChapel) : null;
@@ -141,8 +153,36 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
     [churchMembers, chapelList, currentYear]
   );
 
+  const pendingChapelDispatches = useMemo(() => {
+    return planDispatches.filter((d) => {
+      if (d.targetUnitId !== 'chapels_dept' || d.status !== 'pending') return false;
+      if (effectiveChapelScope) return d.targetChapel === effectiveChapelScope;
+      return true;
+    });
+  }, [planDispatches, effectiveChapelScope]);
+
   return (
     <div className="space-y-5">
+      {pendingChapelDispatches.length > 0 && activeTab !== 'plans' && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <div className="text-xs font-extrabold text-amber-950 flex items-center gap-2">
+            <Target className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>
+              {t(
+                `ከማዕከል የተላከ ${pendingChapelDispatches.length} አዲስ የቻፕል ዕቅድ መቀበያ ውስጥ ይጠብቃል!`,
+                `${pendingChapelDispatches.length} new dispatched chapel plan(s) waiting for acceptance!`
+              )}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('plans')}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-extrabold cursor-pointer"
+          >
+            {t('ዕቅዱን ክፈትና ተቀበል →', 'Open & Accept Plan →')}
+          </button>
+        </div>
+      )}
       {/* Header & Chapel Selector */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 print:hidden">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -304,6 +344,11 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                 ? t(`የ${effectiveChapelScope} ዕቅድና ክንውን`, `${chapelLabel(effectiveChapelScope)} Plans & Execution`)
                 : t('ዕቅድና ክንውን (የ10ሩም ቻፕሎች)', 'Plans & Execution (10 Chapels)')}
             </span>
+            {pendingChapelDispatches.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black tabular-nums">
+                {pendingChapelDispatches.length}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -542,9 +587,24 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
             chapelName={effectiveChapelScope}
             onSavePlans={(nextPlans) => onUpdateChapelPlans?.(effectiveChapelScope, nextPlans)}
             onSendToSpiritual={onCreateSubmission}
+            planDispatches={planDispatches}
+            onAcceptDispatch={onAcceptDispatch}
+            onReturnDispatch={onReturnDispatch}
           />
         ) : (
           <div className="space-y-5">
+            {onAcceptDispatch && (
+              <Suspense fallback={null}>
+                <PlanSectorReceiverPanel
+                  unitId="chapels_dept"
+                  unitName={unitName('chapels_dept')}
+                  currentYear={currentYear}
+                  dispatches={planDispatches}
+                  onAcceptDispatch={onAcceptDispatch}
+                  onReturnDispatch={onReturnDispatch}
+                />
+              </Suspense>
+            )}
             <section className="bg-white border border-slate-200 rounded-2xl p-5">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <div>

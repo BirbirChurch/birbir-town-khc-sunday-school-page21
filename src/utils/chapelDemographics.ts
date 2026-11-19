@@ -1,6 +1,6 @@
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { ChurchMember, WomenHouseholdCategory } from '../types';
-import { parseChildAge, mapToOfficialChapel } from '../components/ChurchChildrenTab';
+import { mapToOfficialChapel, parseNumericAgePure } from './amharicSearchAndChapel';
 import {
   getRootFamilyBaseCode,
   normalizeCodeForLookup,
@@ -11,15 +11,7 @@ export const parseMemberNumericAge = (
   rawAge: number | string | undefined,
   currentYearNum: number = 2018
 ): number | null => {
-  if (rawAge === undefined || rawAge === null || String(rawAge).trim() === '') return null;
-  const parsed = parseChildAge(rawAge, currentYearNum, 'auto');
-  if (parsed.age >= 0) return parsed.age;
-  const match = String(rawAge).match(/\d+/);
-  if (match) {
-    const num = parseInt(match[0], 10);
-    if (!isNaN(num) && num >= 0 && num <= 120) return num;
-  }
-  return null;
+  return parseNumericAgePure(rawAge, currentYearNum);
 };
 
 export const isMaleMember = (m: ChurchMember): boolean => {

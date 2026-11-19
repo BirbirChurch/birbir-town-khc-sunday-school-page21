@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
 import {
   Send,
   FileText,
@@ -30,9 +30,12 @@ import {
   SubmissionType
 } from '../types';
 import { CHURCH_ORG_UNITS } from '../constants/churchStructure';
-import { InlineDocumentViewer } from './InlineDocumentViewer';
 import { deleteAttachmentFile, saveAttachmentFile } from '../services/attachmentStorage';
 import { useLanguage } from '../context/LanguageContext';
+
+const InlineDocumentViewer = lazy(() =>
+  import('./InlineDocumentViewer').then((m) => ({ default: m.InlineDocumentViewer }))
+);
 
 export type SubmissionsPanelMode =
   | 'sender'
@@ -1451,12 +1454,20 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                     selectedAttachments[Math.min(activeAttachmentIdx, selectedAttachments.length - 1)];
                   if (!activeAtt) return null;
                   return (
-                    <InlineDocumentViewer
-                      key={`${selectedSub.id}_${activeAtt.id}`}
-                      fileName={activeAtt.name}
-                      dataUrl={activeAtt.dataUrl}
-                      storageKey={activeAtt.storageKey}
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="p-6 border border-slate-200 rounded-xl bg-slate-50 text-center text-xs font-bold text-slate-600">
+                          ፋይሉን ለማሳየት በመዘጋጀት ላይ...
+                        </div>
+                      }
+                    >
+                      <InlineDocumentViewer
+                        key={`${selectedSub.id}_${activeAtt.id}`}
+                        fileName={activeAtt.name}
+                        dataUrl={activeAtt.dataUrl}
+                        storageKey={activeAtt.storageKey}
+                      />
+                    </Suspense>
                   );
                 })()}
               </div>

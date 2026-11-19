@@ -260,9 +260,10 @@ const isHeaderOrNoiseRow = (cells: string[]): boolean => {
   return false;
 };
 
-const rowsToAnnualPlanItems = (
+export const rowsToAnnualPlanItems = (
   rows: string[][],
-  defaultRole: string
+  defaultRole: string,
+  planYear?: string
 ): AnnualPlanItem[] => {
   const items: AnnualPlanItem[] = [];
   if (!rows || rows.length === 0) return items;
@@ -403,6 +404,7 @@ const rowsToAnnualPlanItems = (
 
     items.push({
       id: generateUniqueId(),
+      ...(planYear ? { year: planYear } : {}),
       task: taskText,
       unit: unitText || 'በቁጥር',
       yearPlan: yPlan,
@@ -421,7 +423,7 @@ const rowsToAnnualPlanItems = (
   return items;
 };
 
-const plainTextLinesToRows = (text: string): string[][] => {
+export const plainTextLinesToRows = (text: string): string[][] => {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -468,7 +470,8 @@ const plainTextLinesToRows = (text: string): string[][] => {
 
 export const parseAnnualPlanFile = async (
   file: File,
-  defaultRole: string
+  defaultRole: string,
+  planYear?: string
 ): Promise<AnnualPlanItem[]> => {
   const lower = (file.name || '').toLowerCase();
 
@@ -486,7 +489,7 @@ export const parseAnnualPlanFile = async (
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!firstSheet) return [];
     const aoa = XLSX.utils.sheet_to_json<string[]>(firstSheet, { header: 1, defval: '' });
-    return rowsToAnnualPlanItems(aoa, defaultRole);
+    return rowsToAnnualPlanItems(aoa, defaultRole, planYear);
   }
 
   // 2. Word (.docx)
@@ -508,14 +511,14 @@ export const parseAnnualPlanFile = async (
           if (cells.some(Boolean)) tableRows.push(cells);
         });
       });
-      const parsedFromTables = rowsToAnnualPlanItems(tableRows, defaultRole);
+      const parsedFromTables = rowsToAnnualPlanItems(tableRows, defaultRole, planYear);
       if (parsedFromTables.length > 0) return parsedFromTables;
     }
 
     // Fallback to raw paragraphs / bulleted items
     const rawRes = await mammoth.extractRawText({ arrayBuffer: buffer });
     const textRows = plainTextLinesToRows(rawRes.value || '');
-    return rowsToAnnualPlanItems(textRows, defaultRole);
+    return rowsToAnnualPlanItems(textRows, defaultRole, planYear);
   }
 
   // 3. PDF (.pdf)
@@ -554,10 +557,10 @@ export const parseAnnualPlanFile = async (
       });
     }
 
-    return rowsToAnnualPlanItems(allRows, defaultRole);
+    return rowsToAnnualPlanItems(allRows, defaultRole, planYear);
   }
 
   // 4. Plain text fallback
   const text = await file.text();
-  return rowsToAnnualPlanItems(plainTextLinesToRows(text), defaultRole);
+  return rowsToAnnualPlanItems(plainTextLinesToRows(text), defaultRole, planYear);
 };

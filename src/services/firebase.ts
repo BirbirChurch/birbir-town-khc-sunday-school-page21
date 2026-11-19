@@ -4,7 +4,7 @@ import { AppData } from '../types';
 import { INITIAL_APP_DATA, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import { DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 import { sanitizeAndDeduplicateAppData } from '../utils/idGenerator';
-import { normalizeAmharicSearchText, mapToOfficialChapelStrict } from '../utils/churchExcelParser';
+import { normalizeAmharicSearchText, mapToOfficialChapelStrict } from '../utils/amharicSearchAndChapel';
 
 // Suppress noisy internal Firestore warnings in console
 try {
@@ -83,64 +83,81 @@ initFirebaseApp();
 
 export const firestore = firestoreInstance;
 
-// Load stored local data with recovery check across known localStorage keys
+let _cachedLocalData: AppData | null = null;
+
+// Load stored local data with fast-path on primary key and legacy recovery fallback
 export const loadStoredLocalData = (): AppData => {
+  if (_cachedLocalData) return _cachedLocalData;
   try {
-    const candidates: any[] = [];
+    let source: any = null;
 
-    const knownKeys = [
-      LOCAL_STORAGE_KEY,
-      BACKUP_STORAGE_KEY,
-      'kaleheywet_data',
-      'birbir_town_khc_data',
-      'sunday_school_data',
-      'church_data',
-      'students_data'
-    ];
-
-    knownKeys.forEach((k) => {
-      try {
-        const item = localStorage.getItem(k);
-        if (item) {
-          const parsed = JSON.parse(item);
-          if (parsed && typeof parsed === 'object') candidates.push(parsed);
-        }
-      } catch {}
-    });
-
+    // Fast path: check primary localStorage key first without scanning all legacy keys
     try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (
-          k &&
-          !knownKeys.includes(k) &&
-          (k.includes('birbir') || k.includes('kale') || k.includes('backup') || k.includes('student'))
-        ) {
-          const item = localStorage.getItem(k);
-          if (item) {
-            try {
-              const parsed = JSON.parse(item);
-              if (parsed && typeof parsed === 'object' && (parsed.students || parsed.teachers)) {
-                candidates.push(parsed);
-              }
-            } catch {}
-          }
+      const primaryItem = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (primaryItem) {
+        const parsed = JSON.parse(primaryItem);
+        if (parsed && typeof parsed === 'object') {
+          source = parsed;
         }
       }
     } catch {}
 
-    let bestSource: any = null;
-    let maxStudents = -1;
+    // Only scan legacy keys if primary key was missing or empty
+    if (!source) {
+      const candidates: any[] = [];
+      const legacyKeys = [
+        BACKUP_STORAGE_KEY,
+        'kaleheywet_data',
+        'birbir_town_khc_data',
+        'sunday_school_data',
+        'church_data',
+        'students_data'
+      ];
 
-    candidates.forEach((cand) => {
-      const studentCount = countStudentsInData(cand);
-      if (studentCount > maxStudents) {
-        maxStudents = studentCount;
-        bestSource = cand;
-      }
-    });
+      legacyKeys.forEach((k) => {
+        try {
+          const item = localStorage.getItem(k);
+          if (item) {
+            const parsed = JSON.parse(item);
+            if (parsed && typeof parsed === 'object') candidates.push(parsed);
+          }
+        } catch {}
+      });
 
-    const source = bestSource || candidates[0] || {};
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (
+            k &&
+            k !== LOCAL_STORAGE_KEY &&
+            !legacyKeys.includes(k) &&
+            (k.includes('birbir') || k.includes('kale') || k.includes('backup') || k.includes('student'))
+          ) {
+            const item = localStorage.getItem(k);
+            if (item) {
+              try {
+                const parsed = JSON.parse(item);
+                if (parsed && typeof parsed === 'object' && (parsed.students || parsed.teachers)) {
+                  candidates.push(parsed);
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch {}
+
+      let bestSource: any = null;
+      let maxStudents = -1;
+      candidates.forEach((cand) => {
+        const studentCount = countStudentsInData(cand);
+        if (studentCount > maxStudents) {
+          maxStudents = studentCount;
+          bestSource = cand;
+        }
+      });
+
+      source = bestSource || candidates[0] || {};
+    }
 
     const rawData: AppData = {
       ...INITIAL_APP_DATA,
@@ -172,10 +189,13 @@ export const loadStoredLocalData = (): AppData => {
           : INITIAL_APP_DATA.churchChildren || [],
       churchMembers: Array.isArray(source.churchMembers) ? source.churchMembers : [],
       departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
-      submissions: Array.isArray(source.submissions) ? source.submissions : []
+      submissions: Array.isArray(source.submissions) ? source.submissions : [],
+      planDispatches: Array.isArray(source.planDispatches) ? source.planDispatches : []
     };
 
-    return sanitizeAndDeduplicateAppData(rawData);
+    const sanitized = sanitizeAndDeduplicateAppData(rawData);
+    _cachedLocalData = sanitized;
+    return sanitized;
   } catch (e) {
     console.error('Error reading localStorage data', e);
   }
@@ -185,6 +205,7 @@ export const loadStoredLocalData = (): AppData => {
 export const saveToLocalStorage = (data: AppData) => {
   try {
     const sanitized = sanitizeAndDeduplicateAppData(data);
+    _cachedLocalData = sanitized;
     const jsonStr = JSON.stringify(sanitized);
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, jsonStr);
@@ -296,7 +317,9 @@ export const subscribeToAppData = (
   const initialLocal = loadStoredLocalData();
   onData(initialLocal);
 
-  initFirebaseApp();
+  if (!firestoreInstance) {
+    initFirebaseApp();
+  }
   const profile = getActiveProjectProfile();
 
   let unsubFirestore: (() => void) | null = null;
@@ -382,6 +405,10 @@ export const subscribeToAppData = (
           Array.isArray(val.submissions) && val.submissions.length > 0
             ? val.submissions
             : currentLocal.submissions || [],
+        planDispatches:
+          Array.isArray(val.planDispatches) && val.planDispatches.length > 0
+            ? val.planDispatches
+            : currentLocal.planDispatches || [],
         years: val.years && val.years.length > 0 ? val.years : currentLocal.years
       };
 
@@ -690,7 +717,8 @@ export const mergeImportedSundaySchoolData = (
         chapel: mapToOfficialChapelStrict(m.chapel || '')
       })),
       departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
-      submissions: Array.isArray(source.submissions) ? source.submissions : []
+      submissions: Array.isArray(source.submissions) ? source.submissions : [],
+      planDispatches: Array.isArray(source.planDispatches) ? source.planDispatches : []
     });
 
     saveToLocalStorage(replacedData);
@@ -823,7 +851,11 @@ export const mergeImportedSundaySchoolData = (
     submissions:
       Array.isArray(source.submissions) && source.submissions.length > 0
         ? source.submissions
-        : currentData.submissions || []
+        : currentData.submissions || [],
+    planDispatches:
+      Array.isArray(source.planDispatches) && source.planDispatches.length > 0
+        ? source.planDispatches
+        : currentData.planDispatches || []
   };
 
   const sanitized = sanitizeAndDeduplicateAppData(mergedData);
@@ -895,6 +927,7 @@ export const importBackupJSON = (
         churchMembers: source.churchMembers || [],
         departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
         submissions: Array.isArray(source.submissions) ? source.submissions : [],
+        planDispatches: Array.isArray(source.planDispatches) ? source.planDispatches : [],
         chapels: DEFAULT_CHAPELS
       });
       saveToLocalStorage(validData);

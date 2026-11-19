@@ -57,6 +57,7 @@ export interface SpiritualMember {
 
 export interface AnnualPlanItem {
   id: number;
+  year?: string;
   task: string;
   unit: string;
   yearPlan: number | string;
@@ -288,6 +289,26 @@ export interface MinistrySubmission {
   adminNote?: string;
 }
 
+export type PlanDispatchStatus = 'pending' | 'accepted' | 'returned';
+
+export interface PlanDispatchItem {
+  id: number;
+  year: string;
+  title: string;
+  sourceFileName?: string;
+  targetUnitId: OrgUnitId;
+  targetUnitName: string;
+  targetChapel?: string;
+  plans: AnnualPlanItem[];
+  sentByUnitId?: OrgUnitId;
+  sentByName: string;
+  sentAt: string;
+  status: PlanDispatchStatus;
+  acceptedAt?: string;
+  acceptedMode?: 'append' | 'replace';
+  receiverNote?: string;
+}
+
 export interface AppData {
   years: string[];
   pins: {
@@ -320,5 +341,6 @@ export interface AppData {
   churchMembers?: ChurchMember[];
   departmentData?: { [unitId: string]: DepartmentWorkspaceData };
   submissions?: MinistrySubmission[];
+  planDispatches?: PlanDispatchItem[];
   ageReferenceYear?: number; // የአባላት ዕድሜ የተዘጋጀበት መነሻ ዓ/ም (ለምሳሌ 2017)
 }

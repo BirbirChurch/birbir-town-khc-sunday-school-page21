@@ -3,7 +3,7 @@
  * Prevents timestamp collision even when called many times in the same millisecond or inside tight CSV import loops.
  */
 
-import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission } from '../types';
+import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission, PlanDispatchItem } from '../types';
 import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import { CHURCH_ORG_UNITS, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
@@ -23,8 +23,11 @@ export const generateUniqueId = (): number => {
  * If any duplicates or invalid IDs are found (such as identical Date.now() collisions from past imports),
  * a fresh unique ID is deterministically assigned to the duplicate.
  */
+const _sanitizedAppDataCache = new WeakSet<AppData>();
+
 export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
   if (!data || typeof data !== 'object') return data;
+  if (_sanitizedAppDataCache.has(data)) return data;
 
   const seenIds = new Set<number>();
   let modified = false;
@@ -301,6 +304,22 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       })
     : [];
 
+  // 10d. Sanitize planDispatches array
+  const sanitizedPlanDispatches: PlanDispatchItem[] = Array.isArray(data.planDispatches)
+    ? data.planDispatches.map((disp) => {
+        const checkedId = ensureUniqueId(disp?.id);
+        const dispPlans = Array.isArray(disp?.plans)
+          ? disp.plans.map((p) => {
+              const pId = ensureUniqueId(p?.id);
+              return pId !== p?.id ? { ...p, id: pId } : p;
+            })
+          : [];
+        return checkedId !== disp?.id || dispPlans !== disp?.plans
+          ? { ...disp, id: checkedId, plans: dispPlans }
+          : disp;
+      })
+    : [];
+
   // Sanitize weeklyAttendance & classSubjects to drop any non-Makoya..12th class keys
   const sanitizedWeeklyAttendance: AppData['weeklyAttendance'] = {};
   if (data.weeklyAttendance && typeof data.weeklyAttendance === 'object') {
@@ -345,18 +364,19 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     return { ...t, pin: candidate };
   });
 
-  // 12. Ensure baseline ageReferenceYear (default 2017 E.C.) and years include 2017-2018
+  // 12. Ensure baseline ageReferenceYear (default 2017 E.C.) and years include 2017-2019
   const existingYears = Array.isArray(data.years) ? data.years : [];
-  const mergedYears = Array.from(new Set(['2017', '2018', ...existingYears])).sort();
+  const mergedYears = Array.from(new Set(['2017', '2018', '2019', ...existingYears])).sort();
   if (mergedYears.length !== existingYears.length || !data.ageReferenceYear) {
     modified = true;
   }
 
   if (!modified) {
+    _sanitizedAppDataCache.add(data);
     return data;
   }
 
-  return {
+  const sanitizedResult: AppData = {
     ...data,
     years: mergedYears,
     ageReferenceYear: typeof data.ageReferenceYear === 'number' && data.ageReferenceYear > 1990 ? data.ageReferenceYear : 2017,
@@ -380,6 +400,9 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     churchChildren: sanitizedChurchChildren,
     churchMembers: sanitizedChurchMembers,
     departmentData: sanitizedDepartmentData,
-    submissions: sanitizedSubmissions
+    submissions: sanitizedSubmissions,
+    planDispatches: sanitizedPlanDispatches
   };
+  _sanitizedAppDataCache.add(sanitizedResult);
+  return sanitizedResult;
 };

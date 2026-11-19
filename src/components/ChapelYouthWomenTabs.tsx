@@ -23,8 +23,7 @@ import * as XLSX from 'xlsx';
 import { ChurchMember, Role, WomenHouseholdCategory } from '../types';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { useLanguage } from '../context/LanguageContext';
-import { mapToOfficialChapel } from './ChurchChildrenTab';
-import { matchesAmharicSearch } from '../utils/churchExcelParser';
+import { mapToOfficialChapel, matchesAmharicSearch } from '../utils/amharicSearchAndChapel';
 import { NameScriptMode, transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
 import {
   canonicalizeEducationLevel,

@@ -29,6 +29,7 @@ import {
   ChurchChild,
   ChurchMember,
   MinistrySubmission,
+  PlanDispatchItem,
   Role,
   SpiritualMember,
   Student,
@@ -172,6 +173,10 @@ interface ChildrenMinistryPortalProps {
   childrenCoordinatorPin?: string;
   childrenLeaderPin?: string;
   onSaveChildrenPins?: (coordinatorPin: string, leaderPin: string) => void;
+  // Incoming Dispatched Plans
+  planDispatches?: PlanDispatchItem[];
+  onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
+  onReturnDispatch?: (dispatchId: number, note: string) => void;
 }
 
 export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (props) => {
@@ -294,8 +299,36 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
     return dups;
   }, [appData.teachers]);
 
+  const pendingChildDispatches = useMemo(
+    () =>
+      (props.planDispatches || []).filter(
+        (d) => d.targetUnitId === 'children_ministry' && d.status === 'pending'
+      ),
+    [props.planDispatches]
+  );
+
   return (
     <div className="space-y-5">
+      {pendingChildDispatches.length > 0 && currentUserRole !== 'teacher' && activeSubTab !== 'planReportTab' && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <div className="text-xs font-extrabold text-amber-950 flex items-center gap-2">
+            <Target className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>
+              {t(
+                `ከማዕከል የተላከ ${pendingChildDispatches.length} አዲስ የልጆች አገልግሎት ዕቅድ መቀበያ ውስጥ ይጠብቃል!`,
+                `${pendingChildDispatches.length} new dispatched plan(s) waiting in Children Ministry inbox!`
+              )}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('planReportTab')}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-extrabold cursor-pointer"
+          >
+            {t('ዕቅዱን ክፈትና ተቀበል →', 'Open & Accept Plan →')}
+          </button>
+        </div>
+      )}
       {/* Header & Unified Children Ministry Summary */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 print:hidden">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -403,6 +436,11 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
+                {tab.id === 'planReportTab' && pendingChildDispatches.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black tabular-nums">
+                    {pendingChildDispatches.length}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -825,6 +863,9 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
             studentsByClass={appData.students?.[currentYear] || {}}
             churchChildren={appData.churchChildren || []}
             churchMembers={appData.churchMembers || []}
+            planDispatches={props.planDispatches || []}
+            onAcceptDispatch={props.onAcceptDispatch}
+            onReturnDispatch={props.onReturnDispatch}
           />
         )}
 
