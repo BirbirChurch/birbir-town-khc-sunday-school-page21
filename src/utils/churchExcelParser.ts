@@ -4,6 +4,7 @@ import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { generateUniqueId } from './idGenerator';
 import { assignSequentialCodesAndSortMembers } from './memberCodeGenerator';
 import { transliterateAmharicToEnglish } from './amharicTransliterator';
+import { canonicalizeEducationLevel, canonicalizeOccupation } from './amharicCategoryCanonicalizer';
 
 /**
  * Comprehensive Amharic text & homophone normalization for accurate search and matching.
@@ -1022,9 +1023,11 @@ export const parseChurchWorkbookAllSheets = (
           ? 'ሴ'
           : 'ወ';
 
-      // Edu, Occ, Relation
-      const edu = educationIdx !== -1 && row[educationIdx] ? String(row[educationIdx]).trim() : undefined;
-      const occ = occupationIdx !== -1 && row[occupationIdx] ? String(row[occupationIdx]).trim() : undefined;
+      // Edu, Occ, Relation (canonicalize equivalents like "Diploma"/"ድፕሎማ" or "house wife"/"የቤት እመቤት")
+      const rawEdu = educationIdx !== -1 && row[educationIdx] ? String(row[educationIdx]).trim() : undefined;
+      const rawOcc = occupationIdx !== -1 && row[occupationIdx] ? String(row[occupationIdx]).trim() : undefined;
+      const edu = canonicalizeEducationLevel(rawEdu);
+      const occ = canonicalizeOccupation(rawOcc);
       const rel = relationIdx !== -1 && row[relationIdx] ? String(row[relationIdx]).trim() : '';
 
       // Direct Phone Extraction across ALL phone columns + full row fallback
@@ -1407,13 +1410,13 @@ export const parseChurchWorkbookAllSheets = (
         gender: m.gender === 'ሴ' ? 'ሴ' : 'ወ',
         age: ageNum,
         educationLevel:
-          m.educationLevel ||
+          canonicalizeEducationLevel(m.educationLevel) ||
           (ageNum <= 3
             ? 'ጨቅላ/ያልጀመረ'
             : ageNum <= 6
-            ? `መዋዕለ ሕፃናት (KG ${Math.min(3, Math.max(1, ageNum - 3))})`
+            ? 'መዋዕለ ሕፃናት (KG)'
             : `${ageNum - 6}ኛ ክፍል`),
-        occupation: m.occupation || (ageNum <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
+        occupation: canonicalizeOccupation(m.occupation) || (ageNum <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
         chapel: m.chapel || DEFAULT_CHAPELS[0],
         parentName: m.parentName,
         phone: m.phone,

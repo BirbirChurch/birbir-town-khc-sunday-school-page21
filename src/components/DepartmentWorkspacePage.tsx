@@ -53,6 +53,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { AdminHRPanel, AdminAssetsPanel } from './AdminHRAssetsPanel';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
+import { buildHouseholdContextMap, isMarriedWife } from '../utils/chapelDemographics';
 
 interface DepartmentWorkspacePageProps {
   unitId: OrgUnitId;
@@ -300,11 +301,18 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   // Matching candidates from Church Master Registry for Women/Youth/Men ministries
   const churchSyncCandidates = useMemo(() => {
     if (!unit?.churchMemberSyncFilter) return [];
+    const yearNum = parseInt(currentYear, 10) || 2018;
+    const householdMap =
+      unit.churchMemberSyncFilter === 'women'
+        ? buildHouseholdContextMap(churchMembers, yearNum)
+        : null;
+
     return churchMembers.filter((cm) => {
       const g = String(cm.gender || '').trim();
       const ageNum = typeof cm.age === 'number' ? cm.age : parseInt(String(cm.age ?? ''), 10);
-      if (unit.churchMemberSyncFilter === 'women') {
-        return (g === 'ሴ' || g.includes('ሴት')) && (isNaN(ageNum) || ageNum >= 18);
+      if (unit.churchMemberSyncFilter === 'women' && householdMap) {
+        // ሴቶች ዘርፍ ውስጥ መካተት ያለባቸው የባል ሚስት የሆኑ (ባለትዳር) ሴቶች ብቻ ናቸው
+        return isMarriedWife(cm, householdMap, yearNum);
       }
       if (unit.churchMemberSyncFilter === 'men') {
         return (g === 'ወ' || g.includes('ወንድ')) && (isNaN(ageNum) || ageNum >= 18);
@@ -314,7 +322,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       }
       return false;
     });
-  }, [churchMembers, unit?.churchMemberSyncFilter]);
+  }, [churchMembers, unit?.churchMemberSyncFilter, currentYear]);
 
   if (!unit) return null;
 
@@ -335,7 +343,12 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         roleOrClass: unit.roleOptions[unit.roleOptions.length - 1] || 'መደበኛ አባል',
         educationOrLevel: cm.educationLevel,
         status: 'ንቁ',
-        notes: cm.chapel ? `ከ${cm.chapel} ቋት` : 'ከዋናው ቋት'
+        notes:
+          unit.churchMemberSyncFilter === 'women'
+            ? `${cm.chapel ? `ከ${cm.chapel} ቋት · ` : ''}የባል ሚስት (ባለትዳር)`
+            : cm.chapel
+            ? `ከ${cm.chapel} ቋት`
+            : 'ከዋናው ቋት'
       });
     });
 
@@ -386,7 +399,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     const record: DepartmentMemberRecord = {
       id: editingMemberId ?? generateUniqueId(),
       name: mName.trim(),
-      gender: mGender,
+      gender: unit.churchMemberSyncFilter === 'women' ? 'ሴ' : mGender,
       age: mAge.trim() ? Number(mAge) || mAge.trim() : undefined,
       phone: mPhone.trim() || undefined,
       roleOrClass: mRole.trim() || 'አባል',
@@ -1024,7 +1037,11 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-900 transition cursor-pointer whitespace-nowrap"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>ከዋናው ቋት አስገባ ({churchSyncCandidates.length})</span>
+                  <span>
+                    {unit.churchMemberSyncFilter === 'women'
+                      ? t(`የባል ሚስት የሆኑትን ከቋት አስገባ (${churchSyncCandidates.length})`, `Sync Married Wives (${churchSyncCandidates.length})`)
+                      : t(`ከዋናው ቋት አስገባ (${churchSyncCandidates.length})`, `Sync from Registry (${churchSyncCandidates.length})`)}
+                  </span>
                 </button>
               )}
               <button
@@ -1037,6 +1054,15 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               </button>
             </div>
           </div>
+
+          {unit.churchMemberSyncFilter === 'women' && (
+            <div className="mx-5 mt-4 bg-rose-50/80 border border-rose-200 text-rose-950 rounded-xl px-4 py-2.5 text-xs font-bold">
+              {t(
+                'ማሳሰቢያ፦ በሴቶች ዘርፍ ውስጥ መካተት ያለባቸው የባል ሚስት የሆኑ (ባለትዳር) ሴቶች ብቻ ናቸው — ሌሎች አይካተቱም።',
+                'Note: Only married women (wives) are included in the Women Ministry sector.'
+              )}
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
@@ -1482,6 +1508,14 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               </button>
             </div>
             <form onSubmit={handleSaveMember} className="space-y-3 mt-4 text-xs">
+              {unit.churchMemberSyncFilter === 'women' && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-950 rounded-xl px-3 py-2 text-[11px] font-bold">
+                  {t(
+                    'በሴቶች ዘርፍ ውስጥ የሚመዘገቡት የባል ሚስት የሆኑ (ባለትዳር) ሴቶች ብቻ ናቸው።',
+                    'Only married women (wives) may be registered here.'
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block font-bold text-slate-700 mb-1">ሙሉ ስም *</label>
                 <input
@@ -1496,12 +1530,15 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">ጾታ</label>
                   <select
-                    value={mGender}
+                    value={unit.churchMemberSyncFilter === 'women' ? 'ሴ' : mGender}
+                    disabled={unit.churchMemberSyncFilter === 'women'}
                     onChange={(e) => setMGender(e.target.value as 'ወ' | 'ሴ')}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold disabled:bg-slate-100"
                   >
-                    <option value="ወ">ወንድ</option>
-                    <option value="ሴ">ሴት</option>
+                    {unit.churchMemberSyncFilter !== 'women' && <option value="ወ">ወንድ</option>}
+                    <option value="ሴ">
+                      {unit.churchMemberSyncFilter === 'women' ? 'ሴት (የባል ሚስት)' : 'ሴት'}
+                    </option>
                   </select>
                 </div>
                 <div>

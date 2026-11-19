@@ -33,7 +33,7 @@ export const UNIT_TRANSLATIONS_EN: Record<OrgUnitId, { name: string; shortDesc: 
   },
   women_ministry: {
     name: 'Women Ministry',
-    shortDesc: 'Women spiritual fellowship, prayer groups, Bible study, and family encouragement'
+    shortDesc: 'Married women (wives) spiritual fellowship, prayer groups, Bible study, and family encouragement'
   },
   youth_ministry: {
     name: 'Youth Ministry',
@@ -69,7 +69,7 @@ export const UNIT_TRANSLATIONS_EN: Record<OrgUnitId, { name: string; shortDesc: 
   },
   women_fellowship: {
     name: 'Women Fellowship Sector',
-    shortDesc: 'Women mutual support, emergency assistance, and fellowship contributions'
+    shortDesc: 'Married women (wives) mutual support, emergency assistance, and fellowship contributions'
   }
 };
 

@@ -1,6 +1,24 @@
 import { ChurchMember } from '../types';
-import { normalizeAmharicSearchText } from './churchExcelParser';
 import { normalizeStudentGender } from './sundaySchoolAgeStats';
+import {
+  UNSPECIFIED_CATEGORY_KEY,
+  UNSPECIFIED_CATEGORY_LABEL,
+  canonicalizeEducationLevel,
+  canonicalizeOccupation,
+  normalizeEducationLevelValue,
+  normalizeOccupationValue,
+  normalizeMemberCategoryValue
+} from './amharicCategoryCanonicalizer';
+
+export {
+  UNSPECIFIED_CATEGORY_KEY,
+  UNSPECIFIED_CATEGORY_LABEL,
+  canonicalizeEducationLevel,
+  canonicalizeOccupation,
+  normalizeEducationLevelValue,
+  normalizeOccupationValue,
+  normalizeMemberCategoryValue
+};
 
 export interface MemberGenderCounts {
   male: number;
@@ -34,9 +52,6 @@ export interface ChurchMemberDetailedBreakdownStats {
   educationLevels: DetailedCategoryRow[];
   occupations: DetailedCategoryRow[];
 }
-
-export const UNSPECIFIED_CATEGORY_KEY = '__unspecified__';
-export const UNSPECIFIED_CATEGORY_LABEL = 'ያልተገለጸ';
 
 export const SUGGESTED_EDUCATION_LEVELS: string[] = [
   'ጨቅላ/ያልጀመረ',
@@ -100,25 +115,6 @@ const addBooleanStatus = (
   else addGender(breakdown.unknown, g);
 };
 
-export const normalizeMemberCategoryValue = (
-  raw: string | undefined | null
-): { key: string; label: string; isUnspecified: boolean } => {
-  const cleaned = String(raw ?? '').trim().replace(/\s+/g, ' ');
-  if (!cleaned || cleaned === '-' || cleaned === '—' || cleaned === 'ያልተገለጸ') {
-    return {
-      key: UNSPECIFIED_CATEGORY_KEY,
-      label: UNSPECIFIED_CATEGORY_LABEL,
-      isUnspecified: true
-    };
-  }
-  const normKey = normalizeAmharicSearchText(cleaned) || cleaned.toLowerCase();
-  return {
-    key: normKey,
-    label: cleaned,
-    isUnspecified: false
-  };
-};
-
 export const computeChurchMemberDetailedBreakdown = (
   members: ChurchMember[] = []
 ): ChurchMemberDetailedBreakdownStats => {
@@ -133,9 +129,10 @@ export const computeChurchMemberDetailedBreakdown = (
   const registerCategory = (
     map: Map<string, DetailedCategoryRow>,
     rawValue: string | undefined,
-    g: 'male' | 'female' | 'unspecified'
+    g: 'male' | 'female' | 'unspecified',
+    kind: 'education' | 'occupation'
   ) => {
-    const { key, label, isUnspecified } = normalizeMemberCategoryValue(rawValue);
+    const { key, label, isUnspecified } = normalizeMemberCategoryValue(rawValue, kind);
     let entry = map.get(key);
     if (!entry) {
       entry = {
@@ -163,8 +160,8 @@ export const computeChurchMemberDetailedBreakdown = (
     addBooleanStatus(lordsSupper, member.takesLordsSupper, g);
     addBooleanStatus(tithe, member.paysTithe, g);
 
-    registerCategory(eduMap, member.educationLevel, g);
-    registerCategory(occMap, member.occupation, g);
+    registerCategory(eduMap, member.educationLevel, g, 'education');
+    registerCategory(occMap, member.occupation, g, 'occupation');
   }
 
   const sortRows = (rows: DetailedCategoryRow[]): DetailedCategoryRow[] =>

@@ -41,6 +41,7 @@ import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { NameCrossReferenceModal } from './NameCrossReferenceModal';
 import { AnnualAgeIncrementModal } from './AnnualAgeIncrementModal';
 import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
+import { canonicalizeEducationLevel, canonicalizeOccupation } from '../utils/amharicCategoryCanonicalizer';
 import {
   matchesAmharicSearch,
   parseChurchWorkbookAllSheets,
@@ -1030,8 +1031,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     setFormName(child.name);
     setFormGender((child.gender as 'ወ' | 'ሴ') || 'ወ');
     setFormAge(String(child.age || '5'));
-    setFormEducationLevel(child.educationLevel || '1ኛ ክፍል');
-    setFormOccupation(child.occupation || 'ተማሪ');
+    setFormEducationLevel(canonicalizeEducationLevel(child.educationLevel) || '1ኛ ክፍል');
+    setFormOccupation(canonicalizeOccupation(child.occupation) || 'ተማሪ');
     setFormChapel(officialLoggedInChapel || child.chapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
     setFormParent(child.parentName || '');
     setFormPhone(child.phone || '');
@@ -1064,8 +1065,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         name: formName.trim(),
         gender: formGender || 'ወ',
         age: ageNum,
-        educationLevel: formEducationLevel.trim() || undefined,
-        occupation: formOccupation.trim() || 'ተማሪ',
+        educationLevel: canonicalizeEducationLevel(formEducationLevel),
+        occupation: canonicalizeOccupation(formOccupation) || 'ተማሪ',
         chapel: officialCh,
         parentName: formParent.trim() || matchedChildFamilyHead.parentName || matchedChildFamilyHead.name,
         phone: formPhone.trim() || matchedChildFamilyHead.phone || undefined,
@@ -1089,8 +1090,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       name: formName.trim(),
       gender: formGender || 'ወ',
       age: isNaN(parsedFormAge) ? 5 : Math.max(0, parsedFormAge),
-      educationLevel: formEducationLevel.trim() || undefined,
-      occupation: formOccupation.trim() || undefined,
+      educationLevel: canonicalizeEducationLevel(formEducationLevel),
+      occupation: canonicalizeOccupation(formOccupation),
       chapel: officialLoggedInChapel || formChapel.trim() || undefined,
       parentName: formParent.trim() || undefined,
       phone: formPhone.trim() || undefined,
@@ -1199,8 +1200,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         c.gender === 'ወ' ? 'ወንድ' : c.gender === 'ሴ' ? 'ሴት' : '-',
         c.age || '-',
         ageGroupStr,
-        c.educationLevel || (numAge <= 3 ? 'ጨቅላ' : numAge <= 6 ? 'መዋዕለ ሕፃናት' : `${numAge - 6}ኛ ክፍል`),
-        c.occupation || (numAge <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
+        canonicalizeEducationLevel(c.educationLevel) || (numAge <= 3 ? 'ጨቅላ/ያልጀመረ' : numAge <= 6 ? 'መዋዕለ ሕፃናት (KG)' : `${numAge - 6}ኛ ክፍል`),
+        canonicalizeOccupation(c.occupation) || (numAge <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
         c.chapel || 'ዋናው ማዕከል ቻፕል',
         c.isEnrolled ? 'አዎ (ይማራል)' : 'አይማርም',
         c.enrolledClass || '-',
@@ -2375,7 +2376,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                                 <td className="py-2 px-3 text-center font-bold text-slate-800">
                                   {child.age !== undefined && child.age !== null && child.age !== '' ? `${child.age} ዓመት` : '-'}
                                 </td>
-                                <td className="py-2 px-3 text-slate-700">{child.educationLevel || '-'}</td>
+                                <td className="py-2 px-3 text-slate-700">{canonicalizeEducationLevel(child.educationLevel) || '-'}</td>
                                 <td className="py-2 px-3">
                                   {child.isEnrolled ? (
                                     <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-bold text-[10px] border border-emerald-200">
@@ -2535,7 +2536,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                           <td className="py-2.5 px-3">
                             <span className="inline-flex items-center gap-1 font-semibold text-[11px] text-indigo-900 bg-indigo-50/90 px-2 py-0.5 rounded-lg border border-indigo-200/70 print:border-none print:bg-transparent print:p-0">
                               <BookOpen className="w-3 h-3 text-indigo-600 print:hidden shrink-0" />
-                              <span>{child.educationLevel || '-'}</span>
+                              <span>{canonicalizeEducationLevel(child.educationLevel) || '-'}</span>
                             </span>
                           </td>
 
@@ -2543,7 +2544,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                           <td className="py-2.5 px-3">
                             <span className="inline-flex items-center gap-1 font-medium text-[11px] text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg print:border-none print:bg-transparent print:p-0">
                               <Briefcase className="w-3 h-3 text-slate-500 print:hidden shrink-0" />
-                              <span>{child.occupation || '-'}</span>
+                              <span>{canonicalizeOccupation(child.occupation) || '-'}</span>
                             </span>
                           </td>
 
@@ -3661,8 +3662,8 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                                   <td className="py-2 px-2 text-center font-bold tabular-nums text-slate-800">
                                     {row.age} ዓመት
                                   </td>
-                                  <td className="py-2 px-2.5 text-indigo-900 font-semibold">{row.educationLevel || '-'}</td>
-                                  <td className="py-2 px-2.5 text-slate-700">{row.occupation || '-'}</td>
+                                  <td className="py-2 px-2.5 text-indigo-900 font-semibold">{canonicalizeEducationLevel(row.educationLevel) || '-'}</td>
+                                  <td className="py-2 px-2.5 text-slate-700">{canonicalizeOccupation(row.occupation) || '-'}</td>
                                   <td className="py-2 px-2.5 text-blue-900 font-bold">{row.chapel || '-'}</td>
                                   <td className="py-2 px-2.5 text-slate-600">{row.parentName || '-'}</td>
                                   <td className="py-2 px-2.5 font-mono text-[11px] font-bold text-emerald-900">

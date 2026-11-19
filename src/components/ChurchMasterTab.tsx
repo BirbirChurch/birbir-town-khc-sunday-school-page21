@@ -62,6 +62,8 @@ import {
   SpiritualFilterValue
 } from './ChurchMemberBreakdownSection';
 import {
+  canonicalizeEducationLevel,
+  canonicalizeOccupation,
   computeChurchMemberDetailedBreakdown,
   normalizeMemberCategoryValue,
   SUGGESTED_EDUCATION_LEVELS,
@@ -169,6 +171,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const [formPhone, setFormPhone] = useState<string>('');
   const [formResidence, setFormResidence] = useState<string>('');
   const [formRelation, setFormRelation] = useState<string>('');
+  const [formWomenCategory, setFormWomenCategory] = useState<'auto' | 'married' | 'female_head' | 'other'>('auto');
   const [formFamilyCode, setFormFamilyCode] = useState<string>('');
   const [copiedCodeId, setCopiedCodeId] = useState<number | null>(null);
 
@@ -377,10 +380,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
       // Education Level & Occupation Category Filters
       if (selectedEducationKey !== 'all') {
-        if (normalizeMemberCategoryValue(m.educationLevel).key !== selectedEducationKey) return false;
+        if (normalizeMemberCategoryValue(m.educationLevel, 'education').key !== selectedEducationKey) return false;
       }
       if (selectedOccupationKey !== 'all') {
-        if (normalizeMemberCategoryValue(m.occupation).key !== selectedOccupationKey) return false;
+        if (normalizeMemberCategoryValue(m.occupation, 'occupation').key !== selectedOccupationKey) return false;
       }
 
       return true;
@@ -470,8 +473,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
           name: m.name,
           gender: m.gender === 'ሴ' || m.gender === 'ሴት' ? 'ሴ' : 'ወ',
           age: ageNum,
-          educationLevel: m.educationLevel || (ageNum <= 3 ? 'ጨቅላ' : ageNum <= 6 ? 'መዋዕለ ሕፃናት' : `${ageNum - 6}ኛ ክፍል`),
-          occupation: m.occupation || (ageNum <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
+          educationLevel:
+            canonicalizeEducationLevel(m.educationLevel) ||
+            (ageNum <= 3 ? 'ጨቅላ/ያልጀመረ' : ageNum <= 6 ? 'መዋዕለ ሕፃናት (KG)' : `${ageNum - 6}ኛ ክፍል`),
+          occupation: canonicalizeOccupation(m.occupation) || (ageNum <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
           chapel: officialChapel,
           parentName: m.parentName || undefined,
           phone: resolvedPhone || undefined,
@@ -611,8 +616,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         m.gender || '-',
         ageDisplay,
         ageGroup,
-        m.educationLevel || '-',
-        m.occupation || '-',
+        canonicalizeEducationLevel(m.educationLevel) || '-',
+        canonicalizeOccupation(m.occupation) || '-',
         boolToAmharic(m.isBaptized),
         boolToAmharic(m.takesLordsSupper),
         boolToAmharic(m.paysTithe),
@@ -885,6 +890,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormPhone('');
     setFormResidence('');
     setFormRelation('');
+    setFormWomenCategory('auto');
     setFormFamilyCode('');
     setIsAddModalOpen(true);
   };
@@ -908,6 +914,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormPhone('');
     setFormResidence('');
     setFormRelation('የቤተሰብ አባል');
+    setFormWomenCategory('auto');
     setFormFamilyCode('');
     if (codeStr) {
       const matches = findAllMatchingMembersByCode(effectiveMembers, codeStr, officialLoggedInChapel);
@@ -929,8 +936,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormName(m.name);
     setFormGender(m.gender || 'ወ');
     setFormAge(m.age !== undefined && m.age !== null && String(m.age).trim() !== '' ? String(m.age) : '30');
-    setFormEducationLevel(m.educationLevel || 'ዲግሪ');
-    setFormOccupation(m.occupation || 'የመንግሥት ሠራተኛ');
+    setFormEducationLevel(canonicalizeEducationLevel(m.educationLevel) || 'ዲግሪ');
+    setFormOccupation(canonicalizeOccupation(m.occupation) || 'የመንግሥት ሠራተኛ');
     setFormIsBaptized(boolToTriState(m.isBaptized));
     setFormTakesLordsSupper(boolToTriState(m.takesLordsSupper));
     setFormPaysTithe(boolToTriState(m.paysTithe));
@@ -939,6 +946,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormPhone(m.phone || '');
     setFormResidence(m.residence || '');
     setFormRelation(m.relationToHead || '');
+    setFormWomenCategory(m.womenCategory || 'auto');
     setFormFamilyCode(m.familyCode || '');
     setIsAddModalOpen(true);
   };
@@ -993,12 +1001,23 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       editingMember && (editWillReassignSubCode || editWillUnlinkToStandalone)
     );
 
+    const resolvedWomenCategory =
+      formGender === 'ሴ' && formWomenCategory !== 'auto'
+        ? formWomenCategory
+        : editingMember?.womenCategory;
+    const resolvedMaritalStatus =
+      resolvedWomenCategory === 'married'
+        ? 'ባለትዳር'
+        : resolvedWomenCategory === 'female_head'
+        ? 'ራሷ የቤቱ አባወራ'
+        : editingMember?.maritalStatus;
+
     const payload: Omit<ChurchMember, 'id'> = {
       name: formName.trim(),
       gender: formGender,
       age: isNaN(parsedFormAge) ? 30 : Math.max(0, parsedFormAge),
-      educationLevel: formEducationLevel.trim() || undefined,
-      occupation: formOccupation.trim() || undefined,
+      educationLevel: canonicalizeEducationLevel(formEducationLevel),
+      occupation: canonicalizeOccupation(formOccupation),
       isBaptized: triStateToBool(formIsBaptized),
       takesLordsSupper: triStateToBool(formTakesLordsSupper),
       paysTithe: triStateToBool(formPaysTithe),
@@ -1007,6 +1026,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       phone: resolvedPhone,
       residence: resolvedResidence,
       relationToHead: formRelation.trim() || undefined,
+      womenCategory: resolvedWomenCategory,
+      maritalStatus: resolvedMaritalStatus,
+      isYouth: editingMember?.isYouth,
+      youthMinistryRole: editingMember?.youthMinistryRole,
       familyCode: resolvedFamilyCode,
       memberCode: shouldReassignCodeOnEdit ? undefined : editingMember?.memberCode,
       registeredDate: editingMember?.registeredDate || new Date().toISOString().split('T')[0]
@@ -1725,8 +1748,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                               <td className="py-2 px-3 text-center font-bold text-slate-800">
                                 {m.age !== undefined && m.age !== null && m.age !== '' ? `${m.age} ዓመት` : '-'}
                               </td>
-                              <td className="py-2 px-3 text-slate-700">{m.educationLevel || '-'}</td>
-                              <td className="py-2 px-3 text-slate-700">{m.occupation || '-'}</td>
+                              <td className="py-2 px-3 text-slate-700">{canonicalizeEducationLevel(m.educationLevel) || '-'}</td>
+                              <td className="py-2 px-3 text-slate-700">{canonicalizeOccupation(m.occupation) || '-'}</td>
                               <td className="py-2 px-3 whitespace-nowrap">
                                 <div className="flex items-center gap-1 text-[10px] font-bold">
                                   <button
@@ -1923,8 +1946,8 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                         <td className="py-2.5 px-3 text-center font-bold tabular-nums">
                           {m.age !== undefined && m.age !== null && m.age !== '' ? `${m.age} ዓመት` : '-'}
                         </td>
-                        <td className="py-2.5 px-3 text-slate-700">{m.educationLevel || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-700">{m.occupation || '-'}</td>
+                        <td className="py-2.5 px-3 text-slate-700">{canonicalizeEducationLevel(m.educationLevel) || '-'}</td>
+                        <td className="py-2.5 px-3 text-slate-700">{canonicalizeOccupation(m.occupation) || '-'}</td>
                         <td className="py-2.5 px-3 whitespace-nowrap">
                           <div className="flex items-center gap-1 text-[10px] font-bold">
                             <button
@@ -2472,6 +2495,26 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                   </select>
                 </div>
               </div>
+
+              {formGender === 'ሴ' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    የሴቶች የቤተሰብ/የጋብቻ ምድብ (የሴቶች ቋት)
+                  </label>
+                  <select
+                    value={formWomenCategory}
+                    onChange={(e) =>
+                      setFormWomenCategory(e.target.value as 'auto' | 'married' | 'female_head' | 'other')
+                    }
+                    className="w-full px-3 py-2 text-xs border border-rose-200 rounded-xl font-bold bg-rose-50/40 text-slate-800"
+                  >
+                    <option value="auto">በራስ-ሰር ከቤተሰብ ኮድ/ዝምድና ይለይ</option>
+                    <option value="married">ባለትዳር የሆነች ሴት</option>
+                    <option value="female_head">ራሷ የቤቱ አባወራ የሆነች ሴት</option>
+                    <option value="other">ሌላ / ያላገባች</option>
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">የወላጅ/የቤተሰብ መሪ ስም</label>

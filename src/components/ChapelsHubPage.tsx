@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target } from 'lucide-react';
+import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target, Sparkles, HeartHandshake } from 'lucide-react';
 import {
   AnnualPlanItem,
   ChurchChild,
@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { computeChurchOverviewStatistics } from '../utils/churchOverviewStats';
+import { computeChapelYouthWomenStats } from '../utils/chapelDemographics';
 import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
 import { NameScriptMode } from '../utils/amharicTransliterator';
 import { useLanguage } from '../context/LanguageContext';
@@ -20,6 +21,7 @@ import { ChurchStatisticsDashboardTab } from './ChurchStatisticsDashboardTab';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
+import { ChapelYouthRegistryTab, ChapelWomenRegistryTab } from './ChapelYouthWomenTabs';
 
 interface ChapelsHubPageProps {
   currentYear: string;
@@ -68,7 +70,7 @@ interface ChapelsHubPageProps {
   childrenPlans?: AnnualPlanItem[];
 }
 
-type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'plans' | 'submissions';
+type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'youth' | 'women' | 'plans' | 'submissions';
 
 export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   currentYear,
@@ -132,6 +134,11 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   const visibleChapelRows = useMemo(
     () => overviewStats.chapelRows.filter((r) => !r.isUnassignedBucket),
     [overviewStats.chapelRows]
+  );
+
+  const youthWomenByChapel = useMemo(
+    () => computeChapelYouthWomenStats(churchMembers, chapelList, currentYear),
+    [churchMembers, chapelList, currentYear]
   );
 
   return (
@@ -220,6 +227,38 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab('youth')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'youth'
+                ? 'bg-blue-900 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>
+              {effectiveChapelScope
+                ? t(`የ${effectiveChapelScope} ወጣቶች ቋት`, `${chapelLabel(effectiveChapelScope)} Youth`)
+                : t('የቻፕሎች ወጣቶች ቋት', 'Chapels Youth Registry')}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('women')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'women'
+                ? 'bg-rose-800 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <HeartHandshake className="w-3.5 h-3.5" />
+            <span>
+              {effectiveChapelScope
+                ? t(`የ${effectiveChapelScope} ሴቶች ቋት`, `${chapelLabel(effectiveChapelScope)} Women`)
+                : t('የቻፕሎች ሴቶች ቋት', 'Chapels Women Registry')}
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('members')}
             className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
               activeTab === 'members'
@@ -303,75 +342,99 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                   <th className="py-3 px-4 text-left">{t('የቻፕል ስም', 'Chapel Name')}</th>
                   <th className="py-3 px-3 text-right">{t('ጠቅላላ ቤተሰብ', 'Households')}</th>
                   <th className="py-3 px-3 text-right">{t('አባላት (ወ/ሴ/ድምር)', 'Members (M/F/Total)')}</th>
-                  <th className="py-3 px-3 text-right">{t('ልጆች 0–14 (ወ/ሴ/ድምር)', 'Children 0–14 (M/F/Total)')}</th>
+                  <th className="py-3 px-3 text-right">{t('ልጆች 0–14', 'Children 0–14')}</th>
+                  <th className="py-3 px-3 text-right">{t('ወጣቶች 15–29', 'Youth 15–29')}</th>
+                  <th className="py-3 px-3 text-right">{t('ሴቶች (ባለትዳር / አባወራ)', 'Women (Married / Head)')}</th>
                   <th className="py-3 px-4 text-right">{t('ቻፕሉን ክፈት', 'Open Chapel')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {visibleChapelRows.map((row, idx) => (
-                  <tr key={row.chapelName} className="hover:bg-slate-50/70">
-                    <td className="py-3 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
-                    <td className="py-3 px-4 font-extrabold text-slate-900">{chapelLabel(row.chapelName)}</td>
-                    <td className="py-3 px-3 text-right font-bold text-slate-800 tabular-nums">
-                      {row.totalHouseholds.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-3 text-right tabular-nums text-slate-700">
-                      {t('ወ', 'M')} {row.members.male} · {t('ሴ', 'F')} {row.members.female} ·{' '}
-                      <strong className="text-slate-900">{row.members.total}</strong>
-                    </td>
-                    <td className="py-3 px-3 text-right tabular-nums text-slate-700">
-                      {t('ወ', 'M')} {row.children.male} · {t('ሴ', 'F')} {row.children.female} ·{' '}
-                      <strong className="text-slate-900">{row.children.total}</strong>
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <div className="inline-flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedChapel(row.chapelName);
-                            setActiveTab('members');
-                          }}
-                          className="text-xs font-bold text-blue-800 hover:underline cursor-pointer"
-                        >
-                          {t('አባላት', 'Members')}
-                        </button>
-                        <span className="text-slate-300">|</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedChapel(row.chapelName);
-                            setActiveTab('children');
-                          }}
-                          className="text-xs font-bold text-amber-800 hover:underline cursor-pointer"
-                        >
-                          {t('ልጆች', 'Children')}
-                        </button>
-                        <span className="text-slate-300">|</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedChapel(row.chapelName);
-                            setActiveTab('stats');
-                          }}
-                          className="text-xs font-bold text-emerald-800 hover:underline cursor-pointer"
-                        >
-                          {t('ስታቲስቲክስ', 'Stats')}
-                        </button>
-                        <span className="text-slate-300">|</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedChapel(row.chapelName);
-                            setActiveTab('plans');
-                          }}
-                          className="text-xs font-bold text-indigo-800 hover:underline cursor-pointer"
-                        >
-                          {t('ዕቅድና ክንውን', 'Plans')}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {visibleChapelRows.map((row, idx) => {
+                  const yw = youthWomenByChapel.get(row.chapelName);
+                  return (
+                    <tr key={row.chapelName} className="hover:bg-slate-50/70">
+                      <td className="py-3 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
+                      <td className="py-3 px-4 font-extrabold text-slate-900">{chapelLabel(row.chapelName)}</td>
+                      <td className="py-3 px-3 text-right font-bold text-slate-800 tabular-nums">
+                        {row.totalHouseholds.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-3 text-right tabular-nums text-slate-700">
+                        {t('ወ', 'M')} {row.members.male} · {t('ሴ', 'F')} {row.members.female} ·{' '}
+                        <strong className="text-slate-900">{row.members.total}</strong>
+                      </td>
+                      <td className="py-3 px-3 text-right tabular-nums text-slate-700">
+                        {t('ወ', 'M')} {row.children.male} · {t('ሴ', 'F')} {row.children.female} ·{' '}
+                        <strong className="text-slate-900">{row.children.total}</strong>
+                      </td>
+                      <td className="py-3 px-3 text-right tabular-nums text-slate-700">
+                        {t('ወ', 'M')} {yw?.youthMale ?? 0} · {t('ሴ', 'F')} {yw?.youthFemale ?? 0} ·{' '}
+                        <strong className="text-blue-900">{yw?.youthTotal ?? 0}</strong>
+                      </td>
+                      <td className="py-3 px-3 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                        <span className="text-rose-800 font-bold">{yw?.womenMarried ?? 0}</span> /{' '}
+                        <span className="text-purple-800 font-bold">{yw?.womenFemaleHead ?? 0}</span>
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChapel(row.chapelName);
+                              setActiveTab('children');
+                            }}
+                            className="text-xs font-bold text-amber-800 hover:underline cursor-pointer"
+                          >
+                            {t('ልጆች', 'Children')}
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChapel(row.chapelName);
+                              setActiveTab('youth');
+                            }}
+                            className="text-xs font-bold text-blue-700 hover:underline cursor-pointer"
+                          >
+                            {t('ወጣቶች', 'Youth')}
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChapel(row.chapelName);
+                              setActiveTab('women');
+                            }}
+                            className="text-xs font-bold text-rose-800 hover:underline cursor-pointer"
+                          >
+                            {t('ሴቶች', 'Women')}
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChapel(row.chapelName);
+                              setActiveTab('members');
+                            }}
+                            className="text-xs font-bold text-slate-700 hover:underline cursor-pointer"
+                          >
+                            {t('አባላት', 'Members')}
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChapel(row.chapelName);
+                              setActiveTab('plans');
+                            }}
+                            className="text-xs font-bold text-indigo-800 hover:underline cursor-pointer"
+                          >
+                            {t('ዕቅድና ክንውን', 'Plans')}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -402,6 +465,34 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
           nameScriptMode={nameScriptMode}
           onChangeNameScriptMode={onChangeNameScriptMode}
           onOpenTransliterator={onOpenTransliterator}
+        />
+      )}
+
+      {activeTab === 'youth' && (
+        <ChapelYouthRegistryTab
+          currentYear={currentYear}
+          churchMembers={churchMembers}
+          chapelList={chapelList}
+          loggedInChapel={effectiveChapelScope}
+          currentUserRole={currentUserRole}
+          onAddMember={onAddMember}
+          onUpdateMember={onUpdateMember}
+          onDeleteMember={onDeleteMember}
+          nameScriptMode={nameScriptMode}
+        />
+      )}
+
+      {activeTab === 'women' && (
+        <ChapelWomenRegistryTab
+          currentYear={currentYear}
+          churchMembers={churchMembers}
+          chapelList={chapelList}
+          loggedInChapel={effectiveChapelScope}
+          currentUserRole={currentUserRole}
+          onAddMember={onAddMember}
+          onUpdateMember={onUpdateMember}
+          onDeleteMember={onDeleteMember}
+          nameScriptMode={nameScriptMode}
         />
       )}
 

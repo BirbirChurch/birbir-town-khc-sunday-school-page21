@@ -7,6 +7,7 @@ import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher
 import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import { CHURCH_ORG_UNITS, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
+import { canonicalizeEducationLevel, canonicalizeOccupation } from './amharicCategoryCanonicalizer';
 
 let _lastUniqueId = Math.max(Date.now(), 1792849000000);
 
@@ -162,21 +163,45 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     ? data.churchChildren.map((c) => {
         const checkedId = ensureUniqueId(c?.id);
         const mappedChapel = (c?.chapel && legacyMap[c.chapel]) ? legacyMap[c.chapel] : c?.chapel;
-        if (checkedId !== c?.id || mappedChapel !== c?.chapel) {
+        const normEdu = canonicalizeEducationLevel(c?.educationLevel);
+        const normOcc = canonicalizeOccupation(c?.occupation);
+        if (
+          checkedId !== c?.id ||
+          mappedChapel !== c?.chapel ||
+          normEdu !== c?.educationLevel ||
+          normOcc !== c?.occupation
+        ) {
           modified = true;
-          return { ...c, id: checkedId, chapel: mappedChapel || DEFAULT_CHAPELS[0] };
+          return {
+            ...c,
+            id: checkedId,
+            chapel: mappedChapel || DEFAULT_CHAPELS[0],
+            educationLevel: normEdu,
+            occupation: normOcc
+          };
         }
         return c;
       })
     : [];
 
-  // 9. Sanitize churchMembers (unique IDs + sequential chapel codes & chapel ordering)
+  // 9. Sanitize churchMembers (unique IDs + canonical categories + sequential chapel codes & chapel ordering)
   let sanitizedChurchMembers = Array.isArray(data.churchMembers)
     ? data.churchMembers.map((m) => {
         const checkedId = ensureUniqueId(m?.id);
-        if (checkedId !== m?.id) {
+        const normEdu = canonicalizeEducationLevel(m?.educationLevel);
+        const normOcc = canonicalizeOccupation(m?.occupation);
+        if (
+          checkedId !== m?.id ||
+          normEdu !== m?.educationLevel ||
+          normOcc !== m?.occupation
+        ) {
           modified = true;
-          return { ...m, id: checkedId };
+          return {
+            ...m,
+            id: checkedId,
+            educationLevel: normEdu,
+            occupation: normOcc
+          };
         }
         return m;
       })

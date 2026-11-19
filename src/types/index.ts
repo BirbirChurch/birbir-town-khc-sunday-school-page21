@@ -114,6 +114,8 @@ export interface ChurchChild {
   registeredDate?: string; // የተመዘገበበት ቀን
 }
 
+export type WomenHouseholdCategory = 'married' | 'female_head' | 'other';
+
 export interface ChurchMember {
   id: number;
   memberCode?: string; // የአባል መለያ ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001)
@@ -131,6 +133,10 @@ export interface ChurchMember {
   phone?: string; // የወላጅ/አባል ስልክ ቁጥር
   residence?: string; // መኖሪያ ቀበሌ/መንደር
   relationToHead?: string; // የቤተሰብ ዝምድና (ምሳሌ፦ አባት፣ እናት፣ ልጅ...)
+  maritalStatus?: string; // የጋብቻ ሁኔታ (ባለትዳር፣ ራሷ የቤቱ አባወራ፣ ያላገባ...)
+  womenCategory?: WomenHouseholdCategory; // የሴቶች ምድብ (ባለትዳር / ራሳቸው አባወራ)
+  isYouth?: boolean; // በወጣቶች መረጃ ቋት ውስጥ በቀጥታ የተመዘገበ/ች
+  youthMinistryRole?: string; // በወጣቶች አገልግሎት ድርሻ
   sheetName?: string; // የኤክሴል ሺት ስም
   registeredDate?: string;
 }
