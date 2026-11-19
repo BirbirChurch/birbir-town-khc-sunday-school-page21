@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'leader' | 'teacher';
+export type Role = 'admin' | 'children_coordinator' | 'leader' | 'teacher';
 
 export interface Teacher {
   id: number;
@@ -189,11 +189,49 @@ export interface DepartmentFinanceRecord {
   recordedBy?: string;
 }
 
+export type HRCategory = 'full_time_minister' | 'admin_staff';
+
+export interface ChurchHRRecord {
+  id: number;
+  category: HRCategory;
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  roleTitle: string;
+  department?: string;
+  phone?: string;
+  hireDate?: string;
+  monthlySalary?: number;
+  educationLevel?: string;
+  status: string;
+  notes?: string;
+}
+
+export type AssetType = 'fixed' | 'consumable';
+
+export interface ChurchAssetRecord {
+  id: number;
+  assetType: AssetType;
+  name: string;
+  category: string;
+  codeOrSerial?: string;
+  quantity: number;
+  unit: string;
+  unitValue: number;
+  totalValue: number;
+  conditionOrStatus: string;
+  location?: string;
+  acquiredDate?: string;
+  notes?: string;
+}
+
 export interface DepartmentWorkspaceData {
   members: DepartmentMemberRecord[];
   activities: DepartmentActivityRecord[];
   finances: DepartmentFinanceRecord[];
   plans: AnnualPlanItem[];
+  hrRecords?: ChurchHRRecord[];
+  assetRecords?: ChurchAssetRecord[];
+  chapelPlans?: { [chapelName: string]: AnnualPlanItem[] };
 }
 
 export type SubmissionType = 'plan' | 'report' | 'letter';
@@ -220,6 +258,7 @@ export interface MinistrySubmission {
   title: string;
   year: string;
   period?: string;
+  periodCode?: 'year' | 'half' | 'h1' | 'h2' | 'q1' | 'q2' | 'q3' | 'q4';
   referenceNumber?: string;
   content: string;
   senderUnitId: OrgUnitId;
@@ -248,6 +287,7 @@ export interface AppData {
   pins: {
     admin: string;
     leader: string;
+    childrenCoordinator?: string;
     chapels?: { [chapelName: string]: string };
     units?: { [unitId: string]: string };
   };

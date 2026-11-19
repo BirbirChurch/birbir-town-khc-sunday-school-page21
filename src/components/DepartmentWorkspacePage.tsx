@@ -18,7 +18,9 @@ import {
   CheckCircle2,
   Printer,
   Send,
-  Inbox
+  Inbox,
+  Briefcase,
+  Package
 } from 'lucide-react';
 import {
   AnnualPlanItem,
@@ -47,6 +49,10 @@ import { ChurchStatisticsDashboardTab } from './ChurchStatisticsDashboardTab';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
 import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
 import { NameScriptMode } from '../utils/amharicTransliterator';
+import { useLanguage } from '../context/LanguageContext';
+import { AdminHRPanel, AdminAssetsPanel } from './AdminHRAssetsPanel';
+import { UnifiedPlanManager } from './UnifiedPlanManager';
+import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
 
 interface DepartmentWorkspacePageProps {
   unitId: OrgUnitId;
@@ -54,6 +60,7 @@ interface DepartmentWorkspacePageProps {
   ageReferenceYear?: number;
   currentUserRole: Role;
   departmentDataMap: { [unitId: string]: DepartmentWorkspaceData };
+  childrenPlans?: AnnualPlanItem[];
   onUpdateDepartmentData: (
     unitId: OrgUnitId,
     updater: (prev: DepartmentWorkspaceData) => DepartmentWorkspaceData
@@ -101,7 +108,10 @@ type SubTabId =
   | 'members'
   | 'activities'
   | 'finances'
+  | 'hr'
+  | 'assets'
   | 'plans'
+  | 'consolidated_plans'
   | 'send_to_spiritual'
   | 'spiritual_review'
   | 'spiritual_approved'
@@ -114,6 +124,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   ageReferenceYear = 2017,
   currentUserRole,
   departmentDataMap,
+  childrenPlans = [],
   onUpdateDepartmentData,
   canNavigateToUnit,
   onSelectUnit,
@@ -141,6 +152,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   onForwardToAdmin,
   onAdminAcknowledge
 }) => {
+  const { t, unitName: getUnitLabel, unitDesc: getUnitDescLabel } = useLanguage();
   const unit = getOrgUnitById(unitId);
   const breadcrumb = useMemo(() => getOrgUnitBreadcrumb(unitId), [unitId]);
   const childUnits = useMemo(() => getOrgUnitChildren(unitId), [unitId]);
@@ -212,22 +224,6 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   const [fDescription, setFDescription] = useState('');
   const [fAmount, setFAmount] = useState('');
   const [fReceipt, setFReceipt] = useState('');
-
-  // Plan Modal State
-  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
-  const [editingPlanId, setEditingPlanId] = useState<number | null>(null);
-  const [pTask, setPTask] = useState('');
-  const [pUnit, setPUnit] = useState('በቁጥር');
-  const [pYearPlan, setPYearPlan] = useState('4');
-  const [pQ1Plan, setPQ1Plan] = useState('1');
-  const [pQ2Plan, setPQ2Plan] = useState('1');
-  const [pQ3Plan, setPQ3Plan] = useState('1');
-  const [pQ4Plan, setPQ4Plan] = useState('1');
-  const [pQ1Done, setPQ1Done] = useState('0');
-  const [pQ2Done, setPQ2Done] = useState('0');
-  const [pQ3Done, setPQ3Done] = useState('0');
-  const [pQ4Done, setPQ4Done] = useState('0');
-  const [pRole, setPRole] = useState('');
 
 
   // Derived Member Gender Counts (Male / Female / Total)
@@ -525,76 +521,6 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     }));
   };
 
-  // Plan CRUD
-  const openAddPlan = () => {
-    setEditingPlanId(null);
-    setPTask('');
-    setPUnit('በቁጥር');
-    setPYearPlan('4');
-    setPQ1Plan('1');
-    setPQ2Plan('1');
-    setPQ3Plan('1');
-    setPQ4Plan('1');
-    setPQ1Done('0');
-    setPQ2Done('0');
-    setPQ3Done('0');
-    setPQ4Done('0');
-    setPRole(unit.name);
-    setIsPlanModalOpen(true);
-  };
-
-  const openEditPlan = (p: AnnualPlanItem) => {
-    setEditingPlanId(p.id);
-    setPTask(p.task);
-    setPUnit(p.unit);
-    setPYearPlan(String(p.yearPlan));
-    setPQ1Plan(String(p.q1Plan));
-    setPQ2Plan(String(p.q2Plan));
-    setPQ3Plan(String(p.q3Plan));
-    setPQ4Plan(String(p.q4Plan));
-    setPQ1Done(String(p.q1Done));
-    setPQ2Done(String(p.q2Done));
-    setPQ3Done(String(p.q3Done));
-    setPQ4Done(String(p.q4Done));
-    setPRole(p.role);
-    setIsPlanModalOpen(true);
-  };
-
-  const handleSavePlan = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pTask.trim()) return;
-    const item: AnnualPlanItem = {
-      id: editingPlanId ?? generateUniqueId(),
-      task: pTask.trim(),
-      unit: pUnit.trim() || 'በቁጥር',
-      yearPlan: Number(pYearPlan) || pYearPlan,
-      q1Plan: Number(pQ1Plan) || 0,
-      q2Plan: Number(pQ2Plan) || 0,
-      q3Plan: Number(pQ3Plan) || 0,
-      q4Plan: Number(pQ4Plan) || 0,
-      q1Done: Number(pQ1Done) || 0,
-      q2Done: Number(pQ2Done) || 0,
-      q3Done: Number(pQ3Done) || 0,
-      q4Done: Number(pQ4Done) || 0,
-      role: pRole.trim() || unit.name
-    };
-    onUpdateDepartmentData(unitId, (prev) => ({
-      ...prev,
-      plans: editingPlanId
-        ? prev.plans.map((p) => (p.id === editingPlanId ? item : p))
-        : [...prev.plans, item]
-    }));
-    setIsPlanModalOpen(false);
-  };
-
-  const handleDeletePlan = (id: number) => {
-    if (!window.confirm('ይህን የዕቅድ ዝርዝር መሰረዝ ይፈልጋሉ?')) return;
-    onUpdateDepartmentData(unitId, (prev) => ({
-      ...prev,
-      plans: prev.plans.filter((p) => p.id !== id)
-    }));
-  };
-
   const handleExportDepartmentExcel = () => {
     const wb = XLSX.utils.book_new();
     const memberRows = [
@@ -674,7 +600,11 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   const adminInboxCount = useMemo(
     () =>
       submissions.filter(
-        (s) => s.status === 'forwarded_to_admin' || s.status === 'acknowledged_by_admin'
+        (s) =>
+          s.status === 'approved_spiritual' ||
+          s.forwardedToAdmin ||
+          s.status === 'forwarded_to_admin' ||
+          s.status === 'acknowledged_by_admin'
       ).length,
     [submissions]
   );
@@ -714,31 +644,36 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             id: 'overview' as SubTabId,
             label:
               unitId === 'elders_council'
-                ? `የሁሉም ዘርፎች ገጾች (${overviewUnits.length})`
+                ? t(`የሁሉም ዘርፎች ገጾች (${overviewUnits.length})`, `All Units (${overviewUnits.length})`)
                 : unitId === 'spiritual_council'
-                ? `በመንፈሳዊ ዘርፍ ስር ያሉ ገጾች (${overviewUnits.length})`
-                : 'የመዋቅር ማጠቃለያ',
+                ? t(`በመንፈሳዊ ዘርፍ ስር ያሉ ገጾች (${overviewUnits.length})`, `Spiritual Ministries (${overviewUnits.length})`)
+                : t('የመዋቅር ማጠቃለያ', 'Sub-Units Overview'),
             icon: BarChart3
           }
         ]
       : []),
     ...(unit.hasChurchRegistry
       ? [
-          { id: 'church_registry' as SubTabId, label: 'የቤተክርስቲያን መረጃ ቋት', icon: Database },
-          { id: 'church_stats' as SubTabId, label: 'አጠቃላይ ስታቲስቲክስ (ወ/ሴ/ድምር)', icon: BarChart3 }
+          { id: 'church_registry' as SubTabId, label: t('የቤተክርስቲያን መረጃ ቋት', 'Church Master Registry'), icon: Database },
+          { id: 'church_stats' as SubTabId, label: t('አጠቃላይ ስታቲስቲክስ (ወ/ሴ/ድምር)', 'Overview Statistics (M/F/Total)'), icon: BarChart3 }
         ]
       : []),
     ...(unitId === 'spiritual_council'
       ? [
           {
             id: 'spiritual_review' as SubTabId,
-            label: `የቀረቡ ዕቅድ/ሪፖርት/ደብዳቤ (${spiritualPendingCount})`,
+            label: t(`የቀረቡ ዕቅድ/ሪፖርት/ደብዳቤ (${spiritualPendingCount})`, `Pending Review (${spiritualPendingCount})`),
             icon: Inbox
           },
           {
             id: 'spiritual_approved' as SubTabId,
-            label: `የጸደቁ ሰነዶች ማህደር (${spiritualApprovedCount})`,
+            label: t(`የጸደቁ ሰነዶች ማህደር (${spiritualApprovedCount})`, `Approved Archive (${spiritualApprovedCount})`),
             icon: CheckCircle2
+          },
+          {
+            id: 'consolidated_plans' as SubTabId,
+            label: t('የ10ሩም ቻፕሎች እና ዘርፎች ዕቅድ/ክንውን', '10 Chapels & Ministries Plans Matrix'),
+            icon: Target
           }
         ]
       : []),
@@ -746,7 +681,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       ? [
           {
             id: 'send_to_spiritual' as SubTabId,
-            label: `ለመንፈሳዊ ዘርፍ መላኪያ (${unitSentCount})`,
+            label: t(`ለመንፈሳዊ ዘርፍ መላኪያ (${unitSentCount})`, `Send to Spiritual (${unitSentCount})`),
             icon: Send
           }
         ]
@@ -755,8 +690,22 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       ? [
           {
             id: 'admin_inbox' as SubTabId,
-            label: `ከመንፈሳዊ ዘርፍ የመጡ (${adminInboxCount})`,
+            label: t(`ከመንፈሳዊ ዘርፍ የጸደቁ (${adminInboxCount})`, `Spiritual Approved (${adminInboxCount})`),
             icon: Inbox
+          }
+        ]
+      : []),
+    ...(unitId === 'admin_finance'
+      ? [
+          {
+            id: 'hr' as SubTabId,
+            label: t(`የቤተክርስቲያኒቱ የሰው ኃይል (${(ws.hrRecords || []).length})`, `Church HR (${(ws.hrRecords || []).length})`),
+            icon: Briefcase
+          },
+          {
+            id: 'assets' as SubTabId,
+            label: t(`ንብረት — ቋሚና አላቂ (${(ws.assetRecords || []).length})`, `Assets — Fixed/Consumable (${(ws.assetRecords || []).length})`),
+            icon: Package
           }
         ]
       : []),
@@ -764,17 +713,17 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       ? [
           {
             id: 'elders_submissions' as SubTabId,
-            label: `የዘርፎች ዕቅድ/ሪፖርት/ደብዳቤ (${submissions.length})`,
+            label: t(`የዘርፎች ዕቅድ/ሪፖርት/ደብዳቤ (${submissions.length})`, `All Submissions (${submissions.length})`),
             icon: Send
           }
         ]
       : []),
-    { id: 'members' as SubTabId, label: `የአባላት ዝርዝር (${ws.members.length})`, icon: Users },
-    { id: 'activities' as SubTabId, label: `የአገልግሎት ተግባራት (${ws.activities.length})`, icon: ClipboardList },
+    { id: 'members' as SubTabId, label: t(`የአባላት ዝርዝር (${ws.members.length})`, `Members (${ws.members.length})`), icon: Users },
+    { id: 'activities' as SubTabId, label: t(`የአገልግሎት ተግባራት (${ws.activities.length})`, `Activities (${ws.activities.length})`), icon: ClipboardList },
     ...(unit.supportsFinance
-      ? [{ id: 'finances' as SubTabId, label: `ፋይናንስና ሂሳብ (${ws.finances.length})`, icon: Wallet }]
+      ? [{ id: 'finances' as SubTabId, label: t(`ፋይናንስና ሂሳብ (${ws.finances.length})`, `Finance & Budget (${ws.finances.length})`), icon: Wallet }]
       : []),
-    { id: 'plans' as SubTabId, label: `የዓመት ዕቅድና ሪፖርት (${ws.plans.length})`, icon: Target }
+    { id: 'plans' as SubTabId, label: t(`ዕቅድና ክንውን (${ws.plans.length})`, `Plans & Execution (${ws.plans.length})`), icon: Target }
   ];
 
   return (
@@ -784,7 +733,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500">
-              <span>የብርብር ከተማ ቃለ ሕይወት ቤተ ክርስቲያን</span>
+              <span>{t('የብርብር ከተማ ቃለ ሕይወት ቤተ ክርስቲያን', 'Birbir Kale Heywot Church')}</span>
               {breadcrumb.map((b) => (
                 <React.Fragment key={b.id}>
                   <span className="text-slate-300">/</span>
@@ -794,20 +743,20 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                       onClick={() => onSelectUnit(b.id)}
                       className="hover:text-blue-800 hover:underline cursor-pointer"
                     >
-                      {b.name}
+                      {getUnitLabel(b.id, b.name)}
                     </button>
                   ) : (
                     <span className={b.id === unitId ? 'text-blue-900 font-bold' : ''}>
-                      {b.name}
+                      {getUnitLabel(b.id, b.name)}
                     </span>
                   )}
                 </React.Fragment>
               ))}
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-              {unit.name}
+              {getUnitLabel(unitId, unit.name)}
             </h2>
-            <p className="text-xs text-slate-600 max-w-3xl">{unit.shortDesc}</p>
+            <p className="text-xs text-slate-600 max-w-3xl">{getUnitDescLabel(unitId, unit.shortDesc)}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0 print:hidden">
@@ -817,7 +766,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-600 text-white transition cursor-pointer whitespace-nowrap"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Excel አውርድ</span>
+              <span>{t('Excel አውርድ', 'Export Excel')}</span>
             </button>
             <button
               type="button"
@@ -825,7 +774,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer whitespace-nowrap"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>አትም</span>
+              <span>{t('አትም', 'Print')}</span>
             </button>
           </div>
         </div>
@@ -833,57 +782,57 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         {/* Unit KPI Strip */}
         <div className="mt-5 pt-4 border-t border-slate-200 grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <div className="text-xs font-semibold text-slate-500">የክፍሉ አባላት (ወ/ሴ/ድምር)</div>
+            <div className="text-xs font-semibold text-slate-500">{t('የክፍሉ አባላት (ወ/ሴ/ድምር)', 'Department Roster (M/F/Total)')}</div>
             <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-1">
               {memberCounts.total.toLocaleString()}
             </div>
             <div className="text-[11px] font-semibold text-slate-500 tabular-nums">
-              ወንድ {memberCounts.male} · ሴት {memberCounts.female}
+              {t('ወንድ', 'Male')} {memberCounts.male} · {t('ሴት', 'Female')} {memberCounts.female}
             </div>
           </div>
 
           <div>
-            <div className="text-xs font-semibold text-slate-500">የአገልግሎት ተግባራት</div>
+            <div className="text-xs font-semibold text-slate-500">{t('የአገልግሎት ተግባራት', 'Ministry Activities')}</div>
             <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-1">
               {ws.activities.length.toLocaleString()}
             </div>
             <div className="text-[11px] font-semibold text-slate-500 tabular-nums">
-              የተጠናቀቁ {ws.activities.filter((a) => a.status === 'ተጠናቋል').length}
+              {t('የተጠናቀቁ', 'Completed')} {ws.activities.filter((a) => a.status === 'ተጠናቋል').length}
             </div>
           </div>
 
           {unit.supportsFinance ? (
             <div>
-              <div className="text-xs font-semibold text-slate-500">ቀሪ ሂሳብ (ገቢ − ወጪ)</div>
+              <div className="text-xs font-semibold text-slate-500">{t('ቀሪ ሂሳብ (ገቢ − ወጪ)', 'Net Balance (In − Out)')}</div>
               <div
                 className={`text-xl font-extrabold tabular-nums mt-1 ${
                   financeSummary.balance >= 0 ? 'text-emerald-700' : 'text-rose-700'
                 }`}
               >
-                {financeSummary.balance.toLocaleString()} ብር
+                {financeSummary.balance.toLocaleString()} {t('ብር', 'ETB')}
               </div>
               <div className="text-[11px] font-semibold text-slate-500 tabular-nums">
-                ገቢ {financeSummary.income.toLocaleString()} · ወጪ {financeSummary.expense.toLocaleString()}
+                {t('ገቢ', 'In')} {financeSummary.income.toLocaleString()} · {t('ወጪ', 'Out')} {financeSummary.expense.toLocaleString()}
               </div>
             </div>
           ) : (
             <div>
-              <div className="text-xs font-semibold text-slate-500">የዋናው ቤተክርስቲያን ቋት</div>
+              <div className="text-xs font-semibold text-slate-500">{t('የዋናው ቤተክርስቲያን ቋት', 'Church Master Registry')}</div>
               <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-1">
                 {churchMembers.length.toLocaleString()}
               </div>
               <div className="text-[11px] font-semibold text-slate-500 tabular-nums">
-                ልጆች (0-14)፦ {churchChildren.length.toLocaleString()}
+                {t('ልጆች (0-14)፦', 'Children (0-14):')} {churchChildren.length.toLocaleString()}
               </div>
             </div>
           )}
 
           <div>
-            <div className="text-xs font-semibold text-slate-500">የዓመት ዕቅድ ({currentYear} ዓ/ም)</div>
+            <div className="text-xs font-semibold text-slate-500">{t(`የዓመት ዕቅድ (${currentYear} ዓ/ም)`, `Annual Plans (${currentYear})`)}</div>
             <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-1">
               {ws.plans.length.toLocaleString()}
             </div>
-            <div className="text-[11px] font-semibold text-slate-500">የታቀዱ ዋና ተግባራት</div>
+            <div className="text-[11px] font-semibold text-slate-500">{t('የታቀዱ ዋና ተግባራት', 'Planned Activities')}</div>
           </div>
         </div>
 
@@ -1388,112 +1337,51 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         </section>
       )}
 
+      {/* Sub-view: Admin HR & Assets */}
+      {activeSubTab === 'hr' && unitId === 'admin_finance' && (
+        <AdminHRPanel
+          currentYear={currentYear}
+          records={ws.hrRecords || []}
+          onSaveRecords={(next) =>
+            onUpdateDepartmentData(unitId, (prev) => ({ ...prev, hrRecords: next }))
+          }
+        />
+      )}
+
+      {activeSubTab === 'assets' && unitId === 'admin_finance' && (
+        <AdminAssetsPanel
+          currentYear={currentYear}
+          records={ws.assetRecords || []}
+          onSaveRecords={(next) =>
+            onUpdateDepartmentData(unitId, (prev) => ({ ...prev, assetRecords: next }))
+          }
+        />
+      )}
+
+      {/* Sub-view: Spiritual Council Consolidated Chapels & Ministries Plans/Execution Matrix */}
+      {activeSubTab === 'consolidated_plans' && unitId === 'spiritual_council' && (
+        <ConsolidatedPlansMatrix
+          currentYear={currentYear}
+          submissions={submissions}
+          departmentDataMap={departmentDataMap}
+          childrenPlans={childrenPlans}
+          chapelList={chapelList}
+          onlyApproved={false}
+        />
+      )}
+
       {/* Sub-view: Department Annual Plan & Quarterly Execution */}
       {activeSubTab === 'plans' && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900">
-                የ{unit.name} የ{currentYear} ዓ/ም ዕቅድና ሩብ ዓመት ክንውን
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={openAddPlan}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-900 hover:bg-blue-800 text-white transition cursor-pointer whitespace-nowrap"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>አዲስ ዕቅድ ጨምር</span>
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                  <th className="py-2.5 px-3 text-left">ተ.ቁ</th>
-                  <th className="py-2.5 px-3 text-left">ዋና ተግባር</th>
-                  <th className="py-2.5 px-2 text-left">መለኪያ</th>
-                  <th className="py-2.5 px-2 text-right">የዓመቱ ዕቅድ</th>
-                  <th className="py-2.5 px-2 text-right">1ኛ ሩብ (ዕ/ክ)</th>
-                  <th className="py-2.5 px-2 text-right">2ኛ ሩብ (ዕ/ክ)</th>
-                  <th className="py-2.5 px-2 text-right">3ኛ ሩብ (ዕ/ክ)</th>
-                  <th className="py-2.5 px-2 text-right">4ኛ ሩብ (ዕ/ክ)</th>
-                  <th className="py-2.5 px-3 text-right">ክንውን (%)</th>
-                  <th className="py-2.5 px-3 text-right print:hidden">ማስተካከያ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {ws.plans.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="py-10 text-center text-slate-400">
-                      <p className="font-semibold text-slate-500">ለ{unit.name} ገና የዓመት ዕቅድ አልተመዘገበም።</p>
-                      <button
-                        type="button"
-                        onClick={openAddPlan}
-                        className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-900 text-white hover:bg-blue-800 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>ዕቅድ ጨምር</span>
-                      </button>
-                    </td>
-                  </tr>
-                ) : (
-                  ws.plans.map((p, idx) => {
-                    const yPlan = Number(p.yearPlan) || 0;
-                    const totalDone =
-                      (Number(p.q1Done) || 0) +
-                      (Number(p.q2Done) || 0) +
-                      (Number(p.q3Done) || 0) +
-                      (Number(p.q4Done) || 0);
-                    const pctDone = yPlan > 0 ? Math.round((totalDone / yPlan) * 100) : 0;
-                    return (
-                      <tr key={p.id} className="hover:bg-slate-50/70">
-                        <td className="py-2.5 px-3 tabular-nums text-slate-500">{idx + 1}</td>
-                        <td className="py-2.5 px-3 font-bold text-slate-900">{p.task}</td>
-                        <td className="py-2.5 px-2 text-slate-600">{p.unit}</td>
-                        <td className="py-2.5 px-2 text-right font-bold tabular-nums">{p.yearPlan}</td>
-                        <td className="py-2.5 px-2 text-right tabular-nums">
-                          {p.q1Plan} / <strong className="text-emerald-700">{p.q1Done}</strong>
-                        </td>
-                        <td className="py-2.5 px-2 text-right tabular-nums">
-                          {p.q2Plan} / <strong className="text-emerald-700">{p.q2Done}</strong>
-                        </td>
-                        <td className="py-2.5 px-2 text-right tabular-nums">
-                          {p.q3Plan} / <strong className="text-emerald-700">{p.q3Done}</strong>
-                        </td>
-                        <td className="py-2.5 px-2 text-right tabular-nums">
-                          {p.q4Plan} / <strong className="text-emerald-700">{p.q4Done}</strong>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-extrabold tabular-nums text-blue-900">
-                          {pctDone}%
-                        </td>
-                        <td className="py-2.5 px-3 text-right whitespace-nowrap print:hidden">
-                          <div className="inline-flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => openEditPlan(p)}
-                              className="p-1 text-blue-700 hover:bg-blue-50 rounded cursor-pointer"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePlan(p.id)}
-                              className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <UnifiedPlanManager
+          unitId={unitId}
+          unitName={getUnitLabel(unitId, unit.name)}
+          currentYear={currentYear}
+          plans={ws.plans}
+          onSavePlans={(nextPlans) =>
+            onUpdateDepartmentData(unitId, (prev) => ({ ...prev, plans: nextPlans }))
+          }
+          onSendToSpiritual={isUnderSpiritualCouncil(unitId) ? onCreateSubmission : undefined}
+        />
       )}
 
       {/* Sub-view: Send Plans, Reports & Letters to Spiritual Council */}
@@ -1542,17 +1430,27 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         />
       )}
 
-      {/* Sub-view: Administration Department Forwarded Archive */}
+      {/* Sub-view: Administration Department Spiritual-Approved & Forwarded Archive */}
       {activeSubTab === 'admin_inbox' && (unitId === 'admin_finance' || unitId === 'office') && (
-        <MinistrySubmissionsPanel
-          mode="admin_dept"
-          unitId={unitId}
-          unitName={unit.name}
-          currentYear={currentYear}
-          submissions={submissions}
-          initialViewFilter="all"
-          onAdminAcknowledge={onAdminAcknowledge}
-        />
+        <div className="space-y-6">
+          <ConsolidatedPlansMatrix
+            currentYear={currentYear}
+            submissions={submissions}
+            departmentDataMap={departmentDataMap}
+            childrenPlans={childrenPlans}
+            chapelList={chapelList}
+            onlyApproved={true}
+          />
+          <MinistrySubmissionsPanel
+            mode="admin_dept"
+            unitId={unitId}
+            unitName={unit.name}
+            currentYear={currentYear}
+            submissions={submissions}
+            initialViewFilter="all"
+            onAdminAcknowledge={onAdminAcknowledge}
+          />
+        </div>
       )}
 
       {/* Sub-view: Elders Council Full Submissions Oversight */}
@@ -1920,147 +1818,6 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         </div>
       )}
 
-      {/* Plan Modal */}
-      {isPlanModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 border border-slate-200 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-base font-extrabold text-slate-900">
-                {editingPlanId ? 'የዓመት ዕቅድ አስተካክል' : 'አዲስ የዓመት ዕቅድ ጨምር'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsPlanModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleSavePlan} className="space-y-3 mt-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">ዋና ተግባር *</label>
-                <input
-                  type="text"
-                  required
-                  value={pTask}
-                  onChange={(e) => setPTask(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">መለኪያ</label>
-                  <input
-                    type="text"
-                    value={pUnit}
-                    onChange={(e) => setPUnit(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">የዓመቱ ዕቅድ</label>
-                  <input
-                    type="number"
-                    value={pYearPlan}
-                    onChange={(e) => setPYearPlan(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">ኃላፊ</label>
-                  <input
-                    type="text"
-                    value={pRole}
-                    onChange={(e) => setPRole(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-100">
-                <div>
-                  <label className="block font-bold text-slate-600 mb-1">1ኛ ሩብ ዕቅድ</label>
-                  <input
-                    type="number"
-                    value={pQ1Plan}
-                    onChange={(e) => setPQ1Plan(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg"
-                  />
-                  <label className="block font-bold text-emerald-700 mt-1 mb-0.5">ክንውን</label>
-                  <input
-                    type="number"
-                    value={pQ1Done}
-                    onChange={(e) => setPQ1Done(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-emerald-200 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-600 mb-1">2ኛ ሩብ ዕቅድ</label>
-                  <input
-                    type="number"
-                    value={pQ2Plan}
-                    onChange={(e) => setPQ2Plan(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg"
-                  />
-                  <label className="block font-bold text-emerald-700 mt-1 mb-0.5">ክንውን</label>
-                  <input
-                    type="number"
-                    value={pQ2Done}
-                    onChange={(e) => setPQ2Done(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-emerald-200 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-600 mb-1">3ኛ ሩብ ዕቅድ</label>
-                  <input
-                    type="number"
-                    value={pQ3Plan}
-                    onChange={(e) => setPQ3Plan(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg"
-                  />
-                  <label className="block font-bold text-emerald-700 mt-1 mb-0.5">ክንውን</label>
-                  <input
-                    type="number"
-                    value={pQ3Done}
-                    onChange={(e) => setPQ3Done(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-emerald-200 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-600 mb-1">4ኛ ሩብ ዕቅድ</label>
-                  <input
-                    type="number"
-                    value={pQ4Plan}
-                    onChange={(e) => setPQ4Plan(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg"
-                  />
-                  <label className="block font-bold text-emerald-700 mt-1 mb-0.5">ክንውን</label>
-                  <input
-                    type="number"
-                    value={pQ4Done}
-                    onChange={(e) => setPQ4Done(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-emerald-200 rounded-lg"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsPlanModalOpen(false)}
-                  className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-                >
-                  ሰርዝ
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-xl cursor-pointer"
-                >
-                  አስቀምጥ
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

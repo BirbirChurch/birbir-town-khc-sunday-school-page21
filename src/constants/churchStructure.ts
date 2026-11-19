@@ -337,7 +337,10 @@ export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData =>
   members: [],
   activities: [],
   finances: [],
-  plans: []
+  plans: [],
+  hrRecords: [],
+  assetRecords: [],
+  chapelPlans: {}
 });
 
 export const getOrgUnitById = (id: OrgUnitId | string | null | undefined): OrgUnitDefinition | undefined => {

@@ -1868,7 +1868,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                     {ch}
                   </h4>
                   <div className="flex items-center gap-1">
-                    {!officialLoggedInChapel && onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                    {!officialLoggedInChapel && onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'children_coordinator' || currentUserRole === 'leader') && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -2303,7 +2303,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                         >
                           {selectedChapels.includes(chName) ? '✕ ምርጫውን አስወግድ' : '🔍 ይህን ቻፕል ብቻ አሳይ'}
                         </button>
-                        {onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+                        {onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'children_coordinator' || currentUserRole === 'leader') && (
                           <button
                             type="button"
                             onClick={() => {

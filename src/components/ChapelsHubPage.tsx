@@ -1,14 +1,25 @@
 import React, { useMemo, useState } from 'react';
-import { Church, Users, Baby, BarChart3, ArrowLeft, Send } from 'lucide-react';
-import { ChurchChild, ChurchMember, MinistrySubmission, Role, Student } from '../types';
+import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target } from 'lucide-react';
+import {
+  AnnualPlanItem,
+  ChurchChild,
+  ChurchMember,
+  DepartmentWorkspaceData,
+  MinistrySubmission,
+  Role,
+  Student
+} from '../types';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { computeChurchOverviewStatistics } from '../utils/churchOverviewStats';
 import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
 import { NameScriptMode } from '../utils/amharicTransliterator';
+import { useLanguage } from '../context/LanguageContext';
 import { ChurchMasterTab } from './ChurchMasterTab';
 import { ChurchChildrenTab, mapToOfficialChapel } from './ChurchChildrenTab';
 import { ChurchStatisticsDashboardTab } from './ChurchStatisticsDashboardTab';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
+import { UnifiedPlanManager } from './UnifiedPlanManager';
+import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
 
 interface ChapelsHubPageProps {
   currentYear: string;
@@ -51,9 +62,13 @@ interface ChapelsHubPageProps {
   onCreateSubmission?: (payload: Omit<MinistrySubmission, 'id' | 'status' | 'submittedAt'>) => void;
   onResubmitSubmission?: (id: number, updates: Partial<MinistrySubmission>) => void;
   onDeleteSubmission?: (id: number) => void;
+  chapelPlansMap?: { [chapelName: string]: AnnualPlanItem[] };
+  onUpdateChapelPlans?: (chapelName: string, plans: AnnualPlanItem[]) => void;
+  departmentDataMap?: { [unitId: string]: DepartmentWorkspaceData };
+  childrenPlans?: AnnualPlanItem[];
 }
 
-type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'submissions';
+type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'plans' | 'submissions';
 
 export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   currentYear,
@@ -85,8 +100,13 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   submissions = [],
   onCreateSubmission,
   onResubmitSubmission,
-  onDeleteSubmission
+  onDeleteSubmission,
+  chapelPlansMap = {},
+  onUpdateChapelPlans,
+  departmentDataMap = {},
+  childrenPlans = []
 }) => {
+  const { t, unitName, chapelLabel } = useLanguage();
   const officialLockedChapel = lockedChapel ? mapToOfficialChapel(lockedChapel) : null;
   const [selectedChapel, setSelectedChapel] = useState<string | null>(officialLockedChapel);
   const [activeTab, setActiveTab] = useState<ChapelTabId>(
@@ -121,23 +141,33 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="space-y-1">
             <div className="text-xs font-semibold text-slate-500">
-              የሽማግሌዎች ጉባኤ / የመንፈሳዊ ዘርፍ ጉባኤ /{' '}
+              {unitName('elders_council')} / {unitName('spiritual_council')} /{' '}
               <span className="text-blue-900 font-bold">
-                ቻፕሎች{effectiveChapelScope ? ` / ${effectiveChapelScope}` : ''}
+                {unitName('chapels_dept')}
+                {effectiveChapelScope ? ` / ${chapelLabel(effectiveChapelScope)}` : ''}
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
               <Church className="w-5 h-5 text-blue-800 shrink-0" />
               <span>
                 {effectiveChapelScope
-                  ? `${effectiveChapelScope} — የአባላት፣ የልጆችና የቤተሰብ ገጽ`
-                  : 'የ10ሩም ቻፕሎች አገልግሎት ማዕከል'}
+                  ? t(
+                      `${effectiveChapelScope} — የአባላት፣ የልጆችና የቤተሰብ ገጽ`,
+                      `${chapelLabel(effectiveChapelScope)} — Members, Children & Plans`
+                    )
+                  : t('የ10ሩም ቻፕሎች አገልግሎት ማዕከል', 'All 10 Chapels Ministry Hub')}
               </span>
             </h2>
             <p className="text-xs text-slate-600">
               {officialLockedChapel
-                ? `የ${officialLockedChapel} መረጃ ብቻ በልዩ መግቢያ ቁልፍ ተለይቶ ቀርቧል።`
-                : 'በሲስተሙ ውስጥ ያሉትን 10ሩም ቻፕሎች (ኤልሮኢ፣ ሻሎም፣ ቤቴል፣ ያህዌ፣ ኤዴን፣ አቤንኤዘር፣ ርኆቦት፣ ኤልሻዳይ፣ ሩሐማ፣ አዶናይ) በዚህ ስር ይከታተሉ።'}
+                ? t(
+                    `የ${officialLockedChapel} መረጃ ብቻ በልዩ መግቢያ ቁልፍ ተለይቶ ቀርቧል።`,
+                    `Restricted to ${chapelLabel(officialLockedChapel)} data only.`
+                  )
+                : t(
+                    'በሲስተሙ ውስጥ ያሉትን 10ሩም ቻፕሎች (ኤልሮኢ፣ ሻሎም፣ ቤቴል፣ ያህዌ፣ ኤዴን፣ አቤንኤዘር፣ ርኆቦት፣ ኤልሻዳይ፣ ሩሐማ፣ አዶናይ) በዚህ ስር ይከታተሉ።',
+                    'Monitor and manage all 10 church chapels, plans, execution reports, members, and children under one hub.'
+                  )}
             </p>
           </div>
 
@@ -151,7 +181,7 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 cursor-pointer shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>ወደ 10ሩም ቻፕሎች ማውጫ ተመለስ</span>
+              <span>{t('ወደ 10ሩም ቻፕሎች ማውጫ ተመለስ', 'Back to All 10 Chapels')}</span>
             </button>
           )}
         </div>
@@ -169,7 +199,7 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
               }`}
             >
               <Church className="w-3.5 h-3.5" />
-              <span>ሁሉም 10ሩ ቻፕሎች</span>
+              <span>{t('ሁሉም 10ሩ ቻፕሎች', 'All 10 Chapels')}</span>
             </button>
           )}
           <button
@@ -182,7 +212,11 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
             }`}
           >
             <Baby className="w-3.5 h-3.5" />
-            <span>{effectiveChapelScope ? `የ${effectiveChapelScope} ልጆች ቋት` : 'የቻፕሎች ልጆች ቋት'}</span>
+            <span>
+              {effectiveChapelScope
+                ? t(`የ${effectiveChapelScope} ልጆች ቋት`, `${chapelLabel(effectiveChapelScope)} Children`)
+                : t('የቻፕሎች ልጆች ቋት', 'Chapels Children Registry')}
+            </span>
           </button>
           <button
             type="button"
@@ -194,7 +228,11 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>{effectiveChapelScope ? `የ${effectiveChapelScope} አባላት ቋት` : 'የቻፕሎች አባላት ቋት'}</span>
+            <span>
+              {effectiveChapelScope
+                ? t(`የ${effectiveChapelScope} አባላት ቋት`, `${chapelLabel(effectiveChapelScope)} Members`)
+                : t('የቻፕሎች አባላት ቋት', 'Chapels Members Registry')}
+            </span>
           </button>
           <button
             type="button"
@@ -206,7 +244,27 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
             }`}
           >
             <BarChart3 className="w-3.5 h-3.5" />
-            <span>{effectiveChapelScope ? `የ${effectiveChapelScope} ስታቲስቲክስ` : 'የቻፕሎች ስታቲስቲክስ'}</span>
+            <span>
+              {effectiveChapelScope
+                ? t(`የ${effectiveChapelScope} ስታቲስቲክስ`, `${chapelLabel(effectiveChapelScope)} Statistics`)
+                : t('የቻፕሎች ስታቲስቲክስ', 'Chapels Statistics')}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('plans')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'plans'
+                ? 'bg-blue-900 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <Target className="w-3.5 h-3.5" />
+            <span>
+              {effectiveChapelScope
+                ? t(`የ${effectiveChapelScope} ዕቅድና ክንውን`, `${chapelLabel(effectiveChapelScope)} Plans & Execution`)
+                : t('ዕቅድና ክንውን (የ10ሩም ቻፕሎች)', 'Plans & Execution (10 Chapels)')}
+            </span>
           </button>
           <button
             type="button"
@@ -218,7 +276,7 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
             }`}
           >
             <Send className="w-3.5 h-3.5" />
-            <span>ለመንፈሳዊ ዘርፍ መላኪያ</span>
+            <span>{t('ለመንፈሳዊ ዘርፍ መላኪያ', 'Send to Spiritual Council')}</span>
           </button>
         </div>
       </section>
@@ -228,38 +286,41 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
         <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200">
             <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
-              የ10ሩም ቻፕሎች የቤተሰብ፣ የአባላት እና የልጆች (0–14) ማውጫ
+              {t('የ10ሩም ቻፕሎች የቤተሰብ፣ የአባላት እና የልጆች (0–14) ማውጫ', 'Directory of All 10 Chapels: Households, Members & Children (0–14)')}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              የአንድን ቻፕል አባላት፣ ልጆች ወይም ስታቲስቲክስ ለብቻው ለማየት ከቻፕሉ ስም ላይ ይጫኑ
+              {t(
+                'የአንድን ቻፕል አባላት፣ ልጆች፣ ስታቲስቲክስ ወይም ዕቅድና ክንውን ለብቻው ለማየት ከቻፕሉ ስም ላይ ይጫኑ',
+                'Select Members, Children, Statistics, or Plans & Execution for any chapel'
+              )}
             </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                  <th className="py-3 px-4 text-left">ተ.ቁ</th>
-                  <th className="py-3 px-4 text-left">የቻፕል ስም</th>
-                  <th className="py-3 px-3 text-right">ጠቅላላ ቤተሰብ</th>
-                  <th className="py-3 px-3 text-right">አባላት (ወ/ሴ/ድምር)</th>
-                  <th className="py-3 px-3 text-right">ልጆች 0–14 (ወ/ሴ/ድምር)</th>
-                  <th className="py-3 px-4 text-right">ቻፕሉን ክፈት</th>
+                  <th className="py-3 px-4 text-left">{t('ተ.ቁ', '#')}</th>
+                  <th className="py-3 px-4 text-left">{t('የቻፕል ስም', 'Chapel Name')}</th>
+                  <th className="py-3 px-3 text-right">{t('ጠቅላላ ቤተሰብ', 'Households')}</th>
+                  <th className="py-3 px-3 text-right">{t('አባላት (ወ/ሴ/ድምር)', 'Members (M/F/Total)')}</th>
+                  <th className="py-3 px-3 text-right">{t('ልጆች 0–14 (ወ/ሴ/ድምር)', 'Children 0–14 (M/F/Total)')}</th>
+                  <th className="py-3 px-4 text-right">{t('ቻፕሉን ክፈት', 'Open Chapel')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visibleChapelRows.map((row, idx) => (
                   <tr key={row.chapelName} className="hover:bg-slate-50/70">
                     <td className="py-3 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
-                    <td className="py-3 px-4 font-extrabold text-slate-900">{row.chapelName}</td>
+                    <td className="py-3 px-4 font-extrabold text-slate-900">{chapelLabel(row.chapelName)}</td>
                     <td className="py-3 px-3 text-right font-bold text-slate-800 tabular-nums">
                       {row.totalHouseholds.toLocaleString()}
                     </td>
                     <td className="py-3 px-3 text-right tabular-nums text-slate-700">
-                      ወ {row.members.male} · ሴ {row.members.female} ·{' '}
+                      {t('ወ', 'M')} {row.members.male} · {t('ሴ', 'F')} {row.members.female} ·{' '}
                       <strong className="text-slate-900">{row.members.total}</strong>
                     </td>
                     <td className="py-3 px-3 text-right tabular-nums text-slate-700">
-                      ወ {row.children.male} · ሴ {row.children.female} ·{' '}
+                      {t('ወ', 'M')} {row.children.male} · {t('ሴ', 'F')} {row.children.female} ·{' '}
                       <strong className="text-slate-900">{row.children.total}</strong>
                     </td>
                     <td className="py-3 px-4 text-right whitespace-nowrap">
@@ -272,7 +333,7 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                           }}
                           className="text-xs font-bold text-blue-800 hover:underline cursor-pointer"
                         >
-                          አባላት
+                          {t('አባላት', 'Members')}
                         </button>
                         <span className="text-slate-300">|</span>
                         <button
@@ -283,7 +344,7 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                           }}
                           className="text-xs font-bold text-amber-800 hover:underline cursor-pointer"
                         >
-                          ልጆች
+                          {t('ልጆች', 'Children')}
                         </button>
                         <span className="text-slate-300">|</span>
                         <button
@@ -294,7 +355,18 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                           }}
                           className="text-xs font-bold text-emerald-800 hover:underline cursor-pointer"
                         >
-                          ስታቲስቲክስ
+                          {t('ስታቲስቲክስ', 'Stats')}
+                        </button>
+                        <span className="text-slate-300">|</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedChapel(row.chapelName);
+                            setActiveTab('plans');
+                          }}
+                          className="text-xs font-bold text-indigo-800 hover:underline cursor-pointer"
+                        >
+                          {t('ዕቅድና ክንውን', 'Plans')}
                         </button>
                       </div>
                     </td>
@@ -369,14 +441,72 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
         />
       )}
 
+      {activeTab === 'plans' && (
+        effectiveChapelScope ? (
+          <UnifiedPlanManager
+            unitId="chapels_dept"
+            unitName={unitName('chapels_dept')}
+            currentYear={currentYear}
+            plans={chapelPlansMap[effectiveChapelScope] || []}
+            chapelName={effectiveChapelScope}
+            onSavePlans={(nextPlans) => onUpdateChapelPlans?.(effectiveChapelScope, nextPlans)}
+            onSendToSpiritual={onCreateSubmission}
+          />
+        ) : (
+          <div className="space-y-5">
+            <section className="bg-white border border-slate-200 rounded-2xl p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">
+                    {t('የአንድ ቻፕል ዕቅድና ክንውን ለመክፈት/ለመሙላት ከታች ይምረጡ', 'Select a Chapel to Prepare or Edit Plans & Execution')}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {t(
+                      'እያንዳንዱ ቻፕል የራሱን ዕቅድ በExcel/PDF/Word ጭኖ ለመንፈሳዊ ዘርፍ መላክ ይችላል።',
+                      'Each chapel manages its own Annual, Half-Year, and Q1–Q4 plan workbench and submits to Spiritual Council.'
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {chapelList.map((ch) => {
+                  const count = (chapelPlansMap[ch] || []).length;
+                  return (
+                    <button
+                      key={ch}
+                      type="button"
+                      onClick={() => setSelectedChapel(ch)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 text-xs font-bold text-slate-800 cursor-pointer transition"
+                    >
+                      {chapelLabel(ch)}{' '}
+                      <span className="text-slate-500 font-semibold tabular-nums">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <ConsolidatedPlansMatrix
+              currentYear={currentYear}
+              submissions={submissions}
+              departmentDataMap={departmentDataMap}
+              childrenPlans={childrenPlans}
+              chapelList={chapelList}
+              onlyApproved={false}
+            />
+          </div>
+        )
+      )}
+
       {activeTab === 'submissions' && (
         <MinistrySubmissionsPanel
           mode="sender"
           unitId="chapels_dept"
-          unitName="ቻፕሎች"
+          unitName={unitName('chapels_dept')}
           currentYear={currentYear}
           lockedChapel={effectiveChapelScope}
           submissions={submissions}
+          availablePlans={effectiveChapelScope ? (chapelPlansMap[effectiveChapelScope] || []) : []}
           activitiesSummaryText={
             effectiveChapelScope
               ? `${effectiveChapelScope} (${currentYear} ዓ/ም) ማጠቃለያ፦\n• አባላት፦ ${overviewStats.membersSummary.total} (ወንድ ${overviewStats.membersSummary.male} / ሴት ${overviewStats.membersSummary.female})\n• ልጆች (0–14)፦ ${overviewStats.childrenSummary.total}`
@@ -390,3 +520,4 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
     </div>
   );
 };
+

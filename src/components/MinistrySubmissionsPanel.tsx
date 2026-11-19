@@ -32,6 +32,7 @@ import {
 import { CHURCH_ORG_UNITS } from '../constants/churchStructure';
 import { InlineDocumentViewer } from './InlineDocumentViewer';
 import { deleteAttachmentFile, saveAttachmentFile } from '../services/attachmentStorage';
+import { useLanguage } from '../context/LanguageContext';
 
 export type SubmissionsPanelMode =
   | 'sender'
@@ -123,6 +124,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
   onForwardToAdmin,
   onAdminAcknowledge
 }) => {
+  const { t, unitName: getUnitLabel } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | SubmissionType>('all');
   const [unitFilter, setUnitFilter] = useState<string>('all');
@@ -147,13 +149,15 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
   const [composeError, setComposeError] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState('');
 
-  // Detail / Review / Forward Modal state
+  // Detail / Review / Forward / Return Modal state
   const [selectedSubId, setSelectedSubId] = useState<number | null>(null);
   const [activeAttachmentIdx, setActiveAttachmentIdx] = useState(0);
   const [reviewNote, setReviewNote] = useState('');
   const [forwardNote, setForwardNote] = useState('');
   const [adminActionNote, setAdminActionNote] = useState('');
   const [forwardModalSubId, setForwardModalSubId] = useState<number | null>(null);
+  const [returnModalSubId, setReturnModalSubId] = useState<number | null>(null);
+  const [returnNoteInput, setReturnNoteInput] = useState('');
 
   const selectedSub = useMemo(
     () => submissions.find((s) => s.id === selectedSubId) || null,
@@ -187,6 +191,11 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
     [submissions, forwardModalSubId]
   );
 
+  const returnModalSub = useMemo(
+    () => submissions.find((s) => s.id === returnModalSubId) || null,
+    [submissions, returnModalSubId]
+  );
+
   // Scope submissions by mode
   const scopedSubmissions = useMemo(() => {
     const sorted = [...submissions].sort((a, b) =>
@@ -204,6 +213,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
     if (mode === 'admin_dept') {
       return sorted.filter(
         (s) =>
+          s.status === 'approved_spiritual' ||
           s.forwardedToAdmin ||
           s.status === 'forwarded_to_admin' ||
           s.status === 'acknowledged_by_admin'
@@ -212,6 +222,14 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
 
     return sorted;
   }, [submissions, mode, unitId, lockedChapel]);
+
+  const returnedForSender = useMemo(
+    () =>
+      mode === 'sender'
+        ? scopedSubmissions.filter((s) => s.status === 'returned_by_spiritual')
+        : [],
+    [mode, scopedSubmissions]
+  );
 
   // KPI metrics
   const kpis = useMemo(() => {
@@ -225,6 +243,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
     ).length;
     const forwardedAdmin = scopedSubmissions.filter(
       (s) =>
+        s.status === 'approved_spiritual' ||
         s.forwardedToAdmin ||
         s.status === 'forwarded_to_admin' ||
         s.status === 'acknowledged_by_admin'
@@ -259,7 +278,13 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
         }
         if (viewFilter === 'forwarded' && !s.forwardedToAdmin) return false;
       } else if (mode === 'admin_dept') {
-        if (viewFilter === 'pending' && s.status !== 'forwarded_to_admin') return false;
+        if (
+          viewFilter === 'pending' &&
+          s.status !== 'approved_spiritual' &&
+          s.status !== 'forwarded_to_admin'
+        ) {
+          return false;
+        }
         if (viewFilter === 'approved' && s.status !== 'acknowledged_by_admin') return false;
       }
 
@@ -470,23 +495,45 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="space-y-1">
             <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
-              {mode === 'sender' && 'ዕቅድ፣ ሪፖርት እና ደብዳቤ ለመንፈሳዊ ዘርፍ መላኪያ'}
+              {mode === 'sender' &&
+                t('ዕቅድ፣ ሪፖርት እና ደብዳቤ ለመንፈሳዊ ዘርፍ መላኪያ', 'Send Plans, Reports & Letters to Spiritual Council')}
               {mode === 'spiritual_council' &&
-                'ከዘርፎች የቀረቡ ዕቅዶች፣ ሪፖርቶችና ደብዳቤዎች (ማጽደቂያ እና የጸደቁ ማህደር)'}
+                t(
+                  'ከዘርፎች የቀረቡ ዕቅዶች፣ ሪፖርቶችና ደብዳቤዎች (ማጽደቂያ እና የጸደቁ ማህደር)',
+                  'Submitted Ministry Plans, Reports & Letters (Review & Approved Archive)'
+                )}
               {mode === 'admin_dept' &&
-                'ከመንፈሳዊ ዘርፍ ጸድቀው ወደ አስተዳደር ዘርፍ የተላኩ ሰነዶች ማህደር'}
+                t(
+                  'በመንፈሳዊ ዘርፍ የጸደቁና ወደ አስተዳደር ዘርፍ የቀረቡ ሰነዶች',
+                  'Spiritual-Approved & Forwarded Plans, Reports & Letters'
+                )}
               {mode === 'elders_overview' &&
-                'የሁሉም ዘርፎች ዕቅድ፣ ሪፖርት እና ደብዳቤ የማጽደቅና የመላክ ሂደት'}
+                t(
+                  'የሁሉም ዘርፎች ዕቅድ፣ ሪፖርት እና ደብዳቤ የማጽደቅና የመላክ ሂደት',
+                  'Church-Wide Ministry Submissions Oversight'
+                )}
             </h3>
             <p className="text-xs text-slate-600 max-w-3xl">
               {mode === 'sender' &&
-                `${lockedChapel ? `${lockedChapel} (${unitName})` : unitName} ዕቅዱን፣ ሪፖርቱን እና ደብዳቤውን በቀጥታ ለመንፈሳዊ ዘርፍ ጉባኤ የሚልክበትና ውሳኔውን የሚከታተልበት ገጽ።`}
+                t(
+                  `${lockedChapel ? `${lockedChapel} (${unitName})` : unitName} ዕቅዱን፣ ሪፖርቱን እና ደብዳቤውን በቀጥታ ለመንፈሳዊ ዘርፍ ጉባኤ የሚልክበትና ውሳኔውን የሚከታተልበት ገጽ።`,
+                  `${lockedChapel || unitName}: Submit plans, execution reports, and letters directly to the Spiritual Sector Council and respond to revision notes.`
+                )}
               {mode === 'spiritual_council' &&
-                'በመንፈሳዊ ዘርፍ ስር ያሉ ሁሉም አገልግሎቶችና ቻፕሎች የሚልኳቸውን ዕቅዶች፣ ሪፖርቶችና ደብዳቤዎች መርምረው ያጽድቁ፤ የጸደቁት በዚህ ገጽ ላይ በቋሚነት ይቀመጣሉ፤ ለአስተዳደር ዘርፍ መላክ ያለባቸውንም ይላኩ።'}
+                t(
+                  'በመንፈሳዊ ዘርፍ ስር ያሉ ሁሉም አገልግሎቶችና ቻፕሎች የሚልኳቸውን ዕቅዶች፣ ሪፖርቶችና ደብዳቤዎች መርምረው ያጽድቁ፤ የጸደቁት ወዲያውኑ በአስተዳደር ዘርፍ ገጽ ይታያሉ፤ ማስተካከያ ካለም አስተያየት ጽፈው ወደ ኋላ ይመልሱ።',
+                  'Review plans, reports, and letters from ministries & chapels. Approved items automatically sync to Administration; return items with revision suggestions whenever edits are needed.'
+                )}
               {mode === 'admin_dept' &&
-                'በመንፈሳዊ ዘርፍ ጸድቀው ወደ አስተዳደር ዘርፍ የተላኩ ዕቅዶች፣ ሪፖርቶችና ደብዳቤዎች በሙሉ እዚህ በቋሚነት ተቀምጠዋል።'}
+                t(
+                  'በመንፈሳዊ ዘርፍ የጸደቁና ወደ አስተዳደር ዘርፍ የተላኩ ዕቅዶች፣ ሪፖርቶችና ደብዳቤዎች በሙሉ ወዲያውኑ እዚህ በቋሚነት ይታያሉ።',
+                  'All plans, reports, and letters approved by the Spiritual Sector Council appear here automatically for administration review and archiving.'
+                )}
               {mode === 'elders_overview' &&
-                'በአጥቢያ ቤተ ክርስቲያን ውስጥ የተላኩ፣ የጸደቁ እና ወደ አስተዳደር ዘርፍ የተመሩ ሰነዶችን በሙሉ ይመልከቱ።'}
+                t(
+                  'በአጥቢያ ቤተ ክርስቲያን ውስጥ የተላኩ፣ የጸደቁ እና ወደ አስተዳደር ዘርፍ የተመሩ ሰነዶችን በሙሉ ይመልከቱ።',
+                  'View all ministry plans, reports, and letters across approval and administration stages.'
+                )}
             </p>
           </div>
 
@@ -498,7 +545,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-900 hover:bg-blue-800 text-white transition cursor-pointer whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>ዕቅድ ላክ</span>
+                <span>{t('ዕቅድ ላክ', 'Send Plan')}</span>
               </button>
               <button
                 type="button"
@@ -506,7 +553,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-600 text-white transition cursor-pointer whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>ሪፖርት ላክ</span>
+                <span>{t('ሪፖርት ላክ', 'Send Report')}</span>
               </button>
               <button
                 type="button"
@@ -514,7 +561,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-700 hover:bg-amber-600 text-white transition cursor-pointer whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>ደብዳቤ ላክ</span>
+                <span>{t('ደብዳቤ ላክ', 'Send Letter')}</span>
               </button>
             </div>
           )}
@@ -525,25 +572,25 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
           {mode === 'admin_dept' ? (
             <>
               <div>
-                <div className="text-xs font-semibold text-slate-500">የደረሱ ጠቅላላ ሰነዶች</div>
+                <div className="text-xs font-semibold text-slate-500">{t('የጸደቁ / የደረሱ ሰነዶች', 'Approved & Received')}</div>
                 <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-0.5">
                   {kpis.forwardedAdmin}
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500">አዲስ የመጡ (ያልተቀበሉ)</div>
+                <div className="text-xs font-semibold text-slate-500">{t('አዲስ የመጡ (ያልተመዘገቡ)', 'Pending Ack.')}</div>
                 <div className="text-xl font-extrabold text-indigo-800 tabular-nums mt-0.5">
                   {kpis.adminPending}
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500">ተቀብለው የተመዘገቡ</div>
+                <div className="text-xs font-semibold text-slate-500">{t('ተቀብለው የተመዘገቡ', 'Acknowledged')}</div>
                 <div className="text-xl font-extrabold text-teal-800 tabular-nums mt-0.5">
                   {kpis.adminDone}
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500">ዕቅድ / ሪፖርት / ደብዳቤ</div>
+                <div className="text-xs font-semibold text-slate-500">{t('ዕቅድ / ሪፖርት / ደብዳቤ', 'Plan / Report / Letter')}</div>
                 <div className="text-sm font-bold text-slate-800 tabular-nums mt-1.5">
                   {scopedSubmissions.filter((s) => s.type === 'plan').length} /{' '}
                   {scopedSubmissions.filter((s) => s.type === 'report').length} /{' '}
@@ -554,27 +601,27 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
           ) : (
             <>
               <div>
-                <div className="text-xs font-semibold text-slate-500">ጠቅላላ ሰነዶች</div>
+                <div className="text-xs font-semibold text-slate-500">{t('ጠቅላላ ሰነዶች', 'Total Submissions')}</div>
                 <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-0.5">
                   {kpis.total}
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500">በመጠባበቅ ላይ</div>
+                <div className="text-xs font-semibold text-slate-500">{t('በመጠባበቅ ላይ', 'Pending Review')}</div>
                 <div className="text-xl font-extrabold text-amber-700 tabular-nums mt-0.5">
                   {kpis.pending}
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500">በመንፈሳዊ ዘርፍ የጸደቁ</div>
+                <div className="text-xs font-semibold text-slate-500">{t('በመንፈሳዊ ዘርፍ የጸደቁ', 'Spiritual Approved')}</div>
                 <div className="text-xl font-extrabold text-emerald-700 tabular-nums mt-0.5">
                   {kpis.approvedSpiritual}
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500">ለአስተዳደር ዘርፍ የተላኩ</div>
-                <div className="text-xl font-extrabold text-indigo-800 tabular-nums mt-0.5">
-                  {kpis.forwardedAdmin}
+                <div className="text-xs font-semibold text-slate-500">{t('ማስተካከያ የተጠየቁ', 'Returned for Edit')}</div>
+                <div className="text-xl font-extrabold text-rose-700 tabular-nums mt-0.5">
+                  {kpis.returned}
                 </div>
               </div>
             </>
@@ -587,6 +634,49 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
           <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
           <span>{feedbackMsg}</span>
         </div>
+      )}
+
+      {/* Revision Alert Banner for Sender Mode */}
+      {mode === 'sender' && returnedForSender.length > 0 && (
+        <section className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-2.5">
+          <div className="flex items-center gap-2 text-xs font-extrabold text-rose-900">
+            <RotateCcw className="w-4 h-4 text-rose-700 shrink-0" />
+            <span>
+              {t(
+                `ከመንፈሳዊ ዘርፍ ጉባኤ የማስተካከያ ሀሳብ ጋር የተመለሱ ሰነዶች (${returnedForSender.length})`,
+                `Returned by Spiritual Council with Revision Notes (${returnedForSender.length})`
+              )}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {returnedForSender.map((ret) => (
+              <div
+                key={ret.id}
+                className="bg-white border border-rose-200 rounded-xl px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+              >
+                <div className="space-y-0.5">
+                  <div className="font-extrabold text-slate-900">
+                    {TYPE_META[ret.type].label} — {ret.title}
+                  </div>
+                  <div className="text-rose-800">
+                    <span className="font-bold">{t('የማስተካከያ ሀሳብ፦', 'Revision Note:')}</span>{' '}
+                    {ret.spiritualNote || t('እባክዎ አስተካክለው በድጋሚ ይላኩ።', 'Please revise and resubmit.')}
+                  </div>
+                </div>
+                {onResubmitSubmission && (
+                  <button
+                    type="button"
+                    onClick={() => openEditForResubmit(ret)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white cursor-pointer shrink-0"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>{t('አስተካክለህ እንደገና ላክ', 'Edit & Resubmit')}</span>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Filter Toolbar & List */}
@@ -698,10 +788,10 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                 onChange={(e) => setUnitFilter(e.target.value)}
                 className="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white font-semibold text-slate-700"
               >
-                <option value="all">ሁሉም ላኪ ዘርፎች</option>
+                <option value="all">{t('ሁሉም ላኪ ዘርፎች', 'All Sending Units')}</option>
                 {distinctSenders.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.name}
+                    {getUnitLabel(u.id, u.name)}
                   </option>
                 ))}
               </select>
@@ -855,7 +945,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-900 cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5" />
-                            <span>ክፈትና አንብብ</span>
+                            <span>{t('ክፈትና አንብብ', 'Open & Read')}</span>
                           </button>
 
                           {mode === 'spiritual_council' &&
@@ -866,13 +956,32 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                                 onClick={() => {
                                   onSpiritualApprove(sub.id, '', false);
                                   showTempFeedback(
-                                    `"${sub.title}" በመንፈሳዊ ዘርፍ ጸድቆ በማህደር ተቀምጧል።`
+                                    t(
+                                      `"${sub.title}" በመንፈሳዊ ዘርፍ ጸድቆ በማህደርና በአስተዳደር ገጽ ተቀምጧል።`,
+                                      `"${sub.title}" approved and synced to Administration.`
+                                    )
                                   );
                                 }}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 hover:bg-emerald-600 text-white cursor-pointer"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>አጽድቅ</span>
+                                <span>{t('አጽድቅ', 'Approve')}</span>
+                              </button>
+                            )}
+
+                          {mode === 'spiritual_council' &&
+                            (sub.status === 'pending_spiritual' || sub.status === 'approved_spiritual') &&
+                            onSpiritualReturn && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReturnModalSubId(sub.id);
+                                  setReturnNoteInput(sub.spiritualNote || '');
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-800 cursor-pointer"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>{t('ማስተካከያ ጠይቅ', 'Return with Note')}</span>
                               </button>
                             )}
 
@@ -889,23 +998,25 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-800 hover:bg-indigo-700 text-white cursor-pointer"
                               >
                                 <Send className="w-3.5 h-3.5" />
-                                <span>ለአስተዳደር ዘርፍ ላክ</span>
+                                <span>{t('ለአስተዳደር ዘርፍ ላክ', 'Forward Note')}</span>
                               </button>
                             )}
 
                           {mode === 'admin_dept' &&
-                            sub.status === 'forwarded_to_admin' &&
+                            (sub.status === 'approved_spiritual' || sub.status === 'forwarded_to_admin') &&
                             onAdminAcknowledge && (
                               <button
                                 type="button"
                                 onClick={() => {
                                   onAdminAcknowledge(sub.id, '');
-                                  showTempFeedback(`"${sub.title}" በአስተዳደር ዘርፍ ተቀብሎ ተመዝግቧል።`);
+                                  showTempFeedback(
+                                    t(`"${sub.title}" በአስተዳደር ዘርፍ ተቀብሎ ተመዝግቧል።`, `"${sub.title}" acknowledged by Administration.`)
+                                  );
                                 }}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-teal-700 hover:bg-teal-600 text-white cursor-pointer"
                               >
                                 <Check className="w-3.5 h-3.5" />
-                                <span>ተቀበል</span>
+                                <span>{t('ተቀበል', 'Acknowledge')}</span>
                               </button>
                             )}
 
@@ -918,7 +1029,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white cursor-pointer"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
-                                <span>አስተካክለህ ላክ</span>
+                                <span>{t('አስተካክለህ ላክ', 'Edit & Resubmit')}</span>
                               </button>
                             )}
 
@@ -1448,55 +1559,74 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
               </div>
             )}
 
-            {/* Spiritual Council Forward-to-Admin Action for already Approved items */}
+            {/* Spiritual Council Forward-to-Admin / Return Action for already Approved items */}
             {mode === 'spiritual_council' &&
-              selectedSub.status === 'approved_spiritual' &&
-              !selectedSub.forwardedToAdmin &&
-              onForwardToAdmin && (
+              selectedSub.status === 'approved_spiritual' && (
                 <div className="pt-3 border-t border-slate-200 space-y-3 text-xs print:hidden">
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">
-                      ለአስተዳደር ዘርፍ የሚላክ መልዕክት / ማብራሪያ (አማራጭ)
+                      {t('ለአስተዳደር ዘርፍ የሚላክ መልዕክት / ማስተካከያ አስተያየት', 'Note for Administration or Revision Request')}
                     </label>
                     <input
                       type="text"
                       value={forwardNote}
                       onChange={(e) => setForwardNote(e.target.value)}
-                      placeholder="ለምሳሌ፦ ለበጀት ውሳኔ ወይም ለማህደር የተላከ..."
+                      placeholder={t('ለምሳሌ፦ ለበጀት ውሳኔ የተላከ ወይም ማስተካከያ...', 'Optional note or revision feedback...')}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl"
                     />
                   </div>
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onForwardToAdmin(selectedSub.id, forwardNote.trim());
-                        setSelectedSubId(null);
-                        showTempFeedback('የጸደቀው ሰነድ ወደ አስተዳደር ዘርፍ ተልኳል።');
-                      }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold bg-indigo-800 hover:bg-indigo-700 text-white cursor-pointer"
-                    >
-                      <Building2 className="w-3.5 h-3.5" />
-                      <span>ለአስተዳደር ዘርፍ ላክ</span>
-                    </button>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {onSpiritualReturn && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!forwardNote.trim()) {
+                            alert(t('እባክዎን የማስተካከያ ምክንያቱን ይጻፉ!', 'Please enter the revision note!'));
+                            return;
+                          }
+                          onSpiritualReturn(selectedSub.id, forwardNote.trim());
+                          setSelectedSubId(null);
+                          showTempFeedback(t('ሰነዱ ከማስተካከያ ሀሳብ ጋር ወደ ላኪው ተመልሷል።', 'Returned with revision notes.'));
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold border border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>{t('ማስተካከያ ጠይቅ (መልስ)', 'Return for Revision')}</span>
+                      </button>
+                    )}
+                    {!selectedSub.forwardedToAdmin && onForwardToAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onForwardToAdmin(selectedSub.id, forwardNote.trim());
+                          setSelectedSubId(null);
+                          showTempFeedback(t('የጸደቀው ሰነድ ወደ አስተዳደር ዘርፍ ተልኳል።', 'Forwarded to Administration.'));
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold bg-indigo-800 hover:bg-indigo-700 text-white cursor-pointer"
+                      >
+                        <Building2 className="w-3.5 h-3.5" />
+                        <span>{t('ለአስተዳደር ዘርፍ ላክ', 'Forward to Admin')}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
 
             {/* Administration Acknowledge Action */}
             {mode === 'admin_dept' &&
-              selectedSub.status === 'forwarded_to_admin' &&
+              (selectedSub.status === 'approved_spiritual' ||
+                selectedSub.status === 'forwarded_to_admin') &&
               onAdminAcknowledge && (
                 <div className="pt-3 border-t border-slate-200 space-y-3 text-xs print:hidden">
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">
-                      የአስተዳደር ዘርፍ ማስታወሻ / ውሳኔ (አማራጭ)
+                      {t('የአስተዳደር ዘርፍ ማስታወሻ / ውሳኔ (አማራጭ)', 'Administration Note (Optional)')}
                     </label>
                     <input
                       type="text"
                       value={adminActionNote}
                       onChange={(e) => setAdminActionNote(e.target.value)}
-                      placeholder="ተቀብለናል / በበጀት ተካቷል / በማህደር ተመዝግቧል..."
+                      placeholder={t('ተቀብለናል / በበጀት ተካቷል / በማህደር ተመዝግቧል...', 'Acknowledged / Included in budget / Archived...')}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl"
                     />
                   </div>
@@ -1506,16 +1636,86 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                       onClick={() => {
                         onAdminAcknowledge(selectedSub.id, adminActionNote.trim());
                         setSelectedSubId(null);
-                        showTempFeedback('ሰነዱ በአስተዳደር ዘርፍ ተቀብሎ በቋሚነት ተመዝግቧል።');
+                        showTempFeedback(t('ሰነዱ በአስተዳደር ዘርፍ ተቀብሎ በቋሚነት ተመዝግቧል።', 'Document acknowledged and archived.'));
                       }}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold bg-teal-700 hover:bg-teal-600 text-white cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      <span>ተቀብያለሁ / በአስተዳደር መዝግብ</span>
+                      <span>{t('ተቀብያለሁ / በአስተዳደር መዝግብ', 'Acknowledge & Archive')}</span>
                     </button>
                   </div>
                 </div>
               )}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Return-With-Revision-Notes Modal */}
+      {returnModalSub && onSpiritualReturn && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-extrabold text-rose-900 flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-rose-700" />
+                <span>{t('የማስተካከያ ሀሳብ ጽፎ መመለሻ', 'Return with Revision Suggestions')}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setReturnModalSubId(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="text-xs text-slate-700 space-y-1">
+              <div className="font-extrabold text-slate-900">{returnModalSub.title}</div>
+              <div className="text-slate-500">
+                {returnModalSub.senderUnitName}
+                {returnModalSub.senderChapel ? ` · ${returnModalSub.senderChapel}` : ''}
+              </div>
+            </div>
+            <div className="text-xs">
+              <label className="block font-bold text-slate-700 mb-1">
+                {t('መስተካከል ያለበት ነጥብ / የመንፈሳዊ ዘርፍ አስተያየት *', 'Revision Suggestion / Feedback *')}
+              </label>
+              <textarea
+                rows={4}
+                value={returnNoteInput}
+                onChange={(e) => setReturnNoteInput(e.target.value)}
+                placeholder={t(
+                  'መስተካከል ወይም መጨመር ያለበትን ነጥብ እዚህ በግልጽ ይጻፉ...',
+                  'Describe clearly what needs to be revised or corrected...'
+                )}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setReturnModalSubId(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+              >
+                {t('ሰርዝ', 'Cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!returnNoteInput.trim()) {
+                    alert(t('እባክዎን የማስተካከያ ሀሳቡን ይጻፉ!', 'Please enter a revision note!'));
+                    return;
+                  }
+                  onSpiritualReturn(returnModalSub.id, returnNoteInput.trim());
+                  setReturnModalSubId(null);
+                  showTempFeedback(
+                    t(`"${returnModalSub.title}" ከማስተካከያ ሀሳብ ጋር ወደ ላኪው ተመልሷል።`, `"${returnModalSub.title}" returned with revision notes.`)
+                  );
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-rose-700 hover:bg-rose-600 text-white rounded-xl cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{t('ወደ ኋላ መልስ', 'Send Back for Revision')}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1526,7 +1726,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
           <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-extrabold text-slate-900">
-                ወደ አስተዳደር ዘርፍ መላኪያ
+                {t('ወደ አስተዳደር ዘርፍ መላኪያ', 'Forward to Administration')}
               </h3>
               <button
                 type="button"
@@ -1539,12 +1739,12 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
             <div className="text-xs text-slate-700 space-y-1">
               <div className="font-extrabold text-slate-900">{forwardModalSub.title}</div>
               <div className="text-slate-500">
-                ከ{forwardModalSub.senderUnitName} · {TYPE_META[forwardModalSub.type].label}
+                {forwardModalSub.senderUnitName} · {TYPE_META[forwardModalSub.type].label}
               </div>
             </div>
             <div className="text-xs">
               <label className="block font-bold text-slate-700 mb-1">
-                ለአስተዳደር ዘርፍ መልዕክት / ማብራሪያ (አማራጭ)
+                {t('ለአስተዳደር ዘርፍ መልዕክት / ማብራሪያ (አማራጭ)', 'Note for Administration (Optional)')}
               </label>
               <textarea
                 rows={3}
@@ -1560,7 +1760,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                 onClick={() => setForwardModalSubId(null)}
                 className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
               >
-                ሰርዝ
+                {t('ሰርዝ', 'Cancel')}
               </button>
               <button
                 type="button"
@@ -1572,7 +1772,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-indigo-800 hover:bg-indigo-700 text-white rounded-xl cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>ላክ</span>
+                <span>{t('ላክ', 'Forward')}</span>
               </button>
             </div>
           </div>

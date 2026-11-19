@@ -156,7 +156,7 @@ export const matchClassName = (
   const normMatch = classList.find((c) => normalizeClassString(c) === normalizedRaw);
   if (normMatch) return normMatch;
 
-  // 4. Special Amharic shorthands
+  // 4. Special Amharic shorthands (Makoya / KG)
   if (
     normalizedRaw.includes('ማቆያ') ||
     normalizedRaw.includes('መዋዕለ') ||
@@ -167,16 +167,6 @@ export const matchClassName = (
   ) {
     const makoya = classList.find((c) => c.includes('ማቆያ') || c.includes('መዋዕለ'));
     if (makoya) return makoya;
-  }
-
-  // "ደረጃ 1" or "ደረጃ 2"
-  if (normalizedRaw.includes('ደረጃ1') || normalizedRaw.includes('level1') || normalizedRaw === 'ደ1') {
-    const d1 = classList.find((c) => c.includes('ደረጃ 1') || c.includes('ደረጃ1'));
-    if (d1) return d1;
-  }
-  if (normalizedRaw.includes('ደረጃ2') || normalizedRaw.includes('level2') || normalizedRaw === 'ደ2') {
-    const d2 = classList.find((c) => c.includes('ደረጃ 2') || c.includes('ደረጃ2'));
-    if (d2) return d2;
   }
 
   // 5. Intelligent Grade Number and Section extraction

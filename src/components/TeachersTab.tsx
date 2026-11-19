@@ -50,7 +50,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
   const [assignedSubject, setAssignedSubject] = useState(subjects[0] || 'አጠቃላይ');
   const [pin, setPin] = useState('');
 
-  const isAdmin = currentUserRole === 'admin';
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'children_coordinator';
 
   // Sort teachers in orderly sequence
   const sortedTeachers = useMemo(() => {

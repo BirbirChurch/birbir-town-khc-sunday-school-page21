@@ -4,7 +4,7 @@
  */
 
 import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission } from '../types';
-import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
+import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import { CHURCH_ORG_UNITS, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
 
@@ -40,13 +40,19 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     return numId;
   };
 
-  // 1. Sanitize students across all years and classes
+  const validClassSet = new Set(CLASS_LIST);
+
+  // 1. Sanitize students across all years and keep ONLY Makoya through Grade 12 classes
   const sanitizedStudents: AppData['students'] = {};
   if (data.students && typeof data.students === 'object') {
     Object.entries(data.students).forEach(([year, classesMap]) => {
       sanitizedStudents[year] = {};
       if (classesMap && typeof classesMap === 'object') {
         Object.entries(classesMap).forEach(([className, list]) => {
+          if (!validClassSet.has(className)) {
+            modified = true;
+            return;
+          }
           if (Array.isArray(list)) {
             sanitizedStudents[year][className] = list.map((student: Student) => {
               const checkedId = ensureUniqueId(student?.id);
@@ -65,13 +71,21 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
 
   // 2. Sanitize attendance
   const sanitizedAttendance: AbsenteeRecord[] = Array.isArray(data.attendance)
-    ? data.attendance.map((rec) => {
-        const checkedId = ensureUniqueId(rec?.id);
-        if (checkedId !== rec?.id) {
-          return { ...rec, id: checkedId };
-        }
-        return rec;
-      })
+    ? data.attendance
+        .filter((rec) => {
+          if (rec?.className && !validClassSet.has(rec.className)) {
+            modified = true;
+            return false;
+          }
+          return true;
+        })
+        .map((rec) => {
+          const checkedId = ensureUniqueId(rec?.id);
+          if (checkedId !== rec?.id) {
+            return { ...rec, id: checkedId };
+          }
+          return rec;
+        })
     : [];
 
   // 3. Sanitize choir members
@@ -96,12 +110,16 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       })
     : [];
 
-  // 5. Sanitize teachers
+  // 5. Sanitize teachers (reassign deprecated classes to Makoya)
   const sanitizedTeachers: Teacher[] = Array.isArray(data.teachers)
     ? data.teachers.map((t) => {
         const checkedId = ensureUniqueId(t?.id);
-        if (checkedId !== t?.id) {
-          return { ...t, id: checkedId };
+        const validAssigned = t?.assignedClass && validClassSet.has(t.assignedClass)
+          ? t.assignedClass
+          : CLASS_LIST[0];
+        if (checkedId !== t?.id || validAssigned !== t?.assignedClass) {
+          modified = true;
+          return { ...t, id: checkedId, assignedClass: validAssigned };
         }
         return t;
       })
@@ -182,6 +200,7 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
   }
   const pinsNeedUpdate =
     !data.pins ||
+    !data.pins.childrenCoordinator ||
     !data.pins.chapels ||
     !data.pins.units ||
     DEFAULT_CHAPELS.some((ch) => !existingChapelPins[ch]) ||
@@ -219,7 +238,33 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
             const checkedId = ensureUniqueId(p?.id);
             return checkedId !== p?.id ? { ...p, id: checkedId } : p;
           })
-        : []
+        : [],
+      hrRecords: Array.isArray(ws.hrRecords)
+        ? ws.hrRecords.map((hr) => {
+            const checkedId = ensureUniqueId(hr?.id);
+            return checkedId !== hr?.id ? { ...hr, id: checkedId } : hr;
+          })
+        : [],
+      assetRecords: Array.isArray(ws.assetRecords)
+        ? ws.assetRecords.map((ar) => {
+            const checkedId = ensureUniqueId(ar?.id);
+            return checkedId !== ar?.id ? { ...ar, id: checkedId } : ar;
+          })
+        : [],
+      chapelPlans:
+        ws.chapelPlans && typeof ws.chapelPlans === 'object'
+          ? Object.fromEntries(
+              Object.entries(ws.chapelPlans).map(([cName, list]) => [
+                cName,
+                Array.isArray(list)
+                  ? list.map((p) => {
+                      const checkedId = ensureUniqueId(p?.id);
+                      return checkedId !== p?.id ? { ...p, id: checkedId } : p;
+                    })
+                  : []
+              ])
+            )
+          : {}
     };
   });
 
@@ -230,6 +275,34 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
         return checkedId !== sub?.id ? { ...sub, id: checkedId } : sub;
       })
     : [];
+
+  // Sanitize weeklyAttendance & classSubjects to drop any non-Makoya..12th class keys
+  const sanitizedWeeklyAttendance: AppData['weeklyAttendance'] = {};
+  if (data.weeklyAttendance && typeof data.weeklyAttendance === 'object') {
+    Object.entries(data.weeklyAttendance).forEach(([yr, cMap]) => {
+      sanitizedWeeklyAttendance[yr] = {};
+      if (cMap && typeof cMap === 'object') {
+        Object.entries(cMap).forEach(([cName, val]) => {
+          if (validClassSet.has(cName)) {
+            sanitizedWeeklyAttendance[yr][cName] = val;
+          } else {
+            modified = true;
+          }
+        });
+      }
+    });
+  }
+
+  const sanitizedClassSubjects: AppData['classSubjects'] = {};
+  if (data.classSubjects && typeof data.classSubjects === 'object') {
+    Object.entries(data.classSubjects).forEach(([cName, val]) => {
+      if (validClassSet.has(cName)) {
+        sanitizedClassSubjects[cName] = val;
+      } else {
+        modified = true;
+      }
+    });
+  }
 
   // 11. Ensure every teacher has a non-empty PIN (since teachers log in solely by PIN)
   const usedTeacherPins = new Set<string>(
@@ -265,11 +338,13 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     pins: {
       admin: data.pins?.admin || '1234',
       leader: mergedUnitPins.children_ministry || data.pins?.leader || '5678',
+      childrenCoordinator: data.pins?.childrenCoordinator || '5679',
       chapels: mergedChapelPins,
       units: mergedUnitPins
     },
-    weeklyAttendance: data.weeklyAttendance || {},
+    weeklyAttendance: sanitizedWeeklyAttendance,
     weekDates: data.weekDates || {},
+    classSubjects: sanitizedClassSubjects,
     students: sanitizedStudents,
     attendance: sanitizedAttendance,
     choirMembers: sanitizedChoir,

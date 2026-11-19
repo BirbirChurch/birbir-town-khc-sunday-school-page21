@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   HeartHandshake,
   Users,
@@ -12,7 +12,14 @@ import {
   Target,
   Send,
   Calendar,
-  Plus
+  Plus,
+  Shield,
+  KeyRound,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowUpRight
 } from 'lucide-react';
 import {
   AbsenteeRecord,
@@ -43,8 +50,10 @@ import { TeachersTab } from './TeachersTab';
 import { SubjectsTab } from './SubjectsTab';
 import { PlanReportTab } from './PlanReportTab';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
+import { useLanguage } from '../context/LanguageContext';
 
 export type ChildrenSubTabId =
+  | 'coordinatorControlTab'
   | 'churchChildrenTab'
   | 'allStudentsMasterTab'
   | 'classesTab'
@@ -159,16 +168,79 @@ interface ChildrenMinistryPortalProps {
   onCreateSubmission?: (payload: Omit<MinistrySubmission, 'id' | 'status' | 'submittedAt'>) => void;
   onResubmitSubmission?: (id: number, updates: Partial<MinistrySubmission>) => void;
   onDeleteSubmission?: (id: number) => void;
+  // Children's Ministry PIN control for Coordinator & Admin
+  childrenCoordinatorPin?: string;
+  childrenLeaderPin?: string;
+  onSaveChildrenPins?: (coordinatorPin: string, leaderPin: string) => void;
 }
 
 export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (props) => {
-  const { appData, currentYear, years, onYearChange, onAddYear, currentUserRole, loggedInTeacher } = props;
+  const {
+    appData,
+    currentYear,
+    years,
+    onYearChange,
+    onAddYear,
+    currentUserRole,
+    loggedInTeacher,
+    childrenCoordinatorPin = '5679',
+    childrenLeaderPin = '5678',
+    onSaveChildrenPins
+  } = props;
+
+  const { t, unitName } = useLanguage();
+
+  const isFullController =
+    currentUserRole === 'admin' || currentUserRole === 'children_coordinator';
 
   const [activeSubTab, setActiveSubTab] = useState<ChildrenSubTabId>(() =>
-    currentUserRole === 'teacher' ? 'classesTab' : 'churchChildrenTab'
+    currentUserRole === 'teacher'
+      ? 'classesTab'
+      : currentUserRole === 'children_coordinator'
+      ? 'coordinatorControlTab'
+      : 'churchChildrenTab'
   );
   const [showAddYearModal, setShowAddYearModal] = useState(false);
   const [newYearInput, setNewYearInput] = useState('');
+
+  // Coordinator PIN management state
+  const [coordPinInput, setCoordPinInput] = useState(childrenCoordinatorPin);
+  const [leaderPinInput, setLeaderPinInput] = useState(childrenLeaderPin);
+  const [showCoordPin, setShowCoordPin] = useState(false);
+  const [showLeadPin, setShowLeadPin] = useState(false);
+  const [pinSaveMsg, setPinSaveMsg] = useState('');
+
+  useEffect(() => {
+    setCoordPinInput(childrenCoordinatorPin);
+  }, [childrenCoordinatorPin]);
+
+  useEffect(() => {
+    setLeaderPinInput(childrenLeaderPin);
+  }, [childrenLeaderPin]);
+
+  const handleSavePinsSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onSaveChildrenPins) return;
+    const cPin = coordPinInput.trim();
+    const lPin = leaderPinInput.trim();
+    if (!cPin || !lPin) {
+      alert(
+        t(
+          'እባክዎን የአስተባባሪ እና የአመራር መግቢያ ቁልፎችን (PIN) ያስገቡ!',
+          'Please enter both Coordinator and Leader PINs!'
+        )
+      );
+      return;
+    }
+    onSaveChildrenPins(cPin, lPin);
+    setPinSaveMsg(
+      t(
+        '✓ የልጆች አገልግሎት አስተባባሪ እና የአመራር PIN ቁልፎች በተሳካ ሁኔታ ተቀምጠዋል!',
+        'Children Ministry Coordinator & Leader PINs saved successfully!'
+      )
+    );
+    setTimeout(() => setPinSaveMsg(''), 4000);
+  };
 
   const handleAddYearSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,22 +257,23 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
     icon: React.ComponentType<{ className?: string }>;
     roles: Role[];
   }[] = [
-    { id: 'churchChildrenTab', label: 'የቤተክርስቲያን የልጆች ቋት (0–14)', icon: HeartHandshake, roles: ['admin', 'leader'] },
-    { id: 'allStudentsMasterTab', label: 'ሁሉም የሰንበት ተማሪዎች', icon: Users, roles: ['admin', 'leader'] },
-    { id: 'classesTab', label: 'የሰንበት ክፍሎች & ውጤት', icon: GraduationCap, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'attendanceTab', label: 'አተንዳንስ & መቆጣጠሪያ', icon: CalendarCheck2, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'choirTab', label: 'መዘምራንና ኪነ-ጥበብ', icon: Music, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'spiritualTab', label: 'መንፈሳዊ ትምህርት ቡድኖች', icon: BookOpen, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'topAchieversTab', label: 'ከ1ኛ - 3ኛ ደረጃዎች', icon: Award, roles: ['admin', 'leader', 'teacher'] },
-    { id: 'teachersTab', label: 'መምህራን & PIN', icon: UserCheck, roles: ['admin', 'leader'] },
-    { id: 'subjectsTab', label: 'የትምህርት ዓይነቶች', icon: BookMarked, roles: ['admin', 'leader'] },
-    { id: 'planReportTab', label: 'የልጆች ዘርፍ ዕቅድ & ሪፖርት', icon: Target, roles: ['admin', 'leader'] },
-    { id: 'sendToSpiritualTab', label: 'ለመንፈሳዊ ዘርፍ መላኪያ', icon: Send, roles: ['admin', 'leader'] }
+    { id: 'coordinatorControlTab', label: t('የልጆች አገልግሎት አስተባባሪ', 'Children Coordinator'), icon: Shield, roles: ['admin', 'children_coordinator'] },
+    { id: 'churchChildrenTab', label: t('የቤተክርስቲያን የልጆች ቋት (0–14)', 'Church Children Registry (0–14)'), icon: HeartHandshake, roles: ['admin', 'children_coordinator', 'leader'] },
+    { id: 'allStudentsMasterTab', label: t('ሁሉም የሰንበት ተማሪዎች', 'All Sunday School Students'), icon: Users, roles: ['admin', 'children_coordinator', 'leader'] },
+    { id: 'classesTab', label: t('የሰንበት ክፍሎች & ውጤት', 'Classes & Scores'), icon: GraduationCap, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'attendanceTab', label: t('አተንዳንስ & መቆጣጠሪያ', 'Attendance & Tracking'), icon: CalendarCheck2, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'choirTab', label: t('መዘምራንና ኪነ-ጥበብ', 'Choir & Arts'), icon: Music, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'spiritualTab', label: t('መንፈሳዊ ትምህርት ቡድኖች', 'Spiritual Study Groups'), icon: BookOpen, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'topAchieversTab', label: t('ከ1ኛ - 3ኛ ደረጃዎች', 'Top Achievers (1st–3rd)'), icon: Award, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'teachersTab', label: t('መምህራን & PIN', 'Teachers & PIN'), icon: UserCheck, roles: ['admin', 'children_coordinator', 'leader'] },
+    { id: 'subjectsTab', label: t('የትምህርት ዓይነቶች', 'Subjects'), icon: BookMarked, roles: ['admin', 'children_coordinator', 'leader'] },
+    { id: 'planReportTab', label: t('የልጆች ዘርፍ ዕቅድ & ክንውን', 'Plans & Execution Reports'), icon: Target, roles: ['admin', 'children_coordinator', 'leader'] },
+    { id: 'sendToSpiritualTab', label: t('ለመንፈሳዊ ዘርፍ መላኪያ', 'Send to Spiritual Council'), icon: Send, roles: ['admin', 'children_coordinator', 'leader'] }
   ];
 
   const visibleSubTabs = useMemo(
-    () => subTabs.filter((t) => t.roles.includes(currentUserRole)),
-    [currentUserRole]
+    () => subTabs.filter((tItem) => tItem.roles.includes(currentUserRole)),
+    [currentUserRole, subTabs]
   );
 
   const totalSundayStudents = useMemo(() => {
@@ -208,23 +281,55 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
     return Object.values(yearMap).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
   }, [appData.students, currentYear]);
 
+  const duplicateTeacherPinsCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    (appData.teachers || []).forEach((t) => {
+      const p = String(t.pin || '').trim();
+      if (p) counts.set(p, (counts.get(p) || 0) + 1);
+    });
+    let dups = 0;
+    counts.forEach((c) => {
+      if (c > 1) dups++;
+    });
+    return dups;
+  }, [appData.teachers]);
+
   return (
     <div className="space-y-5">
       {/* Header & Unified Children Ministry Summary */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 print:hidden">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="space-y-1">
-            <div className="text-xs font-semibold text-slate-500">
-              የሽማግሌዎች ጉባኤ / የመንፈሳዊ ዘርፍ ጉባኤ /{' '}
-              <span className="text-blue-900 font-bold">የልጆች አገልግሎት</span>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+              <span>
+                {unitName('elders_council')} / {unitName('spiritual_council')} /{' '}
+                <span className="text-blue-900 font-bold">{unitName('children_ministry')}</span>
+              </span>
+              {currentUserRole === 'children_coordinator' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] font-extrabold">
+                  <Shield className="w-3 h-3 text-emerald-700" />
+                  <span>{t('የልጆች አገልግሎት አስተባባሪ (ሙሉ ኃላፊነት)', 'Children Coordinator (Full Authority)')}</span>
+                </span>
+              )}
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-              የልጆች አገልግሎት እና የሰንበት ትምህርት ቤት ማዕከል
+              {t('የልጆች አገልግሎት እና የሰንበት ትምህርት ቤት ማዕከል', 'Children Ministry & Sunday School Center')}
             </h2>
             <p className="text-xs text-slate-600">
               {currentUserRole === 'teacher' && loggedInTeacher
-                ? `መምህር ${loggedInTeacher.name} (${loggedInTeacher.assignedClass}) — የሰንበት ትምህርት ቤት ክፍል እና ተማሪዎች አስተዳደር`
-                : 'የቤተክርስቲያን የልጆች መረጃ ቋት (0–14) እና ሙሉ የሰንበት ትምህርት ቤት ተማሪዎች፣ ውጤት፣ አተንዳንስ፣ መምህራንና ዕቅድ'}
+                ? t(
+                    `መምህር ${loggedInTeacher.name} (${loggedInTeacher.assignedClass}) — የሰንበት ትምህርት ቤት ክፍል እና ተማሪዎች አስተዳደር`,
+                    `Teacher ${loggedInTeacher.name} (${loggedInTeacher.assignedClass}) — Sunday School Class & Students Management`
+                  )
+                : currentUserRole === 'children_coordinator'
+                ? t(
+                    'የልጆች አገልግሎት አስተባባሪ — ሁሉንም ክፍሎች፣ ተማሪዎች፣ ውጤት፣ አተንዳንስ፣ መምህራን፣ ትምህርቶች፣ ዕቅድና መንፈሳዊ ቡድኖችን ሙሉ በሙሉ የሚቆጣጠርና የሚያስተዳድር',
+                    'Children Coordinator — Full administrative control over all classes, students, grades, attendance, teachers, subjects, and plans'
+                  )
+                : t(
+                    'የቤተክርስቲያን የልጆች መረጃ ቋት (0–14) እና ሙሉ የሰንበት ትምህርት ቤት ተማሪዎች፣ ውጤት፣ አተንዳንስ፣ መምህራንና ዕቅድ',
+                    'Church Children Registry (0–14) & complete Sunday School students, grades, attendance, teachers, and plans'
+                  )}
             </p>
           </div>
 
@@ -232,7 +337,7 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
             {/* Academic Year Selector (Moved into Children's Ministry) */}
             <div className="flex items-center gap-2 bg-cyan-50/80 border border-cyan-200 rounded-xl px-3 py-1.5">
               <Calendar className="w-4 h-4 text-cyan-700 shrink-0" />
-              <span className="font-extrabold text-cyan-950 whitespace-nowrap">የትምህርት ዘመን፦</span>
+              <span className="font-extrabold text-cyan-950 whitespace-nowrap">{t('የትምህርት ዘመን፦', 'Academic Year:')}</span>
               <select
                 value={currentYear}
                 onChange={(e) => onYearChange(e.target.value)}
@@ -240,39 +345,39 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
               >
                 {years.map((y) => (
                   <option key={y} value={y}>
-                    {y} ዓ/ም
+                    {y} {t('ዓ/ም', 'E.C.')}
                   </option>
                 ))}
               </select>
-              {(currentUserRole === 'admin' || currentUserRole === 'leader') && (
+              {(isFullController || currentUserRole === 'leader') && (
                 <button
                   type="button"
                   onClick={() => setShowAddYearModal(true)}
                   className="bg-cyan-700 hover:bg-cyan-600 text-white text-[11px] px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                  title="አዲስ ዓመተ ምህረት ጨምር"
+                  title={t('አዲስ ዓመተ ምህረት ጨምር', 'Add Academic Year')}
                 >
                   <Plus className="w-3 h-3" />
-                  <span>አዲስ ዓ/ም</span>
+                  <span>{t('አዲስ ዓ/ም', 'New Year')}</span>
                 </button>
               )}
             </div>
 
             {currentUserRole !== 'teacher' && (
               <div>
-                <div className="text-slate-400">የልጆች ቋት (0–14)</div>
+                <div className="text-slate-400">{t('የልጆች ቋት (0–14)', 'Children (0–14)')}</div>
                 <div className="text-lg font-extrabold text-slate-900">
                   {(appData.churchChildren || []).length.toLocaleString()}
                 </div>
               </div>
             )}
             <div>
-              <div className="text-slate-400">የሰንበት ተማሪዎች ({currentYear})</div>
+              <div className="text-slate-400">{t('የሰንበት ተማሪዎች', 'Sunday Students')} ({currentYear})</div>
               <div className="text-lg font-extrabold text-slate-900">
                 {totalSundayStudents.toLocaleString()}
               </div>
             </div>
             <div>
-              <div className="text-slate-400">መምህራን</div>
+              <div className="text-slate-400">{t('መምህራን', 'Teachers')}</div>
               <div className="text-lg font-extrabold text-slate-900">
                 {(appData.teachers || []).length.toLocaleString()}
               </div>
@@ -306,6 +411,242 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
 
       {/* Active Sub-Module Content */}
       <div>
+        {activeSubTab === 'coordinatorControlTab' && isFullController && (
+          <div className="space-y-5">
+            {/* Coordinator Hero Overview */}
+            <div className="bg-gradient-to-br from-emerald-900 via-teal-900 to-slate-900 text-white rounded-2xl p-6 border border-emerald-800/60 shadow-sm">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-400/20 border border-emerald-300/35 text-emerald-300 flex items-center justify-center shrink-0">
+                    <Shield className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-lg sm:text-xl font-extrabold text-white">
+                      የልጆች አገልግሎት አስተባባሪ — ሙሉ መቆጣጠሪያ ማዕከል
+                    </h3>
+                    <p className="text-xs text-emerald-100/90 max-w-3xl leading-relaxed">
+                      የልጆች አገልግሎት አስተባባሪ የልጆች አገልግሎት ገጽን ሙሉ በሙሉ የመቆጣጠር፣ የማስተዳደር፣ የማረም፣ አዳዲስ ተማሪዎችንና መምህራንን የመጨመር፣ ክፍሎችንና ውጤቶችን የማስተካከል እና ዕቅድ/ሪፖርት የመላክ ሙሉ ኃላፊነት አለው።
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 4 Key KPIs with 1-Click Navigation */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between gap-3">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                  <span>የልጆች ቋት (0–14 ዓመት)</span>
+                  <HeartHandshake className="w-4 h-4 text-cyan-700" />
+                </div>
+                <div className="text-3xl font-extrabold text-slate-900 tabular-nums">
+                  {(appData.churchChildren || []).length.toLocaleString()}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('churchChildrenTab')}
+                  className="pt-2 border-t border-slate-100 text-xs font-bold text-cyan-800 hover:underline flex items-center justify-between cursor-pointer"
+                >
+                  <span>ቋቱን አስተዳድር / ጨምር / አርም</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between gap-3">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                  <span>የሰንበት ተማሪዎች ({currentYear})</span>
+                  <GraduationCap className="w-4 h-4 text-blue-800" />
+                </div>
+                <div className="text-3xl font-extrabold text-slate-900 tabular-nums">
+                  {totalSundayStudents.toLocaleString()}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('classesTab')}
+                  className="pt-2 border-t border-slate-100 text-xs font-bold text-blue-800 hover:underline flex items-center justify-between cursor-pointer"
+                >
+                  <span>ክፍሎችንና ውጤት አስተዳድር</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between gap-3">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                  <span>መምህራንና የግል PINs</span>
+                  <UserCheck className="w-4 h-4 text-teal-700" />
+                </div>
+                <div className="text-3xl font-extrabold text-slate-900 tabular-nums">
+                  {(appData.teachers || []).length.toLocaleString()}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('teachersTab')}
+                  className="pt-2 border-t border-slate-100 text-xs font-bold text-teal-800 hover:underline flex items-center justify-between cursor-pointer"
+                >
+                  <span>መምህራንንና PINs አስተዳድር</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between gap-3">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                  <span>መዘምራን፣ ቡድኖችና ዕቅድ</span>
+                  <Target className="w-4 h-4 text-indigo-700" />
+                </div>
+                <div className="text-3xl font-extrabold text-slate-900 tabular-nums">
+                  {((appData.choirMembers || []).length + (appData.spiritualMembers || []).length).toLocaleString()}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('planReportTab')}
+                  className="pt-2 border-t border-slate-100 text-xs font-bold text-indigo-800 hover:underline flex items-center justify-between cursor-pointer"
+                >
+                  <span>ዕቅድ፣ ሪፖርትና መላኪያ ክፈት</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Management Grid across ALL Children Ministry Areas */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-4">
+              <div>
+                <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
+                  ሁሉንም የልጆች አገልግሎት ክፍሎች በፍጥነት መቆጣጠሪያ
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  አስተባባሪው ከዚህ በታች ያሉትን ሁሉንም ክፍሎች ሙሉ በሙሉ መጨመር፣ ማረም፣ መሰረዝና ማስተዳደር ይችላል።
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {[
+                  { id: 'churchChildrenTab' as ChildrenSubTabId, title: 'የልጆች ቋት (0–14)', desc: 'ህፃናትን መዝግብ፣ አርም፣ ሰርዝ፣ ወደ ሰንበት ት/ቤት አስገባ', icon: HeartHandshake },
+                  { id: 'allStudentsMasterTab' as ChildrenSubTabId, title: 'ሁሉም የሰንበት ተማሪዎች', desc: 'የሁሉንም ክፍሎች ተማሪዎች አዘዋውር፣ አርም እና ቁጥጥር አድርግ', icon: Users },
+                  { id: 'classesTab' as ChildrenSubTabId, title: 'የሰንበት ክፍሎች & ውጤት', desc: 'ተማሪዎችን ጨምር/ሰርዝ፣ ውጤት አርም፣ በExcel ጫን', icon: GraduationCap },
+                  { id: 'attendanceTab' as ChildrenSubTabId, title: 'አተንዳንስ & መቆጣጠሪያ', desc: 'ሳምንታዊ አተንዳንስ ይያዙ፣ ቀሪዎችን ይከታተሉ', icon: CalendarCheck2 },
+                  { id: 'choirTab' as ChildrenSubTabId, title: 'መዘምራንና ኪነ-ጥበብ', desc: 'አዲስ ቡድን ፍጠር፣ አባላትን ጨምር ወይም ሰርዝ', icon: Music },
+                  { id: 'spiritualTab' as ChildrenSubTabId, title: 'መንፈሳዊ ትምህርት ቡድኖች', desc: 'አዲስ የትምህርት ቡድን ፍጠርና ተማሪዎችን መዝግብ', icon: BookOpen },
+                  { id: 'teachersTab' as ChildrenSubTabId, title: 'መምህራን & PIN', desc: 'መምህራንን ጨምር፣ ክፍል/ትምህርት መድብ፣ PIN አስተካክል', icon: UserCheck },
+                  { id: 'subjectsTab' as ChildrenSubTabId, title: 'የትምህርት ዓይነቶች', desc: 'ትምህርቶችን ጨምር/ሰርዝና ለየክፍሉ መድብ', icon: BookMarked },
+                  { id: 'sendToSpiritualTab' as ChildrenSubTabId, title: 'ለመንፈሳዊ ዘርፍ መላኪያ', desc: 'ዕቅድ፣ ሪፖርትና ደብዳቤዎችን ለመንፈሳዊ ዘርፍ ላክ', icon: Send }
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setActiveSubTab(item.id)}
+                      className="text-left p-4 rounded-xl border border-slate-200 hover:border-emerald-400 bg-slate-50/70 hover:bg-emerald-50/40 transition flex items-start justify-between gap-3 cursor-pointer group"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-extrabold text-xs sm:text-sm text-slate-900">
+                            {item.title}
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                            {item.desc}
+                          </p>
+                        </div>
+                      </div>
+                      <ArrowUpRight className="w-4 h-4 text-emerald-700 shrink-0 opacity-70 group-hover:opacity-100" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Children's Ministry PIN & Access Management */}
+            {onSaveChildrenPins && (
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                  <div>
+                    <h4 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-emerald-700" />
+                      <span>የልጆች አገልግሎት መግቢያ ቁልፎች (PINs) አስተዳደር</span>
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      የልጆች አገልግሎት አስተባባሪ እና የአመራር መግቢያ PIN ቁልፎችን እዚህ ማስተካከል ይችላሉ።
+                    </p>
+                  </div>
+                  {duplicateTeacherPinsCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('teachersTab')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold cursor-pointer"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                      <span>{duplicateTeacherPinsCount} የተደጋገሙ የመምህራን PIN አሉ — አስተካክል</span>
+                    </button>
+                  )}
+                </div>
+
+                {pinSaveMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{pinSaveMsg}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleSavePinsSubmit} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      የልጆች አገልግሎት አስተባባሪ PIN
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showCoordPin ? 'text' : 'password'}
+                        value={coordPinInput}
+                        onChange={(e) => setCoordPinInput(e.target.value)}
+                        className="w-full px-3.5 py-2.5 pr-10 border border-emerald-300 bg-emerald-50/30 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCoordPin(!showCoordPin)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        {showCoordPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      የልጆች አገልግሎት አመራር PIN
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showLeadPin ? 'text' : 'password'}
+                        value={leaderPinInput}
+                        onChange={(e) => setLeaderPinInput(e.target.value)}
+                        className="w-full px-3.5 py-2.5 pr-10 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLeadPin(!showLeadPin)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        {showLeadPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <button
+                      type="submit"
+                      className="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs px-4 py-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>የልጆች አገልግሎት PIN አስቀምጥ</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        )}
+
         {activeSubTab === 'churchChildrenTab' && currentUserRole !== 'teacher' && (
           <ChurchChildrenTab
             currentYear={currentYear}
@@ -477,6 +818,7 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
             onAddPlan={props.onAddPlan}
             onDeletePlan={props.onDeletePlan}
             onImportPlans={props.onImportPlans}
+            onSendToSpiritual={props.onCreateSubmission}
             onGoToAllStudents={() => setActiveSubTab('allStudentsMasterTab')}
             totalStudentsCount={countStudentsInData(appData)}
             classList={props.classList}
@@ -490,7 +832,7 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
           <MinistrySubmissionsPanel
             mode="sender"
             unitId="children_ministry"
-            unitName="የልጆች አገልግሎት"
+            unitName={unitName('children_ministry', 'የልጆች አገልግሎት')}
             currentYear={currentYear}
             submissions={props.submissions || []}
             availablePlans={appData.plans || DEFAULT_ANNUAL_PLAN}

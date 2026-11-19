@@ -28,7 +28,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'subjects' | 'byClass'>('subjects');
   const [selectedClassForView, setSelectedClassForView] = useState<string>(classList[0]);
 
-  const isAdmin = currentUserRole === 'admin';
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'children_coordinator';
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();

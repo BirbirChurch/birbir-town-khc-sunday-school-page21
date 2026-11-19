@@ -19,6 +19,7 @@ import { CHURCH_ORG_UNITS, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStru
 interface PinManageTabProps {
   adminPin: string;
   leaderPin: string;
+  childrenCoordinatorPin?: string;
   chapelPins?: { [chapelName: string]: string };
   unitPins?: { [unitId: string]: string };
   chapelList?: string[];
@@ -27,7 +28,8 @@ interface PinManageTabProps {
     adminPin: string,
     leaderPin: string,
     chapelPins: { [chapelName: string]: string },
-    unitPins?: { [unitId: string]: string }
+    unitPins?: { [unitId: string]: string },
+    childrenCoordinatorPin?: string
   ) => void;
   onUpdateTeacher?: (teacher: Teacher) => void;
 }
@@ -35,6 +37,7 @@ interface PinManageTabProps {
 export const PinManageTab: React.FC<PinManageTabProps> = ({
   adminPin,
   leaderPin,
+  childrenCoordinatorPin = '5679',
   chapelPins = DEFAULT_CHAPEL_PINS,
   unitPins = DEFAULT_ORG_UNIT_PINS,
   chapelList = DEFAULT_CHAPELS,
@@ -44,6 +47,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
 }) => {
   const [newAdminPin, setNewAdminPin] = useState(adminPin);
   const [newLeaderPin, setNewLeaderPin] = useState(leaderPin);
+  const [newCoordinatorPin, setNewCoordinatorPin] = useState(childrenCoordinatorPin);
   const [editedChapelPins, setEditedChapelPins] = useState<{ [chapelName: string]: string }>(() => {
     const initial: { [k: string]: string } = {};
     chapelList.forEach((ch, idx) => {
@@ -72,6 +76,10 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   }, [leaderPin]);
 
   useEffect(() => {
+    setNewCoordinatorPin(childrenCoordinatorPin);
+  }, [childrenCoordinatorPin]);
+
+  useEffect(() => {
     const next: { [k: string]: string } = {};
     chapelList.forEach((ch, idx) => {
       next[ch] = chapelPins?.[ch] || DEFAULT_CHAPEL_PINS[ch] || String(2001 + idx);
@@ -93,6 +101,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
 
   const [showAdminPin, setShowAdminPin] = useState(false);
   const [showLeaderPin, setShowLeaderPin] = useState(false);
+  const [showCoordinatorPin, setShowCoordinatorPin] = useState(false);
   const [showUnitPins, setShowUnitPins] = useState(true);
   const [showChapelPins, setShowChapelPins] = useState(true);
   const [showTeacherPins, setShowTeacherPins] = useState(true);
@@ -161,8 +170,9 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const resolvedChildrenPin = (editedUnitPins.children_ministry || newLeaderPin || '').trim();
-    if (!newAdminPin.trim() || !resolvedChildrenPin) {
-      alert('እባክዎን የዋና አዲሚን እና የልጆች አገልግሎት PIN ቁጥሮችን ያስገቡ!');
+    const resolvedCoordinatorPin = (newCoordinatorPin || '').trim();
+    if (!newAdminPin.trim() || !resolvedChildrenPin || !resolvedCoordinatorPin) {
+      alert('እባክዎን የዋና አዲሚን፣ የልጆች አገልግሎት አስተባባሪ እና የአመራር PIN ቁጥሮችን ያስገቡ!');
       return;
     }
 
@@ -189,8 +199,8 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
       cleanedUnitPins[u.id] = val;
     }
 
-    onSavePins(newAdminPin.trim(), resolvedChildrenPin, cleanedChapelPins, cleanedUnitPins);
-    setSavedSuccess('✓ የዋና አዲሚን፣ የሁሉም መዋቅር ክፍሎች እና የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs) ተቀምጠዋል!');
+    onSavePins(newAdminPin.trim(), resolvedChildrenPin, cleanedChapelPins, cleanedUnitPins, resolvedCoordinatorPin);
+    setSavedSuccess('✓ የዋና አዲሚን፣ የልጆች አገልግሎት አስተባባሪ፣ የሁሉም መዋቅር ክፍሎች እና የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs) ተቀምጠዋል!');
     setTimeout(() => setSavedSuccess(''), 4000);
   };
 
@@ -253,7 +263,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
             <span>የዋና አስተባባሪና የቤተክርስቲያን መሪዎች መግቢያ ቁልፍ (PIN)</span>
           </h4>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Shield className="w-4 h-4 text-blue-700" />
@@ -279,8 +289,34 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-emerald-700" />
+                የልጆች አገልግሎት አስተባባሪ PIN፦
+              </label>
+              <div className="relative">
+                <input
+                  type={showCoordinatorPin ? 'text' : 'password'}
+                  value={newCoordinatorPin}
+                  onChange={(e) => setNewCoordinatorPin(e.target.value)}
+                  placeholder="የልጆች አስተባባሪ PIN"
+                  className="w-full px-3.5 py-2.5 pr-10 border border-emerald-300 bg-emerald-50/40 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCoordinatorPin(!showCoordinatorPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  {showCoordinatorPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-emerald-800 mt-1 font-semibold">
+                የልጆች አገልግሎት ገጽን ሙሉ በሙሉ የሚቆጣጠርና የሚያስተዳድር
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-teal-700" />
-                የልጆች አገልግሎት / መሪዎች (Leader) መግቢያ ቁልፍ፦
+                የልጆች አገልግሎት አመራር (Leader) PIN፦
               </label>
               <div className="relative">
                 <input

@@ -29,7 +29,7 @@ import {
   DepartmentWorkspaceData,
   MinistrySubmission
 } from './types';
-import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from './constants/initialData';
+import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from './constants/initialData';
 import {
   CHURCH_ORG_UNITS,
   DEFAULT_ORG_UNIT_PINS,
@@ -64,14 +64,16 @@ import { DepartmentWorkspacePage } from './components/DepartmentWorkspacePage';
 import { ChildrenMinistryPortal } from './components/ChildrenMinistryPortal';
 import { ChapelsHubPage } from './components/ChapelsHubPage';
 import { NameScriptMode } from './utils/amharicTransliterator';
+import { useLanguage } from './context/LanguageContext';
 
 export default function App() {
+  const { t, unitName, chapelLabel } = useLanguage();
   const [appData, setAppData] = useState<AppData | null>(null);
   const [syncStatus, setSyncStatus] = useState<'connected' | 'saving' | 'offline' | 'error'>('connected');
   const [currentYear, setCurrentYear] = useState<string>('2019');
   const [currentUserRole, setCurrentUserRole] = useState<Role | null>(null);
   const [loggedInTeacher, setLoggedInTeacher] = useState<Teacher | null>(null);
-  const [selectedClass, setSelectedClass] = useState<string>(CLASS_LIST[3]); // 1ኛ ክፍል ሀ
+  const [selectedClass, setSelectedClass] = useState<string>(CLASS_LIST[1] || CLASS_LIST[0]); // 1ኛ ክፍል ሀ
   const [loggedInUnit, setLoggedInUnit] = useState<OrgUnitId | null>(null);
   const [activeOrgUnit, setActiveOrgUnit] = useState<OrgUnitId>('office');
   const [activeAdminView, setActiveAdminView] = useState<
@@ -202,9 +204,18 @@ export default function App() {
       setLoggedInUnit(null);
       setActiveAdminView('adminOverview');
       setActiveOrgUnit('office');
+    } else if (role === 'children_coordinator') {
+      setLoggedInTeacher(null);
+      setLoggedInChapel(null);
+      setLoggedInUnit('children_ministry');
+      setActiveOrgUnit('children_ministry');
     } else if (role === 'teacher' && teacher) {
       setLoggedInTeacher(teacher);
-      setSelectedClass(teacher.assignedClass);
+      setSelectedClass(
+        CLASS_LIST.includes(teacher.assignedClass)
+          ? teacher.assignedClass
+          : (CLASS_LIST[1] || CLASS_LIST[0])
+      );
       setLoggedInChapel(null);
       setLoggedInUnit('children_ministry');
       setActiveOrgUnit('children_ministry');
@@ -234,6 +245,9 @@ export default function App() {
   const canNavigateToUnit = useCallback(
     (targetUnitId: OrgUnitId): boolean => {
       if (currentUserRole === 'admin') return true;
+      if (currentUserRole === 'children_coordinator') {
+        return targetUnitId === 'children_ministry';
+      }
       if (currentUserRole === 'teacher' || loggedInChapel) return false;
       if (!loggedInUnit) return false;
       if (targetUnitId === loggedInUnit) return true;
@@ -283,6 +297,19 @@ export default function App() {
       );
     },
     [updateAppData]
+  );
+
+  const handleUpdateChapelPlans = useCallback(
+    (chapelName: string, plans: AnnualPlanItem[]) => {
+      handleUpdateDepartmentData('chapels_dept', (prev) => ({
+        ...prev,
+        chapelPlans: {
+          ...(prev.chapelPlans || {}),
+          [chapelName]: plans
+        }
+      }));
+    },
+    [handleUpdateDepartmentData]
   );
 
   // Ministry Plans, Reports & Letters Workflow Handlers
@@ -1600,7 +1627,8 @@ export default function App() {
     adminPin: string,
     leaderPin: string,
     chapelPins?: { [chapelName: string]: string },
-    unitPins?: { [unitId: string]: string }
+    unitPins?: { [unitId: string]: string },
+    childrenCoordinatorPin?: string
   ) => {
     updateAppData(
       (prev) => {
@@ -1615,7 +1643,33 @@ export default function App() {
           pins: {
             admin: adminPin,
             leader: mergedUnits.children_ministry || leaderPin,
+            childrenCoordinator:
+              childrenCoordinatorPin ?? prev.pins?.childrenCoordinator ?? '5679',
             chapels: chapelPins || prev.pins?.chapels || DEFAULT_CHAPEL_PINS,
+            units: mergedUnits
+          }
+        };
+      },
+      { immediate: true }
+    );
+  };
+
+  const handleSaveChildrenPins = (coordinatorPin: string, leaderPin: string) => {
+    updateAppData(
+      (prev) => {
+        const mergedUnits = {
+          ...DEFAULT_ORG_UNIT_PINS,
+          ...(prev.pins?.units || {}),
+          children_ministry: leaderPin
+        };
+        return {
+          ...prev,
+          pins: {
+            ...prev.pins,
+            admin: prev.pins?.admin || '1234',
+            leader: leaderPin,
+            childrenCoordinator: coordinatorPin,
+            chapels: prev.pins?.chapels || DEFAULT_CHAPEL_PINS,
             units: mergedUnits
           }
         };
@@ -1673,6 +1727,7 @@ export default function App() {
             teachers={appData.teachers}
             adminPin={appData.pins?.admin || '1234'}
             leaderPin={appData.pins?.leader || '5678'}
+            childrenCoordinatorPin={appData.pins?.childrenCoordinator || '5679'}
             chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
             unitPins={appData.pins?.units || DEFAULT_ORG_UNIT_PINS}
             chapelList={appData.chapels || DEFAULT_CHAPELS}
@@ -1710,18 +1765,19 @@ export default function App() {
                   <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
                   {loggedInChapel ? (
                     <span className="font-bold text-amber-200">
-                      {loggedInChapel} — የቻፕሉ መረጃ ብቻ ገጽ
+                      {chapelLabel(loggedInChapel)} — {t('የቻፕሉ መረጃ ብቻ ገጽ', 'Chapel Scoped View')}
+                    </span>
+                  ) : currentUserRole === 'children_coordinator' ? (
+                    <span className="font-bold text-emerald-200">
+                      {t('የልጆች አገልግሎት › የልጆች አገልግሎት አስተባባሪ (ሙሉ መቆጣጠሪያ)', 'Children Ministry › Children Coordinator (Full Control)')}
                     </span>
                   ) : loggedInUnit ? (
                     <span className="font-bold text-slate-100">
-                      {(() => {
-                        const u = getOrgUnitById(loggedInUnit);
-                        return u ? u.name : 'የቤተክርስቲያን ፖርታል';
-                      })()}
+                      {unitName(loggedInUnit, getOrgUnitById(loggedInUnit)?.name || t('የቤተክርስቲያን ፖርታል', 'Church Portal'))}
                     </span>
                   ) : (
                     <span className="font-bold text-emerald-200 tabular-nums">
-                      ዋና አዲሚን (Super Admin) — የቤተክርስቲያን አባላት፦ {(appData.churchMembers || []).length} · ልጆች፦ {(appData.churchChildren || []).length} · ሰንበት ተማሪዎች፦ {countStudentsInData(appData)}
+                      {t('ዋና አዲሚን (Super Admin)', 'Super Admin')} — {t('የቤተክርስቲያን አባላት፦', 'Members:')} {(appData.churchMembers || []).length} · {t('ልጆች፦', 'Children:')} {(appData.churchChildren || []).length} · {t('ሰንበት ተማሪዎች፦', 'Sunday School:')} {countStudentsInData(appData)}
                     </span>
                   )}
                 </div>
@@ -1909,7 +1965,7 @@ export default function App() {
                     {currentUserRole === 'admin' && (
                       <div className="space-y-1 pb-3 mb-3 border-b border-slate-200">
                         <div className="px-2 pb-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                          የዋና አዲሚን መቆጣጠሪያ
+                          {t('የዋና አዲሚን መቆጣጠሪያ', 'Super Admin Controls')}
                         </div>
                         <button
                           type="button"
@@ -1924,7 +1980,7 @@ export default function App() {
                           }`}
                         >
                           <Shield className="w-3.5 h-3.5 shrink-0" />
-                          <span>የዋና አዲሚን ገጽ (Overview)</span>
+                          <span>{t('የዋና አዲሚን ገጽ (Overview)', 'Super Admin Overview')}</span>
                         </button>
                         <button
                           type="button"
@@ -1939,7 +1995,7 @@ export default function App() {
                           }`}
                         >
                           <BarChart3 className="w-3.5 h-3.5 shrink-0" />
-                          <span>አጠቃላይ ስታቲስቲክስ (ወ/ሴ/ድምር)</span>
+                          <span>{t('አጠቃላይ ስታቲስቲክስ (ወ/ሴ/ድምር)', 'Overview Statistics (M/F/Total)')}</span>
                         </button>
                         <button
                           type="button"
@@ -1954,7 +2010,7 @@ export default function App() {
                           }`}
                         >
                           <KeyRound className="w-3.5 h-3.5 shrink-0" />
-                          <span>የሁሉም መግቢያ ቁልፎች (PINs)</span>
+                          <span>{t('የሁሉም መግቢያ ቁልፎች (PINs)', 'Access PIN Manager')}</span>
                         </button>
                       </div>
                     )}
@@ -1962,7 +2018,7 @@ export default function App() {
                     {currentUserRole !== 'admin' && loggedInUnit === 'elders_council' && (
                       <div className="space-y-1 pb-3 mb-3 border-b border-slate-200">
                         <div className="px-2 pb-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                          የሽማግሌዎች ጉባኤ አጠቃላይ እይታ
+                          {t('የሽማግሌዎች ጉባኤ አጠቃላይ እይታ', 'Elders Council Oversight')}
                         </div>
                         <button
                           type="button"
@@ -1977,7 +2033,7 @@ export default function App() {
                           }`}
                         >
                           <BarChart3 className="w-3.5 h-3.5 shrink-0" />
-                          <span>አጠቃላይ ስታቲስቲክስ (ወ/ሴ/ድምር)</span>
+                          <span>{t('አጠቃላይ ስታቲስቲክስ (ወ/ሴ/ድምር)', 'Overview Statistics (M/F/Total)')}</span>
                         </button>
                       </div>
                     )}
@@ -1985,7 +2041,7 @@ export default function App() {
                     <div className="space-y-1">
                       <div className="px-2 pb-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                         <Building2 className="w-3 h-3" />
-                        <span>የቤተ ክርስቲያን መዋቅር</span>
+                        <span>{t('የቤተ ክርስቲያን መዋቅር', 'Church Structure')}</span>
                       </div>
                       {sidebarUnits.map((u) => {
                         const isActive =
@@ -2016,7 +2072,7 @@ export default function App() {
                                   : 'bg-slate-400'
                               }`}
                             />
-                            <span className="leading-snug">{u.name}</span>
+                            <span className="leading-snug">{unitName(u.id, u.name)}</span>
                           </button>
                         );
                       })}
@@ -2040,6 +2096,7 @@ export default function App() {
                   <PinManageTab
                     adminPin={appData.pins?.admin || '1234'}
                     leaderPin={appData.pins?.leader || '5678'}
+                    childrenCoordinatorPin={appData.pins?.childrenCoordinator || '5679'}
                     chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
                     unitPins={appData.pins?.units || DEFAULT_ORG_UNIT_PINS}
                     chapelList={appData.chapels || DEFAULT_CHAPELS}
@@ -2131,6 +2188,9 @@ export default function App() {
                     onCreateSubmission={handleCreateSubmission}
                     onResubmitSubmission={handleResubmitSubmission}
                     onDeleteSubmission={handleDeleteSubmission}
+                    childrenCoordinatorPin={appData.pins?.childrenCoordinator || '5679'}
+                    childrenLeaderPin={appData.pins?.units?.children_ministry || appData.pins?.leader || '5678'}
+                    onSaveChildrenPins={handleSaveChildrenPins}
                   />
                 ) : activeOrgUnit === 'chapels_dept' || loggedInChapel ? (
                   <ChapelsHubPage
@@ -2164,6 +2224,10 @@ export default function App() {
                     onCreateSubmission={handleCreateSubmission}
                     onResubmitSubmission={handleResubmitSubmission}
                     onDeleteSubmission={handleDeleteSubmission}
+                    chapelPlansMap={appData.departmentData?.chapels_dept?.chapelPlans || {}}
+                    onUpdateChapelPlans={handleUpdateChapelPlans}
+                    departmentDataMap={appData.departmentData || {}}
+                    childrenPlans={appData.plans || DEFAULT_ANNUAL_PLAN}
                   />
                 ) : (
                   <DepartmentWorkspacePage
@@ -2172,6 +2236,7 @@ export default function App() {
                     ageReferenceYear={appData.ageReferenceYear || 2017}
                     currentUserRole={currentUserRole}
                     departmentDataMap={appData.departmentData || {}}
+                    childrenPlans={appData.plans || DEFAULT_ANNUAL_PLAN}
                     onUpdateDepartmentData={handleUpdateDepartmentData}
                     canNavigateToUnit={canNavigateToUnit}
                     onSelectUnit={handleSelectUnit}
@@ -2209,10 +2274,17 @@ export default function App() {
       <footer className="mt-auto py-6 border-t border-slate-200/80 bg-white text-center text-xs text-slate-500 print:hidden">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
-            © {currentYear} የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን - የልጆች አገልግሎት ዘርፍ
+            © {currentYear}{' '}
+            {t(
+              'የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን — አጥቢያዊ መዋቅር እና አገልግሎት ፖርታል',
+              'Birbir Town Kale Heywot Church — Parish Structure & Ministry Portal'
+            )}
           </span>
           <span className="text-[11px] text-slate-400">
-            የመረጃ፣ የውጤትና የዓመት ዕቅድ ማኔጅመንት ሲስተም
+            {t(
+              'የአጥቢያ መረጃ፣ የዕቅድ/ክንውን እና የአገልግሎት ማኔጅመንት ሲስተም',
+              'Church Information, Plans/Execution & Ministry Management System'
+            )}
           </span>
         </div>
       </footer>

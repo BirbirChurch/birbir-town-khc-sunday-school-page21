@@ -168,7 +168,7 @@ export const SpiritualTab: React.FC<SpiritualTabProps> = ({
               + አዲስ ተማሪ/አባል አስገባ
             </button>
 
-            {currentUserRole === 'admin' && (
+            {(currentUserRole === 'admin' || currentUserRole === 'children_coordinator') && (
               <button
                 onClick={() => setShowGroupModal(true)}
                 className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"

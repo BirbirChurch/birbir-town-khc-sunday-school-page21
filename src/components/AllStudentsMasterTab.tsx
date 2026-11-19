@@ -118,7 +118,7 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
 
   // Add form state
   const [newName, setNewName] = useState('');
-  const [newClass, setNewClass] = useState(classList[3] || classList[0] || '');
+  const [newClass, setNewClass] = useState(classList[1] || classList[0] || '');
   const [newGender, setNewGender] = useState<string>('ወ');
   const [newAge, setNewAge] = useState<string>('8');
 
@@ -139,12 +139,8 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
     };
   }, []);
 
-  // Union of all class names from CLASS_LIST and any existing keys in studentsByClass
-  const allClasses = useMemo(() => {
-    const set = new Set(classList);
-    Object.keys(studentsByClass).forEach((c) => set.add(c));
-    return Array.from(set);
-  }, [classList, studentsByClass]);
+  // Strictly restrict Sunday School classes to CLASS_LIST (ማቆያ እስከ 12ኛ ክፍል)
+  const allClasses = useMemo(() => [...classList], [classList]);
 
   // Aggregate all registered students across all classes with enrichment
   const allMasterStudents: EnrichedStudent[] = useMemo(() => {

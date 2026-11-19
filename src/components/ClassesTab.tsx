@@ -144,8 +144,10 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
   const [isImporting, setIsImporting] = useState(false);
 
   const assignedTeacher = teachers.find((t) => t.assignedClass === selectedClass);
+  const isFullController =
+    currentUserRole === 'admin' || currentUserRole === 'children_coordinator';
   const canEdit =
-    currentUserRole === 'admin' ||
+    isFullController ||
     (currentUserRole === 'teacher' && loggedInTeacher?.assignedClass === selectedClass);
 
   // Configuration of 7 assessments with their max scores and styling (memoized)
@@ -835,7 +837,7 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
               )}
 
               {/* Master All Students Shortcut for Coordinator / Leaders */}
-              {onGoToAllStudents && (currentUserRole === 'admin' || currentUserRole === 'leader') && (
+              {onGoToAllStudents && (isFullController || currentUserRole === 'leader') && (
                 <button
                   type="button"
                   onClick={onGoToAllStudents}

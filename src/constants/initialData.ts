@@ -3,8 +3,6 @@ import { DEFAULT_ORG_UNIT_PINS } from './churchStructure';
 
 export const CLASS_LIST: string[] = [
   "ማቆያ ክፍል",
-  "ደረጃ 1",
-  "ደረጃ 2",
   "1ኛ ክፍል ሀ",
   "1ኛ ክፍል ለ",
   "2ኛ ክፍል ሀ",
@@ -154,6 +152,7 @@ export const INITIAL_APP_DATA: AppData = {
   pins: {
     admin: "1234",
     leader: "5678",
+    childrenCoordinator: "5679",
     chapels: DEFAULT_CHAPEL_PINS,
     units: DEFAULT_ORG_UNIT_PINS
   },
