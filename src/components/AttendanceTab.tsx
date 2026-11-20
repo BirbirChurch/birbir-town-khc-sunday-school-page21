@@ -42,6 +42,8 @@ import {
 } from '../utils/csv';
 import { matchesAmharicSearch } from '../utils/churchExcelParser';
 import { NameScriptMode, transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
+import { formatDualDateCompact, formatDualDateText, getCurrentLocalTimeHHMM } from '../utils/ethiopianDate';
+import { DualDateBadge, DualDateInput } from './DualDate';
 
 interface AttendanceTabProps {
   currentYear: string;
@@ -486,7 +488,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       const enteredReason = quickAbsentReasons[studentId];
       if (enteredReason && enteredReason.trim()) {
         onAddAttendance({
-          date: currentWeekDate,
+          date: `${currentWeekDate.slice(0, 10)}T${getCurrentLocalTimeHHMM()}`,
           className: selectedClass,
           studentName: studentNameVal,
           gender: genderVal || 'ወ',
@@ -573,7 +575,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       'ዕድሜ'
     ];
     for (let w = 1; w <= 40; w++) {
-      const d = weekDates?.[w] ? ` (${weekDates[w]})` : '';
+      const d = weekDates?.[w] ? ` (${formatDualDateText(weekDates[w])})` : '';
       headerRow.push(`ሳምንት ${w}${d}`);
     }
     headerRow.push('የተገኙ', 'የቀሩ', 'ፍቃድ', 'ጠቅላላ የተመዘገበ', 'የመገኘት ምጣኔ (%)');
@@ -636,7 +638,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
     const enHeader = nameScriptMode === 'both' ? ',Student Name (English)' : '';
     let csv = `\uFEFFተ.ቁ,${nameScriptMode === 'en' ? 'የተማሪው ስም (English)' : 'የተማሪው ስም'}${enHeader},ክፍል,ፆታ,እድሜ`;
     for (let w = 1; w <= 40; w++) {
-      const d = weekDates?.[w] ? ` (${weekDates[w]})` : '';
+      const d = weekDates?.[w] ? ` (${formatDualDateText(weekDates[w])})` : '';
       csv += `,ሳምንት ${w}${d}`;
     }
     csv += ',የተገኙ,የቀሩ,ፍቃድ,ጠቅላላ የተመዘገበ,የመገኘት ምጣኔ (%)\n';
@@ -792,7 +794,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   // Filtered absentee list (for absentee slips archive)
   const filteredAbsenteeList = useMemo(() => {
     return attendance.filter((rec) => {
-      const matchesDate = !absenteeDateFilter || rec.date === absenteeDateFilter;
+      const matchesDate = !absenteeDateFilter || rec.date.slice(0, 10) === absenteeDateFilter.slice(0, 10);
       const matchesClass = absenteeClassFilter === 'all' || rec.className === absenteeClassFilter;
       return matchesDate && matchesClass;
     });
@@ -805,7 +807,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       return;
     }
     onAddAttendance({
-      date: absenteeDateFilter,
+      date: `${absenteeDateFilter.slice(0, 10)}T${getCurrentLocalTimeHHMM()}`,
       className: modalTargetClass,
       studentName: modalStudentName.trim(),
       gender: modalGender,
@@ -1167,20 +1169,20 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                 >
                   {Array.from({ length: 40 }, (_, i) => i + 1).map((w) => (
                     <option key={`opt_roster_w_${w}`} value={w}>
-                      ሳምንት {w} {weekDates?.[w] ? `(${weekDates[w]})` : ''}
+                      ሳምንት {w} {weekDates?.[w] ? `(${formatDualDateText(weekDates[w])})` : ''}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/20">
+              <div className="flex flex-wrap items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/20">
                 <Calendar className="w-4 h-4 text-amber-300" />
                 <label className="text-xs font-bold text-amber-100">ቀን፦</label>
-                <input
-                  type="date"
+                <DualDateInput
+                  compact
+                  dark
                   value={weekDates?.[selectedWeek] || currentWeekDate}
-                  onChange={(e) => handleUpdateWeekDate(selectedWeek, e.target.value)}
-                  className="bg-slate-800 text-white text-xs font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  onChange={(val) => handleUpdateWeekDate(selectedWeek, val)}
                 />
               </div>
             </div>
@@ -1286,12 +1288,12 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                           className={`py-2 px-0.5 border-r border-slate-200 min-w-[34px] text-[11px] cursor-pointer hover:bg-emerald-50 transition relative print:border-slate-900 print:min-w-[20px] print:text-[9px] ${
                             selectedWeek === w ? 'bg-emerald-100/90 text-emerald-950 font-black' : ''
                           }`}
-                          title={`ሳምንት ${w}${hasDate ? ` (${hasDate})` : ''} - አማራጮችን ለማየት ጠቅ ያድርጉ`}
+                          title={`ሳምንት ${w}${hasDate ? ` (${formatDualDateText(hasDate)})` : ''} - አማራጮችን ለማየት ጠቅ ያድርጉ`}
                         >
                           <div>ሳ{w}</div>
                           {hasDate ? (
-                            <div className="text-[8px] font-normal text-slate-500 truncate max-w-[36px] print:hidden">
-                              {hasDate.substring(5)}
+                            <div className="text-[7px] leading-tight font-normal text-slate-600 truncate max-w-[44px] print:hidden">
+                              {formatDualDateCompact(hasDate)}
                             </div>
                           ) : (
                             <div className="text-[8px] font-normal text-slate-400 print:hidden">እሁድ</div>
@@ -1704,13 +1706,11 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   {/* Date setting */}
                   <div>
                     <label className="block text-slate-700 font-semibold mb-1">
-                      የዚህ ሰንበት ቀን (Date)፦
+                      የዚህ ሰንበት ቀን (ዓ/ም እና ግርጎሪያን)፦
                     </label>
-                    <input
-                      type="date"
+                    <DualDateInput
                       value={weekDates?.[activeWeekMenu] || currentWeekDate}
-                      onChange={(e) => handleUpdateWeekDate(activeWeekMenu, e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+                      onChange={(val) => handleUpdateWeekDate(activeWeekMenu, val)}
                     />
                   </div>
 
@@ -1812,21 +1812,20 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   >
                     {Array.from({ length: 40 }, (_, i) => i + 1).map((w) => (
                       <option key={`opt_w_${w}`} value={w}>
-                        ሳምንት {w} {weekDates?.[w] ? `(${weekDates[w]})` : ''}
+                        ሳምንት {w} {weekDates?.[w] ? `(${formatDualDateText(weekDates[w])})` : ''}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 {/* Sunday Date Picker */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Calendar className="w-4 h-4 text-emerald-600" />
                   <label className="text-xs font-bold text-slate-700">የሰንበት ቀን፦</label>
-                  <input
-                    type="date"
+                  <DualDateInput
+                    compact
                     value={weekDates?.[selectedWeek] || currentWeekDate}
-                    onChange={(e) => handleUpdateWeekDate(selectedWeek, e.target.value)}
-                    className="bg-slate-50 border border-slate-300 text-slate-800 text-xs font-bold rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+                    onChange={(val) => handleUpdateWeekDate(selectedWeek, val)}
                   />
                 </div>
               </div>
@@ -2081,14 +2080,13 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
           {/* Controls Bar for Absentee Archive */}
           <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Calendar className="w-4 h-4 text-blue-600" />
                 <label className="text-xs font-semibold text-slate-600">ቀን፦</label>
-                <input
-                  type="date"
+                <DualDateInput
+                  compact
                   value={absenteeDateFilter}
-                  onChange={(e) => setAbsenteeDateFilter(e.target.value)}
-                  className="bg-slate-50 border border-slate-300 text-slate-800 text-xs font-semibold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  onChange={(val) => setAbsenteeDateFilter(val)}
                 />
               </div>
 
@@ -2161,8 +2159,8 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                         <td className="py-2.5 px-3 border-r border-slate-200 text-slate-500 font-medium">
                           {idx + 1}
                         </td>
-                        <td className="py-2.5 px-3 border-r border-slate-200 text-slate-600 font-mono text-[11px]">
-                          {rec.date}
+                        <td className="py-2.5 px-3 border-r border-slate-200 text-slate-600 text-[11px] whitespace-nowrap">
+                          <DualDateBadge value={rec.date} mode="stacked" showTime />
                         </td>
                         <td className="py-2.5 px-3 border-r border-slate-200 font-semibold text-blue-900">
                           {rec.className}

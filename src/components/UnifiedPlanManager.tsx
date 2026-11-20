@@ -1,4 +1,5 @@
-import React, { Suspense, lazy, useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useState } from 'react';
+import { LazyErrorBoundary, lazyWithRetry } from './LazyBoundary';
 import * as XLSX from 'xlsx';
 import {
   Target,
@@ -31,7 +32,7 @@ import {
 } from '../utils/planParser';
 import { useLanguage } from '../context/LanguageContext';
 
-const PlanSectorReceiverPanel = lazy(() =>
+const PlanSectorReceiverPanel = lazyWithRetry(() =>
   import('./PlanDispatchPanel').then((m) => ({ default: m.PlanSectorReceiverPanel }))
 );
 
@@ -401,6 +402,7 @@ export const UnifiedPlanManager: React.FC<UnifiedPlanManagerProps> = ({
   return (
     <div className="space-y-4">
       {onAcceptDispatch && (
+        <LazyErrorBoundary compact>
         <Suspense fallback={null}>
           <PlanSectorReceiverPanel
             unitId={unitId}
@@ -412,6 +414,7 @@ export const UnifiedPlanManager: React.FC<UnifiedPlanManagerProps> = ({
             onReturnDispatch={onReturnDispatch}
           />
         </Suspense>
+        </LazyErrorBoundary>
       )}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">

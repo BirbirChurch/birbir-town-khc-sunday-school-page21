@@ -25,6 +25,7 @@ import {
   Globe,
   Ban
 } from 'lucide-react';
+import { DualLiveClock } from './DualDate';
 import {
   BlockedBrowserRule,
   BrowserClientInfo,
@@ -466,6 +467,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     )}
                   </span>
                 </p>
+                <DualLiveClock variant="login" />
               </div>
             </div>
 

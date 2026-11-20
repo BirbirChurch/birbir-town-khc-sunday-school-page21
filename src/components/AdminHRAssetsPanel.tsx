@@ -16,6 +16,8 @@ import {
 import { AssetType, ChurchAssetRecord, ChurchHRRecord, HRCategory } from '../types';
 import { generateUniqueId } from '../utils/idGenerator';
 import { useLanguage } from '../context/LanguageContext';
+import { formatDualDateText } from '../utils/ethiopianDate';
+import { DualDateBadge, DualDateInput } from './DualDate';
 
 interface AdminHRPanelProps {
   currentYear: string;
@@ -153,7 +155,7 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
         r.department || '-',
         r.educationLevel || '-',
         r.phone || '-',
-        r.hireDate || '-',
+        formatDualDateText(r.hireDate, '-'),
         r.monthlySalary ?? '-',
         r.status
       ])
@@ -332,7 +334,14 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                           : t('የአስተዳደር ሠራተኛ', 'Admin Staff')}
                       </span>
                     </td>
-                    <td className="py-2.5 px-4 font-extrabold text-slate-900">{r.name}</td>
+                    <td className="py-2.5 px-4 font-extrabold text-slate-900">
+                      <div>{r.name}</div>
+                      {r.hireDate && (
+                        <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                          <DualDateBadge value={r.hireDate} mode="inline" />
+                        </div>
+                      )}
+                    </td>
                     <td className="py-2.5 px-3 text-slate-700 font-semibold">{r.gender}</td>
                     <td className="py-2.5 px-4 text-slate-800 font-semibold">{r.roleTitle}</td>
                     <td className="py-2.5 px-4 text-slate-600">{r.department || '—'}</td>
@@ -483,14 +492,9 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl tabular-nums"
                   />
                 </div>
-                <div>
+                <div className="col-span-3">
                   <label className="block font-bold text-slate-700 mb-1">{t('የቅጥር ቀን', 'Hire Date')}</label>
-                  <input
-                    type="date"
-                    value={hHireDate}
-                    onChange={(e) => setHHireDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
-                  />
+                  <DualDateInput value={hHireDate} onChange={setHHireDate} />
                 </div>
               </div>
 
@@ -679,7 +683,7 @@ export const AdminAssetsPanel: React.FC<AdminAssetsPanelProps> = ({
     const toRows = (list: ChurchAssetRecord[], title: string) => [
       [title],
       [],
-      ['ተ.ቁ', 'ዓይነት', 'የንብረት ስም', 'ምድብ', 'መለያ/ኮድ', 'ብዛት', 'መለኪያ', 'የአንዱ ዋጋ', 'ጠቅላላ ዋጋ (ብር)', 'ሁኔታ', 'ቦታ'],
+      ['ተ.ቁ', 'ዓይነት', 'የንብረት ስም', 'ምድብ', 'መለያ/ኮድ', 'ብዛት', 'መለኪያ', 'የአንዱ ዋጋ', 'ጠቅላላ ዋጋ (ብር)', 'የተገዛበት ቀን', 'ሁኔታ', 'ቦታ'],
       ...list.map((r, i) => [
         i + 1,
         r.assetType === 'fixed' ? 'ቋሚ' : 'አላቂ',
@@ -690,6 +694,7 @@ export const AdminAssetsPanel: React.FC<AdminAssetsPanelProps> = ({
         r.unit,
         r.unitValue,
         r.totalValue,
+        formatDualDateText(r.acquiredDate, '-'),
         r.conditionOrStatus,
         r.location || '-'
       ])
@@ -866,7 +871,14 @@ export const AdminAssetsPanel: React.FC<AdminAssetsPanelProps> = ({
                         {r.assetType === 'fixed' ? t('ቋሚ', 'Fixed') : t('አላቂ', 'Consumable')}
                       </span>
                     </td>
-                    <td className="py-2.5 px-4 font-extrabold text-slate-900">{r.name}</td>
+                    <td className="py-2.5 px-4 font-extrabold text-slate-900">
+                      <div>{r.name}</div>
+                      {r.acquiredDate && (
+                        <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                          <DualDateBadge value={r.acquiredDate} mode="inline" />
+                        </div>
+                      )}
+                    </td>
                     <td className="py-2.5 px-4 text-slate-600">{r.category}</td>
                     <td className="py-2.5 px-3 font-mono text-slate-600">{r.codeOrSerial || '—'}</td>
                     <td className="py-2.5 px-3 text-right font-bold tabular-nums text-slate-800">
@@ -1034,14 +1046,9 @@ export const AdminAssetsPanel: React.FC<AdminAssetsPanelProps> = ({
                     <option value="አልቋል/ያረጀ">{t('አልቋል/ያረጀ', 'Depleted / Retired')}</option>
                   </select>
                 </div>
-                <div>
+                <div className="col-span-2">
                   <label className="block font-bold text-slate-700 mb-1">{t('የተገዛበት ቀን', 'Acquired Date')}</label>
-                  <input
-                    type="date"
-                    value={aDate}
-                    onChange={(e) => setADate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
-                  />
+                  <DualDateInput value={aDate} onChange={setADate} />
                 </div>
               </div>
 

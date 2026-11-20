@@ -281,11 +281,62 @@ export interface EvangelismMissionaryRecord {
   notes?: string;
 }
 
+export interface UnitLeaderRecord {
+  id: number;
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  roleTitle: string;
+  phone?: string;
+  termOrStartDate?: string;
+  status: string;
+  notes?: string;
+}
+
+export type ChapelLeaderCategoryId =
+  | 'fathers_leaders'
+  | 'women_leaders'
+  | 'youth_leaders'
+  | 'children_leaders'
+  | 'evangelism_leaders'
+  | 'compassion_leaders'
+  | 'deacons';
+
+export interface ChapelLeaderRecord {
+  id: number;
+  chapel: string;
+  category: ChapelLeaderCategoryId;
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  roleTitle?: string;
+  phone?: string;
+  assignedDate?: string;
+  status: string;
+  notes?: string;
+}
+
+export interface HistoricalLeaderRecord {
+  id: number;
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  serviceYear: string;
+  sectorId: OrgUnitId | 'other';
+  sectorName: string;
+  chapelName?: string;
+  responsibility: string;
+  phone?: string;
+  status: string;
+  notes?: string;
+  recordedAt?: string;
+}
+
 export interface DepartmentWorkspaceData {
   members: DepartmentMemberRecord[];
   activities: DepartmentActivityRecord[];
   finances: DepartmentFinanceRecord[];
   plans: AnnualPlanItem[];
+  leaders?: UnitLeaderRecord[];
+  chapelLeaders?: ChapelLeaderRecord[];
+  historicalLeaders?: HistoricalLeaderRecord[];
   hrRecords?: ChurchHRRecord[];
   assetRecords?: ChurchAssetRecord[];
   chapelPlans?: { [chapelName: string]: AnnualPlanItem[] };
@@ -297,6 +348,7 @@ export interface DepartmentWorkspaceData {
   youthCoordinatorNotes?: string;
   beneficiaryRecords?: CompassionBeneficiaryRecord[];
   missionaryRecords?: EvangelismMissionaryRecord[];
+  eldersDefaultSeeded?: boolean;
 }
 
 export type SubmissionType = 'plan' | 'report' | 'letter';

@@ -1,16 +1,19 @@
-import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target, Sparkles, HeartHandshake } from 'lucide-react';
+import React, { Suspense, useMemo, useState } from 'react';
+import { LazyErrorBoundary, lazyWithRetry } from './LazyBoundary';
+import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target, Sparkles, HeartHandshake, UserCheck } from 'lucide-react';
 import {
   AnnualPlanItem,
   ChurchChild,
   ChurchMember,
   DepartmentWorkspaceData,
   MinistrySubmission,
+  OrgUnitId,
   PlanDispatchItem,
   Role,
   Student
 } from '../types';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
+import { createEmptyDepartmentWorkspaceData } from '../constants/churchStructure';
 import { computeChurchOverviewStatistics } from '../utils/churchOverviewStats';
 import { computeChapelYouthWomenStats } from '../utils/chapelDemographics';
 import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
@@ -24,8 +27,10 @@ import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
 import { ChapelYouthRegistryTab, ChapelWomenRegistryTab } from './ChapelYouthWomenTabs';
+import { ChapelLeadersTab } from './ChapelLeadersTab';
+import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
 
-const PlanSectorReceiverPanel = lazy(() =>
+const PlanSectorReceiverPanel = lazyWithRetry(() =>
   import('./PlanDispatchPanel').then((m) => ({ default: m.PlanSectorReceiverPanel }))
 );
 
@@ -77,9 +82,13 @@ interface ChapelsHubPageProps {
   planDispatches?: PlanDispatchItem[];
   onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
   onReturnDispatch?: (dispatchId: number, note: string) => void;
+  onUpdateDepartmentData?: (
+    unitId: OrgUnitId,
+    updater: (prev: DepartmentWorkspaceData) => DepartmentWorkspaceData
+  ) => void;
 }
 
-type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'youth' | 'women' | 'plans' | 'submissions';
+type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'youth' | 'women' | 'chapel_leaders' | 'plans' | 'submissions';
 
 export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   currentYear,
@@ -118,7 +127,8 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   childrenPlans = [],
   planDispatches = [],
   onAcceptDispatch,
-  onReturnDispatch
+  onReturnDispatch,
+  onUpdateDepartmentData
 }) => {
   const { t, unitName, chapelLabel } = useLanguage();
   const officialLockedChapel = lockedChapel ? mapToOfficialChapel(lockedChapel) : null;
@@ -128,6 +138,20 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   );
 
   const effectiveChapelScope = officialLockedChapel || selectedChapel;
+
+  const chapelsWs = useMemo(
+    () => departmentDataMap.chapels_dept || createEmptyDepartmentWorkspaceData(),
+    [departmentDataMap]
+  );
+  const allChapelLeaders = useMemo(() => chapelsWs.chapelLeaders || [], [chapelsWs.chapelLeaders]);
+  const scopedChapelLeadersCount = useMemo(
+    () =>
+      effectiveChapelScope
+        ? allChapelLeaders.filter((l) => l.chapel === effectiveChapelScope).length
+        : allChapelLeaders.length,
+    [allChapelLeaders, effectiveChapelScope]
+  );
+  const deptLeaders = useMemo(() => chapelsWs.leaders || [], [chapelsWs.leaders]);
 
   const overviewStats = useMemo(
     () =>
@@ -315,6 +339,28 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab('chapel_leaders')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'chapel_leaders'
+                ? 'bg-emerald-800 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>
+              {effectiveChapelScope
+                ? t(
+                    `የ${effectiveChapelScope} መሪዎች (7 ክፍሎች · ${scopedChapelLeadersCount})`,
+                    `${chapelLabel(effectiveChapelScope)} Leaders (${scopedChapelLeadersCount})`
+                  )
+                : t(
+                    `የቻፕሎች መሪዎች (7ቱ ክፍሎች · ${scopedChapelLeadersCount})`,
+                    `Chapel Leaders (7 Groups · ${scopedChapelLeadersCount})`
+                  )}
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('stats')}
             className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
               activeTab === 'stats'
@@ -469,6 +515,17 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                             type="button"
                             onClick={() => {
                               setSelectedChapel(row.chapelName);
+                              setActiveTab('chapel_leaders');
+                            }}
+                            className="text-xs font-bold text-emerald-800 hover:underline cursor-pointer"
+                          >
+                            {t('መሪዎች', 'Leaders')}
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChapel(row.chapelName);
                               setActiveTab('plans');
                             }}
                             className="text-xs font-bold text-indigo-800 hover:underline cursor-pointer"
@@ -565,6 +622,41 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
         />
       )}
 
+      {activeTab === 'chapel_leaders' && (
+        <div className="space-y-6">
+          <ChapelLeadersTab
+            currentYear={currentYear}
+            chapelList={chapelList}
+            scopedChapel={effectiveChapelScope}
+            chapelLeaders={allChapelLeaders}
+            churchMembers={churchMembers}
+            onSaveChapelLeaders={(nextChapelLeaders) =>
+              onUpdateDepartmentData?.('chapels_dept', (prev) => ({
+                ...prev,
+                chapelLeaders: nextChapelLeaders
+              }))
+            }
+          />
+          {!effectiveChapelScope && (
+            <UnitLeadersRosterTab
+              unitTitle={t(
+                'የ10ሩም ቻፕሎች አገልግሎት ዘርፍ አጠቃላይ አመራር ኮሚቴ',
+                'Chapels Department Overall Leadership Committee'
+              )}
+              currentYear={currentYear}
+              leaders={deptLeaders}
+              churchMembers={churchMembers}
+              onSaveLeaders={(nextLeaders) =>
+                onUpdateDepartmentData?.('chapels_dept', (prev) => ({
+                  ...prev,
+                  leaders: nextLeaders
+                }))
+              }
+            />
+          )}
+        </div>
+      )}
+
       {activeTab === 'stats' && (
         <ChurchStatisticsDashboardTab
           currentYear={currentYear}
@@ -598,6 +690,7 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
         ) : (
           <div className="space-y-5">
             {onAcceptDispatch && (
+              <LazyErrorBoundary compact>
               <Suspense fallback={null}>
                 <PlanSectorReceiverPanel
                   unitId="chapels_dept"
@@ -608,6 +701,7 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                   onReturnDispatch={onReturnDispatch}
                 />
               </Suspense>
+              </LazyErrorBoundary>
             )}
             <section className="bg-white border border-slate-200 rounded-2xl p-5">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">

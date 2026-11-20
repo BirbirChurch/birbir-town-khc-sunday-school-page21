@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { BlockedBrowserRule, BrowserClientInfo, BrowserDeviceType, FailedLoginAttemptRecord } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { formatDualDateTimeText } from '../utils/ethiopianDate';
 
 interface AdminSecurityMonitorTabProps {
   failedAttempts: FailedLoginAttemptRecord[];
@@ -128,19 +129,7 @@ export const AdminSecurityMonitorTab: React.FC<AdminSecurityMonitorTabProps> = (
   };
 
   const formatTimestamp = (iso: string) => {
-    try {
-      const d = new Date(iso);
-      return d.toLocaleString('am-ET', {
-        year: 'numeric',
-        month: 'short',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-    } catch {
-      return iso;
-    }
+    return formatDualDateTimeText(iso, iso);
   };
 
   const handleQuickBlock = (att: FailedLoginAttemptRecord) => {

@@ -8,6 +8,7 @@ import {
   BookOpen,
   Award,
   UserCheck,
+  UserCog,
   BookMarked,
   Target,
   Send,
@@ -28,7 +29,9 @@ import {
   ChoirMember,
   ChurchChild,
   ChurchMember,
+  DepartmentWorkspaceData,
   MinistrySubmission,
+  OrgUnitId,
   PlanDispatchItem,
   Role,
   SpiritualMember,
@@ -51,6 +54,7 @@ import { TeachersTab } from './TeachersTab';
 import { SubjectsTab } from './SubjectsTab';
 import { PlanReportTab } from './PlanReportTab';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
+import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
 import { useLanguage } from '../context/LanguageContext';
 
 export type ChildrenSubTabId =
@@ -62,6 +66,7 @@ export type ChildrenSubTabId =
   | 'choirTab'
   | 'spiritualTab'
   | 'topAchieversTab'
+  | 'leadersTab'
   | 'teachersTab'
   | 'subjectsTab'
   | 'planReportTab'
@@ -177,6 +182,11 @@ interface ChildrenMinistryPortalProps {
   planDispatches?: PlanDispatchItem[];
   onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
   onReturnDispatch?: (dispatchId: number, note: string) => void;
+  // Department workspace updater (used for sector leaders roster)
+  onUpdateDepartmentData?: (
+    unitId: OrgUnitId,
+    updater: (prev: DepartmentWorkspaceData) => DepartmentWorkspaceData
+  ) => void;
 }
 
 export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (props) => {
@@ -256,6 +266,8 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
     }
   };
 
+  const childrenLeaders = appData.departmentData?.children_ministry?.leaders || [];
+
   const subTabs: {
     id: ChildrenSubTabId;
     label: string;
@@ -270,6 +282,7 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
     { id: 'choirTab', label: t('መዘምራንና ኪነ-ጥበብ', 'Choir & Arts'), icon: Music, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
     { id: 'spiritualTab', label: t('መንፈሳዊ ትምህርት ቡድኖች', 'Spiritual Study Groups'), icon: BookOpen, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
     { id: 'topAchieversTab', label: t('ከ1ኛ - 3ኛ ደረጃዎች', 'Top Achievers (1st–3rd)'), icon: Award, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'leadersTab', label: t(`የመሪዎች ስም ዝርዝር (${childrenLeaders.length})`, `Leaders Roster (${childrenLeaders.length})`), icon: UserCog, roles: ['admin', 'children_coordinator', 'leader'] },
     { id: 'teachersTab', label: t('መምህራን & PIN', 'Teachers & PIN'), icon: UserCheck, roles: ['admin', 'children_coordinator', 'leader'] },
     { id: 'subjectsTab', label: t('የትምህርት ዓይነቶች', 'Subjects'), icon: BookMarked, roles: ['admin', 'children_coordinator', 'leader'] },
     { id: 'planReportTab', label: t('የልጆች ዘርፍ ዕቅድ & ክንውን', 'Plans & Execution Reports'), icon: Target, roles: ['admin', 'children_coordinator', 'leader'] },
@@ -820,6 +833,21 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
             classList={props.classList}
             studentsByClass={appData.students?.[currentYear] || {}}
             nameScriptMode={props.nameScriptMode}
+          />
+        )}
+
+        {activeSubTab === 'leadersTab' && currentUserRole !== 'teacher' && (
+          <UnitLeadersRosterTab
+            unitTitle={unitName('children_ministry', 'የልጆች አገልግሎት')}
+            currentYear={currentYear}
+            leaders={childrenLeaders}
+            churchMembers={appData.churchMembers || []}
+            onSaveLeaders={(nextLeaders) =>
+              props.onUpdateDepartmentData?.('children_ministry', (prev) => ({
+                ...prev,
+                leaders: nextLeaders
+              }))
+            }
           />
         )}
 

@@ -1,7 +1,11 @@
-import React, { Suspense, lazy, useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useState } from 'react';
+import { LazyErrorBoundary, lazyWithRetry } from './LazyBoundary';
 import * as XLSX from 'xlsx';
+import { formatDualDateText, formatDualDateTimeText, getTodayIsoDateTime } from '../utils/ethiopianDate';
+import { DualDateBadge, DualDateInput } from './DualDate';
 import {
   Users,
+  Calendar,
   ClipboardList,
   Wallet,
   Target,
@@ -22,7 +26,10 @@ import {
   Briefcase,
   Package,
   HeartHandshake,
-  Globe
+  Globe,
+  UserCheck,
+  History,
+  Building2
 } from 'lucide-react';
 import {
   AnnualPlanItem,
@@ -43,6 +50,7 @@ import {
 } from '../types';
 import {
   CHURCH_ORG_UNITS,
+  createDefaultEldersCouncilWorkspaceData,
   createEmptyDepartmentWorkspaceData,
   getOrgUnitBreadcrumb,
   getOrgUnitById,
@@ -61,16 +69,19 @@ import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
 import { buildHouseholdContextMap, isMarriedWife } from '../utils/chapelDemographics';
 import type { AutoApplyDispatchMode } from './PlanDispatchPanel';
+import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
+import { SpiritualAllSectorsLeadersTab } from './SpiritualAllSectorsLeadersTab';
+import { HistoricalLeadersArchiveTab } from './HistoricalLeadersArchiveTab';
 
-const PlanBulkSenderPanel = lazy(() =>
+const PlanBulkSenderPanel = lazyWithRetry(() =>
   import('./PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
 );
-const CompassionBeneficiariesPanel = lazy(() =>
+const CompassionBeneficiariesPanel = lazyWithRetry(() =>
   import('./MinistrySpecializedPanels').then((m) => ({
     default: m.CompassionBeneficiariesPanel
   }))
 );
-const EvangelismMissionariesPanel = lazy(() =>
+const EvangelismMissionariesPanel = lazyWithRetry(() =>
   import('./MinistrySpecializedPanels').then((m) => ({
     default: m.EvangelismMissionariesPanel
   }))
@@ -139,6 +150,7 @@ type SubTabId =
   | 'overview'
   | 'church_registry'
   | 'church_stats'
+  | 'leaders'
   | 'members'
   | 'activities'
   | 'finances'
@@ -152,6 +164,8 @@ type SubTabId =
   | 'send_to_spiritual'
   | 'spiritual_review'
   | 'spiritual_approved'
+  | 'all_sector_leaders'
+  | 'historical_leaders'
   | 'admin_inbox'
   | 'elders_submissions';
 
@@ -475,7 +489,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   // Activity CRUD
   const openAddActivity = () => {
     setEditingActivityId(null);
-    setADate(new Date().toISOString().split('T')[0]);
+    setADate(getTodayIsoDateTime());
     setATitle('');
     setACategory(unit.activityCategories[0] || 'መደበኛ አገልግሎት');
     setALocation('');
@@ -530,7 +544,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   // Finance CRUD
   const openAddFinance = () => {
     setEditingFinanceId(null);
-    setFDate(new Date().toISOString().split('T')[0]);
+    setFDate(getTodayIsoDateTime());
     setFType('ገቢ');
     setFCategory(unit.financeCategories[0] || 'መደበኛ ገቢ/ወጪ');
     setFDescription('');
@@ -607,7 +621,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       ['ተ.ቁ', 'ቀን', 'ርዕስ / ተግባር', 'ምድብ', 'ቦታ/ቡድን', 'ተሳታፊ', 'ሁኔታ', 'ማብራሪያ'],
       ...ws.activities.map((a, i) => [
         i + 1,
-        a.date,
+        formatDualDateTimeText(a.date, '-'),
         a.title,
         a.category,
         a.locationOrGroup || '-',
@@ -623,10 +637,10 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         [`${unit.name} — የፋይናንስ መዝገብ`],
         [`ጠቅላላ ገቢ: ${financeSummary.income} | ጠቅላላ ወጪ: ${financeSummary.expense} | ቀሪ ሂሳብ: ${financeSummary.balance}`],
         [],
-        ['ተ.ቁ', 'ቀን', 'ዓይነት', 'ምድብ', 'መግለጫ', 'መጠን (ብር)', 'ደረሰኝ/ማጣቀሻ'],
+        ['ተ.ቁ', 'ቀንና ሰዓት', 'ዓይነት', 'ምድብ', 'መግለጫ', 'መጠን (ብር)', 'ደረሰኝ/ማጣቀሻ'],
         ...ws.finances.map((f, i) => [
           i + 1,
-          f.date,
+          formatDualDateTimeText(f.date, '-'),
           f.type,
           f.category,
           f.description,
@@ -684,6 +698,46 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(misRows), 'ሚሽነሪዎች');
     }
 
+    if ((ws.leaders || []).length > 0) {
+      const leaderRows = [
+        [`${unit.name} — የመሪዎች ስም ዝርዝር (${currentYear} ዓ/ም)`],
+        [],
+        ['ተ.ቁ', 'ሙሉ ስም', 'ጾታ', 'የአመራር ድርሻ / ኃላፊነት', 'ስልክ', 'የጀመሩበት ቀን', 'ሁኔታ', 'ማስታወሻ'],
+        ...(ws.leaders || []).map((ldr, i) => [
+          i + 1,
+          ldr.name,
+          ldr.gender,
+          ldr.roleTitle,
+          ldr.phone || '-',
+          formatDualDateText(ldr.termOrStartDate, '-'),
+          ldr.status,
+          ldr.notes || '-'
+        ])
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(leaderRows), 'የመሪዎች_ስም_ዝርዝር');
+    }
+
+    if (unitId === 'spiritual_council' && (ws.historicalLeaders || []).length > 0) {
+      const histRows = [
+        ['በየጊዜው ያገለገሉ መሪዎች መዝገብ (ዓ/ም · ዘርፍ · የተሰጠው ኃላፊነት)'],
+        [],
+        ['ተ.ቁ', 'ያገለገሉበት ዓ/ም', 'ሙሉ ስም', 'ጾታ', 'ያገለገሉበት ዘርፍ', 'ቻፕል', 'የተሰጠው ኃላፊነት', 'ስልክ', 'ሁኔታ', 'ማስታወሻ'],
+        ...(ws.historicalLeaders || []).map((hl, i) => [
+          i + 1,
+          hl.serviceYear,
+          hl.name,
+          hl.gender,
+          hl.sectorName,
+          hl.chapelName || '-',
+          hl.responsibility,
+          hl.phone || '-',
+          hl.status,
+          hl.notes || '-'
+        ])
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(histRows), 'የየዘመናቱ_መሪዎች');
+    }
+
     XLSX.writeFile(wb, `${unit.name}_${currentYear}.xlsx`);
   };
 
@@ -729,7 +783,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     const completedActs = ws.activities.filter((a) => a.status === 'ተጠናቋል').length;
     const recentActs = ws.activities
       .slice(0, 5)
-      .map((a, idx) => `${idx + 1}. ${a.title} (${a.date} — ${a.status})`)
+      .map((a, idx) => `${idx + 1}. ${a.title} (${formatDualDateTimeText(a.date)} — ${a.status})`)
       .join('\n');
     const lines = [
       `የዘርፍ / ክፍል ማጠቃለያ — ${unit?.name || ''} (${currentYear} ዓ/ም)`,
@@ -771,6 +825,22 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       : []),
     ...(unitId === 'spiritual_council'
       ? [
+          {
+            id: 'all_sector_leaders' as SubTabId,
+            label: t(
+              `የሁሉም ዘርፎች መሪዎች (${CHURCH_ORG_UNITS.reduce((s, u) => s + (departmentDataMap[u.id]?.leaders?.length || 0), 0)})`,
+              `All Sectors Leaders (${CHURCH_ORG_UNITS.reduce((s, u) => s + (departmentDataMap[u.id]?.leaders?.length || 0), 0)})`
+            ),
+            icon: Building2
+          },
+          {
+            id: 'historical_leaders' as SubTabId,
+            label: t(
+              `የየዘመናቱ መሪዎች መዝገብ (${(ws.historicalLeaders || []).length})`,
+              `Historical Leaders (${(ws.historicalLeaders || []).length})`
+            ),
+            icon: History
+          },
           {
             id: 'spiritual_review' as SubTabId,
             label: t(`የቀረቡ ዕቅድ/ሪፖርት/ደብዳቤ (${spiritualPendingCount})`, `Pending Review (${spiritualPendingCount})`),
@@ -862,6 +932,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           }
         ]
       : []),
+    { id: 'leaders' as SubTabId, label: t(`የመሪዎች ስም ዝርዝር (${(ws.leaders || []).length})`, `Leaders Roster (${(ws.leaders || []).length})`), icon: UserCheck },
     { id: 'members' as SubTabId, label: t(`የአባላት ዝርዝር (${ws.members.length})`, `Members (${ws.members.length})`), icon: Users },
     { id: 'activities' as SubTabId, label: t(`የአገልግሎት ተግባራት (${ws.activities.length})`, `Activities (${ws.activities.length})`), icon: ClipboardList },
     ...(unit.supportsFinance
@@ -1033,6 +1104,103 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           })}
         </div>
       </section>
+
+      {unitId === 'elders_council' && (
+        <section className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 sm:p-5 space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wide">
+                {t('የአመራር መዋቅር እና ቋሚ የስብሰባ መርሃግብር', 'Council Charter & Standing Meeting Schedule')}
+              </div>
+              <h3 className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
+                {t(
+                  'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚዎች (12 አባላት · 11 ወንድ እና 1 ሴት)',
+                  'Elders Council / Executive Committee (12 Members · 11 Male & 1 Female)'
+                )}
+              </h3>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
+              {activeSubTab !== 'members' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('members')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold transition cursor-pointer"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>
+                    {t(
+                      `የ${ws.members.length}ቱን አባላት ዝርዝር ክፈት`,
+                      `Open ${ws.members.length} Council Members`
+                    )}
+                  </span>
+                </button>
+              )}
+              {ws.members.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const seeded = createDefaultEldersCouncilWorkspaceData();
+                    onUpdateDepartmentData('elders_council', (prev) => ({
+                      ...prev,
+                      members: seeded.members,
+                      leaders: (prev.leaders?.length || 0) > 0 ? prev.leaders : seeded.leaders,
+                      eldersDefaultSeeded: true
+                    }));
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-700 hover:bg-amber-600 text-white text-xs font-bold transition cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>{t('ነባሪ 12 አባላትን ጫን', 'Load Default 12 Members')}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <div className="bg-white border border-amber-200/80 rounded-xl p-3.5">
+              <div className="text-[11px] font-bold text-slate-500">
+                {t('የአባላት ብዛትና ጾታዊ ስብጥር', 'Total Size & Gender Split')}
+              </div>
+              <div className="text-sm font-extrabold text-slate-900 mt-1 tabular-nums">
+                {t('12 አባላት — 11 ወንድ · 1 ሴት', '12 Members — 11 Male · 1 Female')}
+              </div>
+              <div className="text-[11px] text-slate-600 mt-0.5 tabular-nums">
+                {t('በመዝገብ ላይ፦', 'Registered:')} {memberCounts.total} ({t('ወ', 'M')} {memberCounts.male} ·{' '}
+                {t('ሴ', 'F')} {memberCounts.female})
+              </div>
+            </div>
+
+            <div className="bg-white border border-amber-200/80 rounded-xl p-3.5">
+              <div className="text-[11px] font-bold text-slate-500">
+                {t('የውክልና ስብጥር (9 + 1 + 1 + 1)', 'Representation Breakdown (9 + 1 + 1 + 1)')}
+              </div>
+              <div className="text-[12px] font-bold text-slate-800 mt-1 leading-relaxed">
+                {t(
+                  '9 የቤተክርስቲያን አባት መሪዎች · 1 ከሴቶች አገልግሎት · 1 ከወጣቶች አገልግሎት · 1 ከመንፈሳዊ ዘርፍ',
+                  '9 Church Father Leaders · 1 Women Ministry · 1 Youth Ministry · 1 Spiritual Sector'
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white border border-amber-200/80 rounded-xl p-3.5 flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
+                <Calendar className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-[11px] font-bold text-slate-500">
+                  {t('ቋሚ የስብሰባ ቀን', 'Standing Meeting Schedule')}
+                </div>
+                <div className="text-sm font-extrabold text-amber-900 mt-0.5">
+                  {t('ሐሙስ ምሽት', 'Every Thursday Evening')}
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  {t('የየሳምንቱ ቋሚ የስራ አስፈጻሚዎች ጉባኤ', 'Weekly Standing Executive Council Meeting')}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {syncNotice && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-xs font-bold text-emerald-900 flex items-center gap-2">
@@ -1311,6 +1479,23 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         </section>
       )}
 
+      {/* Sub-view: Department Leaders Name Roster */}
+      {activeSubTab === 'leaders' && (
+        <UnitLeadersRosterTab
+          unitTitle={getUnitLabel(unitId, unit.name)}
+          currentYear={currentYear}
+          leaders={ws.leaders || []}
+          roleSuggestions={unit.roleOptions}
+          churchMembers={churchMembers}
+          onSaveLeaders={(nextLeaders) =>
+            onUpdateDepartmentData(unitId, (prev) => ({
+              ...prev,
+              leaders: nextLeaders
+            }))
+          }
+        />
+      )}
+
       {/* Sub-view: Department Activities / Meetings / Programs */}
       {activeSubTab === 'activities' && (
         <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
@@ -1366,7 +1551,9 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                 ) : (
                   filteredActivities.map((act) => (
                     <tr key={act.id} className="hover:bg-slate-50/70">
-                      <td className="py-2.5 px-4 font-mono text-slate-600 whitespace-nowrap">{act.date}</td>
+                      <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap">
+                        <DualDateBadge value={act.date} mode="stacked" showTime />
+                      </td>
                       <td className="py-2.5 px-4">
                         <div className="font-bold text-slate-900">{act.title}</div>
                         {act.summary && <div className="text-[11px] text-slate-500 mt-0.5">{act.summary}</div>}
@@ -1476,7 +1663,9 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                 ) : (
                   filteredFinances.map((f) => (
                     <tr key={f.id} className="hover:bg-slate-50/70">
-                      <td className="py-2.5 px-4 font-mono text-slate-600 whitespace-nowrap">{f.date}</td>
+                      <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap">
+                        <DualDateBadge value={f.date} mode="stacked" showTime />
+                      </td>
                       <td
                         className={`py-2.5 px-3 font-extrabold ${
                           f.type === 'ገቢ' ? 'text-emerald-700' : 'text-rose-700'
@@ -1559,6 +1748,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
 
       {/* Sub-view: Love & Compassion Permanent & Temporary Beneficiaries */}
       {activeSubTab === 'beneficiaries' && unitId === 'love_compassion' && (
+        <LazyErrorBoundary compact>
         <Suspense fallback={null}>
           <CompassionBeneficiariesPanel
             currentYear={currentYear}
@@ -1569,10 +1759,12 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             }
           />
         </Suspense>
+        </LazyErrorBoundary>
       )}
 
       {/* Sub-view: Evangelism Missionaries (International, National, Regional, Local) */}
       {activeSubTab === 'missionaries' && unitId === 'evangelism' && (
+        <LazyErrorBoundary compact>
         <Suspense fallback={null}>
           <EvangelismMissionariesPanel
             currentYear={currentYear}
@@ -1582,6 +1774,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             }
           />
         </Suspense>
+        </LazyErrorBoundary>
       )}
 
       {/* Sub-view: Spiritual Council Consolidated Chapels & Ministries Plans/Execution Matrix */}
@@ -1617,6 +1810,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       {activeSubTab === 'plan_dispatch' &&
         (unitId === 'elders_council' || unitId === 'office' || unitId === 'spiritual_council') &&
         onDispatchPlans && (
+          <LazyErrorBoundary compact>
           <Suspense fallback={null}>
             <PlanBulkSenderPanel
               currentYear={currentYear}
@@ -1628,6 +1822,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               onDeleteDispatch={onDeleteDispatch}
             />
           </Suspense>
+          </LazyErrorBoundary>
         )}
 
       {/* Sub-view: Send Plans, Reports & Letters to Spiritual Council */}
@@ -1673,6 +1868,36 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           onSpiritualApprove={onSpiritualApprove}
           onSpiritualReturn={onSpiritualReturn}
           onForwardToAdmin={onForwardToAdmin}
+        />
+      )}
+
+      {/* Sub-view: Spiritual Council — All Sectors Leaders Central Hub */}
+      {activeSubTab === 'all_sector_leaders' && unitId === 'spiritual_council' && (
+        <SpiritualAllSectorsLeadersTab
+          currentYear={currentYear}
+          departmentDataMap={departmentDataMap}
+          churchMembers={churchMembers}
+          onUpdateDepartmentData={onUpdateDepartmentData}
+          canNavigateToUnit={canNavigateToUnit}
+          onSelectUnit={onSelectUnit}
+          onOpenHistoricalArchive={() => setActiveSubTab('historical_leaders')}
+        />
+      )}
+
+      {/* Sub-view: Spiritual Council — Historical Leaders Service Archive (ዓ/ም · ዘርፍ · ኃላፊነት) */}
+      {activeSubTab === 'historical_leaders' && unitId === 'spiritual_council' && (
+        <HistoricalLeadersArchiveTab
+          currentYear={currentYear}
+          chapelList={chapelList}
+          churchMembers={churchMembers}
+          departmentDataMap={departmentDataMap}
+          records={ws.historicalLeaders || []}
+          onSaveRecords={(nextRecords) =>
+            onUpdateDepartmentData('spiritual_council', (prev) => ({
+              ...prev,
+              historicalLeaders: nextRecords
+            }))
+          }
         />
       )}
 
@@ -1866,16 +2091,10 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               </button>
             </div>
             <form onSubmit={handleSaveActivity} className="space-y-3 mt-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">ቀን *</label>
-                  <input
-                    type="date"
-                    required
-                    value={aDate}
-                    onChange={(e) => setADate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
-                  />
+                  <label className="block font-bold text-slate-700 mb-1">ቀንና ሰዓት *</label>
+                  <DualDateInput required includeTime value={aDate} onChange={setADate} />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">ሁኔታ</label>
@@ -1984,16 +2203,10 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               </button>
             </div>
             <form onSubmit={handleSaveFinance} className="space-y-3 mt-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">ቀን *</label>
-                  <input
-                    type="date"
-                    required
-                    value={fDate}
-                    onChange={(e) => setFDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
-                  />
+                  <label className="block font-bold text-slate-700 mb-1">ቀንና ሰዓት *</label>
+                  <DualDateInput required includeTime value={fDate} onChange={setFDate} />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">ዓይነት *</label>

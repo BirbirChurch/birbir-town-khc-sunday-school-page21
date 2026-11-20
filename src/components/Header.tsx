@@ -2,6 +2,7 @@ import React from 'react';
 import { LogOut, Database, Shield, User, Menu, Globe } from 'lucide-react';
 import { OrgUnitId, Role } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { DualLiveClock } from './DualDate';
 
 interface HeaderProps {
   currentUserRole: Role | null;
@@ -156,7 +157,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Sub-bar with active user account control */}
       <div className="bg-slate-900/80 backdrop-blur border-t border-blue-900/50 px-4 py-2.5 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm">
-          <div className="flex items-center gap-2 text-xs text-slate-300 font-semibold">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300 font-semibold">
             {currentUserRole ? (
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-900/60 border border-blue-700/60 text-slate-200 text-xs font-medium">
                 {currentUserRole === 'admin' ||
@@ -173,6 +174,8 @@ export const Header: React.FC<HeaderProps> = ({
                 {t('እባክዎ መግቢያዎን ይምረጡ', 'Please select your portal login')}
               </span>
             )}
+
+            <DualLiveClock variant="header" />
           </div>
 
           {currentUserRole && (

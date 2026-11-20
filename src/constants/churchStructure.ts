@@ -1,4 +1,4 @@
-import { DepartmentWorkspaceData, OrgUnitId } from '../types';
+import { ChapelLeaderCategoryId, DepartmentWorkspaceData, OrgUnitId } from '../types';
 
 export type OrgUnitKind =
   | 'governance'
@@ -33,18 +33,28 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
   {
     id: 'elders_council',
     code: '1',
-    name: 'የሽማግሌዎች ጉባኤ',
-    shortDesc: 'የአጥቢያ ቤተ ክርስቲያን ከፍተኛ የአመራር፣ የውሳኔ እና የሁሉም ዘርፎች የበላይ ጉባኤ',
+    name: 'የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)',
+    shortDesc:
+      'የአጥቢያ ቤተ ክርስቲያን ከፍተኛ የአመራርና ስራ አስፈጻሚ ጉባኤ · 12 አባላት (11 ወንድ፣ 1 ሴት · 9 አባት መሪዎች፣ 1 ከሴቶች አገልግሎት፣ 1 ከወጣቶች አገልግሎት፣ 1 ከመንፈሳዊ ዘርፍ) · ቋሚ ስብሰባ፦ ሐሙስ ምሽት',
     parentId: null,
     level: 1,
     defaultPin: '3001',
     kind: 'governance',
     hasChurchRegistry: true,
     supportsFinance: false,
-    memberNoun: 'የጉባኤ አባል / ሽማግሌ',
-    roleColumnLabel: 'ኃላፊነት / ድርሻ',
-    roleOptions: ['ዋና ሰብሳቢ', 'ምክትል ሰብሳቢ', 'ጸሐፊ', 'የሽማግሌዎች ጉባኤ አባል', 'አማካሪ ሽማግሌ'],
-    activityCategories: ['የጉባኤ ስብሰባ', 'ውሳኔና መመሪያ', 'የመምሪያ ግምገማ', 'መንፈሳዊ ጉብኝት'],
+    memberNoun: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ አባል',
+    roleColumnLabel: 'የአመራር ምድብ / ውክልና',
+    roleOptions: [
+      'የቤተክርስቲያን አባት መሪ',
+      'ከሴቶች አገልግሎት ተወካይ',
+      'ከወጣቶች አገልግሎት ተወካይ',
+      'ከመንፈሳዊ ዘርፍ ተወካይ (መጋቢ)',
+      'ዋና ሰብሳቢ',
+      'ምክትል ሰብሳቢ',
+      'ጸሐፊ',
+      'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ አባል'
+    ],
+    activityCategories: ['ሐሙስ ምሽት ቋሚ ስብሰባ', 'ውሳኔና መመሪያ', 'የመምሪያ ግምገማ', 'መንፈሳዊ ጉብኝት'],
     financeCategories: []
   },
   {
@@ -380,11 +390,144 @@ export const DEFAULT_YOUTH_DISCIPLESHIP_GROUPS: string[] = [
   'ቢቲሲፒ (BTCP)'
 ];
 
+export interface ChapelLeaderCategoryMeta {
+  id: ChapelLeaderCategoryId;
+  am: string;
+  en: string;
+  defaultGender?: 'ወ' | 'ሴ';
+}
+
+export const CHAPEL_LEADER_CATEGORIES: ChapelLeaderCategoryMeta[] = [
+  { id: 'fathers_leaders', am: 'የአባት መሪዎች', en: 'Fathers Leaders', defaultGender: 'ወ' },
+  { id: 'women_leaders', am: 'የሴት መሪዎች', en: 'Women Leaders', defaultGender: 'ሴ' },
+  { id: 'youth_leaders', am: 'የወጣት መሪዎች', en: 'Youth Leaders' },
+  { id: 'children_leaders', am: 'የልጆች መሪዎች', en: 'Children Leaders' },
+  { id: 'evangelism_leaders', am: 'የወንጌል አገልግሎት መሪዎች', en: 'Evangelism Leaders' },
+  { id: 'compassion_leaders', am: 'ፍቅርና ርኅራሄ መሪዎች', en: 'Love & Compassion Leaders' },
+  { id: 'deacons', am: 'ዲያቆናት', en: 'Deacons' }
+];
+
+export const DEFAULT_ELDERS_COUNCIL_MEMBERS: DepartmentWorkspaceData['members'] = [
+  {
+    id: 910001,
+    name: 'ላማሮ ሙጋላ',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910002,
+    name: 'መብራቱ መጃ',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910003,
+    name: 'ዳዊት ደጉ',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910004,
+    name: 'መለሰ ዳኘ',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910005,
+    name: 'ሰይፉ አጫ',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910006,
+    name: 'ጳውሎስ ስምዖን',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910007,
+    name: 'አማኑኤል ጌታሁን',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910008,
+    name: 'በረከት ፎላ',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910009,
+    name: 'ሐጌ ሐታ',
+    gender: 'ወ',
+    roleOrClass: 'የቤተክርስቲያን አባት መሪ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (ከ9ኙ የቤተክርስቲያን አባት መሪዎች)'
+  },
+  {
+    id: 910010,
+    name: 'መሰለች መንገሻ',
+    gender: 'ሴ',
+    roleOrClass: 'ከሴቶች አገልግሎት ተወካይ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (1 ከሴቶች አገልግሎት)'
+  },
+  {
+    id: 910011,
+    name: 'ማቱሳላ ጴጥሮስ',
+    gender: 'ወ',
+    roleOrClass: 'ከወጣቶች አገልግሎት ተወካይ',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (1 ከወጣቶች አገልግሎት)'
+  },
+  {
+    id: 910012,
+    name: 'መጋቢ ሳሙኤል ኦልቶ / መጋቢ ጉጃ ኡባ / መጋቢ ገላዬ አንጃ',
+    gender: 'ወ',
+    roleOrClass: 'ከመንፈሳዊ ዘርፍ ተወካይ (መጋቢ)',
+    status: 'ንቁ',
+    notes: 'የሽማግሌዎች ጉባኤ / ስራ አስፈጻሚ (1 ከመንፈሳዊ ዘርፍ)'
+  }
+];
+
+export const createDefaultEldersCouncilWorkspaceData = (): DepartmentWorkspaceData => ({
+  ...createEmptyDepartmentWorkspaceData(),
+  members: DEFAULT_ELDERS_COUNCIL_MEMBERS.map((m) => ({ ...m })),
+  leaders: DEFAULT_ELDERS_COUNCIL_MEMBERS.map((m, idx) => ({
+    id: 910101 + idx,
+    name: m.name,
+    gender: m.gender,
+    roleTitle: m.roleOrClass,
+    status: 'በአገልግሎት ላይ',
+    notes: m.notes
+  })),
+  eldersDefaultSeeded: true
+});
+
 export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData => ({
   members: [],
   activities: [],
   finances: [],
   plans: [],
+  leaders: [],
+  chapelLeaders: [],
+  historicalLeaders: [],
   hrRecords: [],
   assetRecords: [],
   chapelPlans: {},

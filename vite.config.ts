@@ -11,6 +11,20 @@ export default defineConfig(() => {
         '@': path.resolve(import.meta.dirname, './src'),
       },
     },
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'lucide-react',
+        'xlsx',
+        'firebase/app',
+        'firebase/auth',
+        'firebase/database',
+        'motion/react',
+        'mammoth',
+        'pdfjs-dist',
+      ],
+    },
     build: {
       target: ['es2020', 'safari14', 'chrome87', 'firefox78', 'edge88'],
       chunkSizeWarningLimit: 1600,

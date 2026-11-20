@@ -4,8 +4,9 @@ export type AppLanguage = 'am' | 'en';
 
 export const UNIT_TRANSLATIONS_EN: Record<OrgUnitId, { name: string; shortDesc: string }> = {
   elders_council: {
-    name: 'Elders Council',
-    shortDesc: 'Highest governance, decision-making, and church-wide oversight council'
+    name: 'Elders Council (Executive Committee)',
+    shortDesc:
+      'Highest governance & executive committee · 12 members (11 M, 1 F: 9 church father leaders, 1 Women Ministry, 1 Youth Ministry, 1 Spiritual Sector) · Standing meeting: Thursday Evening'
   },
   office: {
     name: 'Church Office',

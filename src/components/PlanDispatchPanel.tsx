@@ -30,6 +30,7 @@ import {
 import { ensureQuartersOnPlan, splitAnnualAcrossQuarters } from '../utils/planParser';
 import { generateUniqueId } from '../utils/idGenerator';
 import { useLanguage } from '../context/LanguageContext';
+import { DualDateBadge } from './DualDate';
 
 export type AutoApplyDispatchMode = 'inbox_only' | 'push_append' | 'push_replace';
 
@@ -867,8 +868,8 @@ export const PlanBulkSenderPanel: React.FC<PlanBulkSenderPanelProps> = ({
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 px-4 text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                      {d.sentAt ? new Date(d.sentAt).toLocaleDateString() : '—'}
+                    <td className="py-2.5 px-4 text-slate-500 text-[11px] whitespace-nowrap">
+                      <DualDateBadge value={d.sentAt} mode="stacked" showTime />
                     </td>
                     {onDeleteDispatch && (
                       <td className="py-2.5 px-4 text-right">
@@ -1227,7 +1228,7 @@ export const PlanSectorReceiverPanel: React.FC<PlanSectorReceiverPanelProps> = (
                 <div className="text-[11px] text-slate-600">
                   {t('የላከው:', 'Sent by:')} <strong>{d.sentByName}</strong> ·{' '}
                   {d.plans.length} {t('ተግባራት', 'tasks')} ·{' '}
-                  {d.sentAt ? new Date(d.sentAt).toLocaleDateString() : ''}
+                  <DualDateBadge value={d.sentAt} mode="inline" showTime />
                 </div>
               </div>
 

@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
+import { formatDualDateTimeText, getTodayIsoDateTime } from '../utils/ethiopianDate';
+import { DualDateBadge, DualDateInput } from './DualDate';
 import {
   Shield,
   Users,
@@ -53,6 +55,7 @@ import { downloadCSV, readCSVFile } from '../utils/csv';
 import { useLanguage } from '../context/LanguageContext';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
+import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
 
 interface YouthMinistryPortalProps {
   currentYear: string;
@@ -863,7 +866,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
   // Activity CRUD
   const openAddActivity = () => {
     setEditingActivityId(null);
-    setADate(new Date().toISOString().split('T')[0]);
+    setADate(getTodayIsoDateTime());
     setATitle('');
     setACategory(unit.activityCategories[0] || 'የወጣቶች አምልኮ');
     setALocation('');
@@ -910,7 +913,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
   // Finance CRUD
   const openAddFinance = () => {
     setEditingFinanceId(null);
-    setFDate(new Date().toISOString().split('T')[0]);
+    setFDate(getTodayIsoDateTime());
     setFType('ገቢ');
     setFCategory(unit.financeCategories[0] || 'የወጣቶች መዋጮ');
     setFDesc('');
@@ -976,7 +979,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
     if (ws.activities.length === 0) return '';
     return ws.activities
       .slice(0, 12)
-      .map((a, idx) => `${idx + 1}. ${a.date} — ${a.title} (${a.category} · ${a.status})`)
+      .map((a, idx) => `${idx + 1}. ${formatDualDateTimeText(a.date)} — ${a.title} (${a.category} · ${a.status})`)
       .join('\n');
   }, [ws.activities]);
 
@@ -996,7 +999,8 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
     {
       id: 'leadersTab',
       label: t('የመሪዎች ገጽ', 'Leaders Page'),
-      icon: Sparkles
+      icon: Sparkles,
+      badge: (ws.leaders || []).length > 0 ? (ws.leaders || []).length : undefined
     },
     {
       id: 'choirsTab',
@@ -1420,6 +1424,21 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Youth Ministry Leaders Name Roster */}
+          <UnitLeadersRosterTab
+            unitTitle={unitName('youth_ministry', unit.name)}
+            currentYear={currentYear}
+            leaders={ws.leaders || []}
+            roleSuggestions={unit.roleOptions}
+            churchMembers={churchMembers}
+            onSaveLeaders={(nextLeaders) =>
+              onUpdateDepartmentData('youth_ministry', (prev) => ({
+                ...prev,
+                leaders: nextLeaders
+              }))
+            }
+          />
 
           {/* Choir Fellowships Matrix */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-4">
@@ -2109,8 +2128,8 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="flex items-center gap-2 text-[11px] font-bold">
-                        <span className="font-mono text-slate-500">{act.date}</span>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                        <DualDateBadge value={act.date} mode="inline" showTime className="text-slate-600" />
                         <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-800">{act.category}</span>
                         <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800">{act.status}</span>
                       </div>
@@ -2234,7 +2253,9 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                   ) : (
                     filteredFinances.map((f) => (
                       <tr key={f.id} className="hover:bg-slate-50/70">
-                        <td className="py-2.5 px-3 font-mono text-slate-600">{f.date}</td>
+                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                          <DualDateBadge value={f.date} mode="stacked" showTime />
+                        </td>
                         <td className="py-2.5 px-3 text-center">
                           <span
                             className={`px-2 py-0.5 rounded font-bold text-[11px] ${
@@ -2828,16 +2849,10 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               </button>
             </div>
             <form onSubmit={handleSaveActivity} className="space-y-3 mt-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">{t('ቀን *', 'Date *')}</label>
-                  <input
-                    type="date"
-                    required
-                    value={aDate}
-                    onChange={(e) => setADate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
-                  />
+                  <label className="block font-bold text-slate-700 mb-1">{t('ቀንና ሰዓት *', 'Date & Time *')}</label>
+                  <DualDateInput required includeTime value={aDate} onChange={setADate} />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('ሁኔታ', 'Status')}</label>
@@ -2945,16 +2960,10 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               </button>
             </div>
             <form onSubmit={handleSaveFinance} className="space-y-3 mt-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">{t('ቀን *', 'Date *')}</label>
-                  <input
-                    type="date"
-                    required
-                    value={fDate}
-                    onChange={(e) => setFDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
-                  />
+                  <label className="block font-bold text-slate-700 mb-1">{t('ቀንና ሰዓት *', 'Date & Time *')}</label>
+                  <DualDateInput required includeTime value={fDate} onChange={setFDate} />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('ዓይነት *', 'Type *')}</label>

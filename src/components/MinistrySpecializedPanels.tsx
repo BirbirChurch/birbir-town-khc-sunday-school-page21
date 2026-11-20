@@ -27,6 +27,8 @@ import {
 import { generateUniqueId } from '../utils/idGenerator';
 import { readCSVFile } from '../utils/csv';
 import { useLanguage } from '../context/LanguageContext';
+import { formatDualDateText } from '../utils/ethiopianDate';
+import { DualDateBadge, DualDateInput } from './DualDate';
 
 /* ============================================================================
  * 1. LOVE & COMPASSION: PERMANENT & TEMPORARY BENEFICIARIES (ቋሚ እና ጊዜያዊ ተረጂ)
@@ -226,8 +228,8 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
         r.chapel || '-',
         r.address || '-',
         r.phone || '-',
-        r.startDate || '-',
-        r.endDate || '-',
+        formatDualDateText(r.startDate, '-'),
+        formatDualDateText(r.endDate, '-'),
         r.status,
         r.notes || '-'
       ])
@@ -518,9 +520,15 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
                       {r.address && (
                         <div className="text-[11px] text-slate-500 font-normal">{r.address}</div>
                       )}
+                      {r.startDate && (
+                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">
+                          <DualDateBadge value={r.startDate} mode="inline" />
+                        </div>
+                      )}
                       {r.supportType === 'temporary' && r.endDate && (
-                        <div className="text-[10px] text-amber-700 font-bold">
-                          {t(`ግምገማ/ማብቂያ: ${r.endDate}`, `Review/End: ${r.endDate}`)}
+                        <div className="text-[10px] text-amber-700 font-bold mt-0.5 flex flex-wrap items-center gap-1">
+                          <span>{t('ግምገማ/ማብቂያ:', 'Review/End:')}</span>
+                          <DualDateBadge value={r.endDate} mode="inline" />
                         </div>
                       )}
                     </td>
@@ -710,25 +718,15 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('ድጋፍ የተጀመረበት ቀን', 'Start Date')}</label>
-                  <input
-                    type="date"
-                    value={bStartDate}
-                    onChange={(e) => setBStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
-                  />
+                  <DualDateInput value={bStartDate} onChange={setBStartDate} />
                 </div>
                 {bSupportType === 'temporary' ? (
                   <div>
                     <label className="block font-bold text-amber-800 mb-1">{t('የጊዜያዊ ድጋፍ ማብቂያ/ግምገማ ቀን', 'Temporary End/Review Date')}</label>
-                    <input
-                      type="date"
-                      value={bEndDate}
-                      onChange={(e) => setBEndDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-amber-300 rounded-xl font-mono"
-                    />
+                    <DualDateInput value={bEndDate} onChange={setBEndDate} />
                   </div>
                 ) : (
                   <div>
@@ -1008,7 +1006,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
         r.sendingOrganization || '-',
         r.monthlySupportAmount ?? 0,
         r.phone || '-',
-        r.deployedDate || '-',
+        formatDualDateText(r.deployedDate, '-'),
         r.status,
         r.notes || '-'
       ])
@@ -1252,7 +1250,9 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                       <td className="py-2.5 px-3 font-semibold text-slate-800">
                         <div>{r.missionField}</div>
                         {r.deployedDate && (
-                          <div className="text-[10px] font-mono text-slate-400">{r.deployedDate}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            <DualDateBadge value={r.deployedDate} mode="inline" />
+                          </div>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-slate-600">{r.sendingOrganization || '—'}</td>
@@ -1401,15 +1401,10 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('የተሰማሩበት ቀን', 'Deployed Date')}</label>
-                  <input
-                    type="date"
-                    value={mDate}
-                    onChange={(e) => setMDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
-                  />
+                  <DualDateInput value={mDate} onChange={setMDate} />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('ሁኔታ', 'Status')}</label>

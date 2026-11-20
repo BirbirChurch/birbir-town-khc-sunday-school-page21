@@ -5,7 +5,7 @@
 
 import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission, PlanDispatchItem, FailedLoginAttemptRecord, BlockedBrowserRule } from '../types';
 import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
-import { CHURCH_ORG_UNITS, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
+import { CHURCH_ORG_UNITS, createDefaultEldersCouncilWorkspaceData, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
 import { canonicalizeEducationLevel, canonicalizeOccupation } from './amharicCategoryCanonicalizer';
 
@@ -268,6 +268,24 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
             return checkedId !== p?.id ? { ...p, id: checkedId } : p;
           })
         : [],
+      leaders: Array.isArray(ws.leaders)
+        ? ws.leaders.map((ldr) => {
+            const checkedId = ensureUniqueId(ldr?.id);
+            return checkedId !== ldr?.id ? { ...ldr, id: checkedId } : ldr;
+          })
+        : [],
+      chapelLeaders: Array.isArray(ws.chapelLeaders)
+        ? ws.chapelLeaders.map((cl) => {
+            const checkedId = ensureUniqueId(cl?.id);
+            return checkedId !== cl?.id ? { ...cl, id: checkedId } : cl;
+          })
+        : [],
+      historicalLeaders: Array.isArray(ws.historicalLeaders)
+        ? ws.historicalLeaders.map((hl) => {
+            const checkedId = ensureUniqueId(hl?.id);
+            return checkedId !== hl?.id ? { ...hl, id: checkedId } : hl;
+          })
+        : [],
       hrRecords: Array.isArray(ws.hrRecords)
         ? ws.hrRecords.map((hr) => {
             const checkedId = ensureUniqueId(hr?.id);
@@ -329,9 +347,27 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
             const checkedId = ensureUniqueId(mr?.id);
             return checkedId !== mr?.id ? { ...mr, id: checkedId } : mr;
           })
-        : undefined
+        : undefined,
+      eldersDefaultSeeded: ws.eldersDefaultSeeded === true ? true : undefined
     };
   });
+
+  const curElders = sanitizedDepartmentData.elders_council;
+  if (
+    !curElders ||
+    (!curElders.eldersDefaultSeeded &&
+      curElders.members.length === 0 &&
+      (curElders.leaders?.length || 0) === 0)
+  ) {
+    const seeded = createDefaultEldersCouncilWorkspaceData();
+    sanitizedDepartmentData.elders_council = {
+      ...(curElders || seeded),
+      members: seeded.members.map((m) => ({ ...m, id: ensureUniqueId(m.id) })),
+      leaders: (seeded.leaders || []).map((ldr) => ({ ...ldr, id: ensureUniqueId(ldr.id) })),
+      eldersDefaultSeeded: true
+    };
+    modified = true;
+  }
 
   // 10c. Sanitize submissions array
   const sanitizedSubmissions: MinistrySubmission[] = Array.isArray(data.submissions)

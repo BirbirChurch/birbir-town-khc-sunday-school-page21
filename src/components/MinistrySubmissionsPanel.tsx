@@ -1,4 +1,5 @@
-import React, { Suspense, lazy, useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useState } from 'react';
+import { LazyErrorBoundary, lazyWithRetry } from './LazyBoundary';
 import {
   Send,
   FileText,
@@ -32,8 +33,9 @@ import {
 import { CHURCH_ORG_UNITS } from '../constants/churchStructure';
 import { deleteAttachmentFile, saveAttachmentFile } from '../services/attachmentStorage';
 import { useLanguage } from '../context/LanguageContext';
+import { DualDateBadge } from './DualDate';
 
-const InlineDocumentViewer = lazy(() =>
+const InlineDocumentViewer = lazyWithRetry(() =>
   import('./InlineDocumentViewer').then((m) => ({ default: m.InlineDocumentViewer }))
 );
 
@@ -864,8 +866,8 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                       onClick={() => openDetailModal(sub)}
                       className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                     >
-                      <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap tabular-nums">
-                        {sub.submittedAt.slice(0, 10)}
+                      <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
+                        <DualDateBadge value={sub.submittedAt} mode="stacked" showTime />
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">
                         <span className={`inline-flex items-center gap-1.5 font-extrabold ${tMeta.textClass}`}>
@@ -1333,7 +1335,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                     </>
                   )}
                   <span>·</span>
-                  <span className="font-mono">{selectedSub.submittedAt.slice(0, 10)}</span>
+                  <DualDateBadge value={selectedSub.submittedAt} mode="inline" showTime />
                 </div>
                 <h3 className="text-lg font-extrabold text-slate-900 mt-1">{selectedSub.title}</h3>
                 <div className="text-xs text-slate-600 mt-0.5 flex flex-wrap items-center gap-2">
@@ -1375,8 +1377,9 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                 </span>
               </div>
               {selectedSub.spiritualReviewedAt && (
-                <span className="text-slate-500 font-mono">
-                  የተገመገመበት፦ {selectedSub.spiritualReviewedAt.slice(0, 10)}
+                <span className="text-slate-500 inline-flex items-center gap-1.5">
+                  <span>የተገመገመበት፦</span>
+                  <DualDateBadge value={selectedSub.spiritualReviewedAt} mode="inline" showTime />
                 </span>
               )}
             </div>
@@ -1454,6 +1457,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                     selectedAttachments[Math.min(activeAttachmentIdx, selectedAttachments.length - 1)];
                   if (!activeAtt) return null;
                   return (
+                    <LazyErrorBoundary compact>
                     <Suspense
                       fallback={
                         <div className="p-6 border border-slate-200 rounded-xl bg-slate-50 text-center text-xs font-bold text-slate-600">
@@ -1468,6 +1472,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                         storageKey={activeAtt.storageKey}
                       />
                     </Suspense>
+                    </LazyErrorBoundary>
                   );
                 })()}
               </div>

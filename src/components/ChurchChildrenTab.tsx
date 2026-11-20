@@ -42,6 +42,7 @@ import { NameCrossReferenceModal } from './NameCrossReferenceModal';
 import { AnnualAgeIncrementModal } from './AnnualAgeIncrementModal';
 import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
 import { canonicalizeEducationLevel, canonicalizeOccupation } from '../utils/amharicCategoryCanonicalizer';
+import { formatDualDateText, formatDualDateTimeText, getAdjustedNow } from '../utils/ethiopianDate';
 import {
   matchesAmharicSearch,
   parseChurchWorkbookAllSheets,
@@ -1211,7 +1212,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         c.phone || '-',
         c.residence || '-',
         c.fellowshipOrVillage || '-',
-        c.registeredDate || '-',
+        formatDualDateText(c.registeredDate, '-'),
         c.notes || ''
       ];
     });
@@ -1513,7 +1514,9 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         <h3 className="text-sm font-semibold text-slate-700 mt-1">
           የቤተክርስቲያኒቱ ልጆች የመረጃ ቋት እና የሰንበት ት/ቤት የመማር ሁኔታ ሪፖርት ({currentYear} ዓ.ም)
         </h3>
-        <p className="text-xs text-slate-500 mt-0.5">የታተመበት ቀን፦ {new Date().toLocaleDateString('en-CA')}</p>
+        <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
+          የታተመበት ቀንና ሰዓት፦ {formatDualDateTimeText(getAdjustedNow())}
+        </p>
       </div>
 
       {/* Top Banner / Toolbar */}

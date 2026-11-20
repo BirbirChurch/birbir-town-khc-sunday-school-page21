@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Suspense, lazy, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { LazyErrorBoundary, lazyWithRetry } from './components/LazyBoundary';
 import {
   Shield,
   KeyRound,
@@ -65,45 +66,45 @@ import { NameScriptMode } from './utils/amharicTransliterator';
 import { findActiveBrowserBlock, getCurrentBrowserInfo } from './utils/browserIdentity';
 import { useLanguage } from './context/LanguageContext';
 
-const PinManageTab = lazy(() =>
+const PinManageTab = lazyWithRetry(() =>
   import('./components/PinManageTab').then((m) => ({ default: m.PinManageTab }))
 );
-const FirebaseSyncModal = lazy(() =>
+const FirebaseSyncModal = lazyWithRetry(() =>
   import('./components/FirebaseSyncModal').then((m) => ({ default: m.FirebaseSyncModal }))
 );
-const NameTransliteratorModal = lazy(() =>
+const NameTransliteratorModal = lazyWithRetry(() =>
   import('./components/NameTransliteratorModal').then((m) => ({ default: m.NameTransliteratorModal }))
 );
-const ChurchStatisticsDashboardTab = lazy(() =>
+const ChurchStatisticsDashboardTab = lazyWithRetry(() =>
   import('./components/ChurchStatisticsDashboardTab').then((m) => ({
     default: m.ChurchStatisticsDashboardTab
   }))
 );
-const SuperAdminDashboard = lazy(() =>
+const SuperAdminDashboard = lazyWithRetry(() =>
   import('./components/SuperAdminDashboard').then((m) => ({ default: m.SuperAdminDashboard }))
 );
-const DepartmentWorkspacePage = lazy(() =>
+const DepartmentWorkspacePage = lazyWithRetry(() =>
   import('./components/DepartmentWorkspacePage').then((m) => ({
     default: m.DepartmentWorkspacePage
   }))
 );
-const ChildrenMinistryPortal = lazy(() =>
+const ChildrenMinistryPortal = lazyWithRetry(() =>
   import('./components/ChildrenMinistryPortal').then((m) => ({
     default: m.ChildrenMinistryPortal
   }))
 );
-const YouthMinistryPortal = lazy(() =>
+const YouthMinistryPortal = lazyWithRetry(() =>
   import('./components/YouthMinistryPortal').then((m) => ({
     default: m.YouthMinistryPortal
   }))
 );
-const ChapelsHubPage = lazy(() =>
+const ChapelsHubPage = lazyWithRetry(() =>
   import('./components/ChapelsHubPage').then((m) => ({ default: m.ChapelsHubPage }))
 );
-const PlanBulkSenderPanel = lazy(() =>
+const PlanBulkSenderPanel = lazyWithRetry(() =>
   import('./components/PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
 );
-const AdminSecurityMonitorTab = lazy(() =>
+const AdminSecurityMonitorTab = lazyWithRetry(() =>
   import('./components/AdminSecurityMonitorTab').then((m) => ({
     default: m.AdminSecurityMonitorTab
   }))
@@ -195,6 +196,15 @@ export default function App() {
       }
     };
   }, []);
+
+  // Pre-warm DepartmentWorkspacePage silently after login to prevent lazy-fetch stalls
+  useEffect(() => {
+    if (!currentUserRole) return;
+    const timer = window.setTimeout(() => {
+      void import('./components/DepartmentWorkspacePage').catch(() => {});
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [currentUserRole]);
 
   // Instant local state update with debounced background cloud sync
   const updateAppData = useCallback(
@@ -2533,6 +2543,7 @@ export default function App() {
 
               {/* Main Content Area */}
               <main className="flex-1 min-w-0 w-full">
+                <LazyErrorBoundary>
                 <Suspense
                   fallback={
                     <div className="bg-white border border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 text-slate-600">
@@ -2685,6 +2696,7 @@ export default function App() {
                     planDispatches={appData.planDispatches || []}
                     onAcceptDispatch={handleAcceptDispatchedPlan}
                     onReturnDispatch={handleReturnDispatchedPlan}
+                    onUpdateDepartmentData={handleUpdateDepartmentData}
                   />
                 ) : activeOrgUnit === 'chapels_dept' || loggedInChapel ? (
                   <ChapelsHubPage
@@ -2725,6 +2737,7 @@ export default function App() {
                     planDispatches={appData.planDispatches || []}
                     onAcceptDispatch={handleAcceptDispatchedPlan}
                     onReturnDispatch={handleReturnDispatchedPlan}
+                    onUpdateDepartmentData={handleUpdateDepartmentData}
                   />
                 ) : activeOrgUnit === 'youth_ministry' && !loggedInChapel ? (
                   <YouthMinistryPortal
@@ -2790,6 +2803,7 @@ export default function App() {
                   />
                 )}
                 </Suspense>
+                </LazyErrorBoundary>
               </main>
             </div>
           </div>
@@ -2815,6 +2829,7 @@ export default function App() {
       </footer>
 
       {appData && isSyncModalOpen && (
+        <LazyErrorBoundary compact>
         <Suspense fallback={null}>
           <FirebaseSyncModal
             isOpen={isSyncModalOpen}
@@ -2827,9 +2842,11 @@ export default function App() {
             syncStatus={syncStatus}
           />
         </Suspense>
+        </LazyErrorBoundary>
       )}
 
       {appData && isTransliteratorModalOpen && (
+        <LazyErrorBoundary compact>
         <Suspense fallback={null}>
           <NameTransliteratorModal
             isOpen={isTransliteratorModalOpen}
@@ -2854,6 +2871,7 @@ export default function App() {
             }
           />
         </Suspense>
+        </LazyErrorBoundary>
       )}
     </div>
   );
