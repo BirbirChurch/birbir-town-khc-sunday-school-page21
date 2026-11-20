@@ -574,6 +574,10 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
           churchChildren={churchChildren}
           chapelList={chapelList}
           loggedInChapel={effectiveChapelScope}
+          departmentDataMap={departmentDataMap}
+          childrenPlans={childrenPlans}
+          submissions={submissions}
+          planDispatches={planDispatches}
         />
       )}
 

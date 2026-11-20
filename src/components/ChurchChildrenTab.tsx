@@ -57,6 +57,7 @@ import {
   NameScriptMode,
   transliterateAmharicToEnglish
 } from '../utils/amharicTransliterator';
+import { copyTextSafely } from '../utils/clipboard';
 
 interface ChurchChildrenTabProps {
   currentYear: string;
@@ -918,7 +919,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   // Copy phone handler
   const handleCopyPhone = (id: number, phone: string) => {
     if (!phone) return;
-    navigator.clipboard.writeText(phone);
+    void copyTextSafely(phone);
     setCopiedPhoneId(id);
     setTimeout(() => setCopiedPhoneId(null), 2000);
   };
@@ -1591,7 +1592,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               <span>⚖️ በስም አስተያይ (ማመሳሰያ)</span>
             </button>
 
-            {onBulkIncrementAges && !officialLoggedInChapel && (
+            {currentUserRole === 'admin' && onBulkIncrementAges && !officialLoggedInChapel && (
               <button
                 type="button"
                 onClick={() => setIsAgeModalOpen(true)}
@@ -4024,7 +4025,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         }}
       />
 
-      {onBulkIncrementAges && (
+      {currentUserRole === 'admin' && onBulkIncrementAges && (
         <AnnualAgeIncrementModal
           isOpen={isAgeModalOpen}
           onClose={() => setIsAgeModalOpen(false)}

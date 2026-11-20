@@ -245,6 +245,42 @@ export interface YouthGroupMemberRecord {
   notes?: string;
 }
 
+export type BeneficiarySupportType = 'permanent' | 'temporary';
+
+export interface CompassionBeneficiaryRecord {
+  id: number;
+  supportType: BeneficiarySupportType; // 'permanent' = ቋሚ ተረጂ | 'temporary' = ጊዜያዊ ተረጂ
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  age?: number | string;
+  phone?: string;
+  chapel?: string;
+  address?: string;
+  aidCategory: string;
+  monthlyAidAmount?: number;
+  startDate?: string;
+  endDate?: string;
+  familySize?: number;
+  status: string;
+  notes?: string;
+}
+
+export type MissionaryScope = 'international' | 'national' | 'regional' | 'local';
+
+export interface EvangelismMissionaryRecord {
+  id: number;
+  scope: MissionaryScope; // international | national | regional | local
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  phone?: string;
+  missionField: string;
+  sendingOrganization?: string;
+  deployedDate?: string;
+  monthlySupportAmount?: number;
+  status: string;
+  notes?: string;
+}
+
 export interface DepartmentWorkspaceData {
   members: DepartmentMemberRecord[];
   activities: DepartmentActivityRecord[];
@@ -259,6 +295,8 @@ export interface DepartmentWorkspaceData {
   youthDiscipleshipGroups?: string[];
   youthDiscipleshipMembers?: YouthGroupMemberRecord[];
   youthCoordinatorNotes?: string;
+  beneficiaryRecords?: CompassionBeneficiaryRecord[];
+  missionaryRecords?: EvangelismMissionaryRecord[];
 }
 
 export type SubmissionType = 'plan' | 'report' | 'letter';
@@ -329,6 +367,55 @@ export interface PlanDispatchItem {
   receiverNote?: string;
 }
 
+export type BrowserDeviceType = 'mobile' | 'tablet' | 'desktop';
+
+export interface BrowserClientInfo {
+  browserId: string;
+  browserFingerprint: string;
+  browserName: string;
+  osName: string;
+  deviceType: BrowserDeviceType;
+  screenResolution: string;
+  timezone: string;
+  language: string;
+  userAgent: string;
+}
+
+export interface FailedLoginAttemptRecord {
+  id: number;
+  timestamp: string;
+  attemptedTarget: string;
+  attemptedRoleOrUnit: string;
+  enteredPinPreview: string;
+  browserId: string;
+  browserFingerprint: string;
+  browserName: string;
+  osName: string;
+  deviceType: BrowserDeviceType;
+  screenResolution: string;
+  timezone: string;
+  language: string;
+  userAgent: string;
+}
+
+export interface BlockedBrowserRule {
+  id: number;
+  browserId: string;
+  browserFingerprint?: string;
+  matchFingerprintToo?: boolean;
+  browserName: string;
+  osName: string;
+  deviceType: BrowserDeviceType;
+  screenResolution?: string;
+  timezone?: string;
+  userAgent?: string;
+  isBlocked: boolean;
+  reason?: string;
+  lastTargetAttempted?: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface AppData {
   years: string[];
   pins: {
@@ -364,4 +451,6 @@ export interface AppData {
   submissions?: MinistrySubmission[];
   planDispatches?: PlanDispatchItem[];
   ageReferenceYear?: number; // የአባላት ዕድሜ የተዘጋጀበት መነሻ ዓ/ም (ለምሳሌ 2017)
+  failedLoginAttempts?: FailedLoginAttemptRecord[];
+  blockedBrowsers?: BlockedBrowserRule[];
 }

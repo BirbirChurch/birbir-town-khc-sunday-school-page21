@@ -102,7 +102,9 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
 
   const copyFirestoreRules = () => {
     const rulesText = `rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}`;
-    navigator.clipboard.writeText(rulesText);
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(rulesText).catch(() => {});
+    }
     setCopiedFirestoreRules(true);
     setTimeout(() => setCopiedFirestoreRules(false), 2500);
   };

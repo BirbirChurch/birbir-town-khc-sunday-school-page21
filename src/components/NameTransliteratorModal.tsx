@@ -3,6 +3,7 @@ import { Languages, Copy, Check, X, Sparkles, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ChurchMember, ChurchChild } from '../types';
 import { transliterateAmharicToEnglish } from '../utils/amharicTransliterator';
+import { copyTextSafely } from '../utils/clipboard';
 
 interface NameTransliteratorModalProps {
   isOpen: boolean;
@@ -38,7 +39,7 @@ export const NameTransliteratorModal: React.FC<NameTransliteratorModalProps> = (
   const handleCopyAll = () => {
     const output = convertedLines.map((l) => l.english).join('\n');
     if (!output) return;
-    navigator.clipboard.writeText(output);
+    void copyTextSafely(output);
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
   };

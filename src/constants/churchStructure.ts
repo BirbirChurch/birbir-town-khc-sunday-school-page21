@@ -119,18 +119,28 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'evangelism',
     code: '1.2.1',
     name: 'የወንጌል አገልግሎት',
-    shortDesc: 'የወንጌል ስርጭት፣ አዳዲስ አማኞች ክትትል፣ የደቀመዝሙርነትና የጥምቀት ዝግጅት',
+    shortDesc: 'የወንጌል ስርጭት፣ አለም አቀፋዊ/አገር አቀፋዊ/ክልላዊ/አከባቢያዊ ሚሽነሪዎች፣ አዳዲስ አማኞች ክትትልና የጥምቀት ዝግጅት',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3201',
     kind: 'ministry',
     hasChurchRegistry: false,
     supportsFinance: true,
-    memberNoun: 'ወንጌላዊ / አዲስ አማኝ',
+    memberNoun: 'ወንጌላዊ / ሚሽነሪ / አዲስ አማኝ',
     roleColumnLabel: 'ምድብ / ሁኔታ',
-    roleOptions: ['የወንጌል ቡድን መሪ', 'ወንጌል ሰባኪ', 'አዲስ አማኝ (ክትትል)', 'የጥምቀት ተዘጋጂ', 'ጸሎት ቡድን'],
-    activityCategories: ['የአደባባይ/ቤት ለቤት ወንጌል', 'አዲስ አማኝ ክትትል', 'የጥምቀት ትምህርት', 'የወንጌል ዘመቻ'],
-    financeCategories: ['የወንጌል ትራክትና መጽሐፍ', 'የዘመቻ ትራንስፖርት', 'የቡድን መዋጮ']
+    roleOptions: [
+      'አለም አቀፋዊ ሚሽነሪ',
+      'አገር አቀፋዊ ሚሽነሪ',
+      'ክልላዊ ሚሽነሪ',
+      'አከባቢያዊ ሚሽነሪ',
+      'የወንጌል ቡድን መሪ',
+      'ወንጌል ሰባኪ',
+      'አዲስ አማኝ (ክትትል)',
+      'የጥምቀት ተዘጋጂ',
+      'ጸሎት ቡድን'
+    ],
+    activityCategories: ['የአደባባይ/ቤት ለቤት ወንጌል', 'የሚሽነሪዎች ስምሪትና ጉብኝት', 'አዲስ አማኝ ክትትል', 'የጥምቀት ትምህርት', 'የወንጌል ዘመቻ'],
+    financeCategories: ['የሚሽነሪዎች ድጋፍ', 'የወንጌል ትራክትና መጽሐፍ', 'የዘመቻ ትራንስፖርት', 'የቡድን መዋጮ']
   },
   {
     id: 'deacons',
@@ -236,7 +246,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'love_compassion',
     code: '1.2.7',
     name: 'ፍቅርና ርኅራሄ',
-    shortDesc: 'ለተቸገሩ ወገኖች፣ ወላጅ አልባ ህፃናት፣ አረጋውያን እና ህሙማን የእርዳታና የርኅራሄ አገልግሎት',
+    shortDesc: 'ለቋሚ እና ጊዜያዊ ተረጂዎች፣ ወላጅ አልባ ህፃናት፣ አረጋውያን እና ህሙማን የእርዳታና የርኅራሄ አገልግሎት',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3271',
@@ -245,9 +255,18 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     supportsFinance: true,
     memberNoun: 'ተረጂ / የበጎ አድራጎት አባል',
     roleColumnLabel: 'ምድብ',
-    roleOptions: ['አስተባባሪ', 'አገልጋይ አባል', 'ወላጅ አልባ ድጋፍ', 'አረጋውያን ድጋፍ', 'የህክምና ድጋፍ', 'የምግብ/አልባሳት ድጋፍ'],
-    activityCategories: ['የምግብና አልባሳት እርዳታ', 'የህክምና ድጋፍ', 'የቤት ጥገና/ጉብኝት', 'በዓል ማጋራት'],
-    financeCategories: ['የፍቅርና ርኅራሄ መዋጮ', 'ለተረጂዎች የቀለብ/ልብስ ወጪ', 'የህክምና እርዳታ', 'የትምህርት ቁሳቁስ ድጋፍ']
+    roleOptions: [
+      'ቋሚ ተረጂ',
+      'ጊዜያዊ ተረጂ',
+      'አስተባባሪ',
+      'አገልጋይ አባል',
+      'ወላጅ አልባ ድጋፍ',
+      'አረጋውያን ድጋፍ',
+      'የህክምና ድጋፍ',
+      'የምግብ/አልባሳት ድጋፍ'
+    ],
+    activityCategories: ['የቋሚ ተረጂዎች ወርሃዊ ድጋፍ', 'የጊዜያዊ ተረጂዎች እርዳታ', 'የምግብና አልባሳት እርዳታ', 'የህክምና ድጋፍ', 'የቤት ጥገና/ጉብኝት', 'በዓል ማጋራት'],
+    financeCategories: ['የፍቅርና ርኅራሄ መዋጮ', 'ለቋሚ ተረጂዎች ድጋፍ', 'ለጊዜያዊ ተረጂዎች ድጋፍ', 'የህክምና እርዳታ', 'የትምህርት ቁሳቁስ ድጋፍ']
   },
   {
     id: 'development',
@@ -374,7 +393,9 @@ export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData =>
   youthWorshipLeaders: [],
   youthDiscipleshipGroups: [...DEFAULT_YOUTH_DISCIPLESHIP_GROUPS],
   youthDiscipleshipMembers: [],
-  youthCoordinatorNotes: ''
+  youthCoordinatorNotes: '',
+  beneficiaryRecords: [],
+  missionaryRecords: []
 });
 
 export const getOrgUnitById = (id: OrgUnitId | string | null | undefined): OrgUnitDefinition | undefined => {

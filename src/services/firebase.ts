@@ -194,7 +194,9 @@ export const loadStoredLocalData = (): AppData => {
       churchMembers: Array.isArray(source.churchMembers) ? source.churchMembers : [],
       departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
       submissions: Array.isArray(source.submissions) ? source.submissions : [],
-      planDispatches: Array.isArray(source.planDispatches) ? source.planDispatches : []
+      planDispatches: Array.isArray(source.planDispatches) ? source.planDispatches : [],
+      failedLoginAttempts: Array.isArray(source.failedLoginAttempts) ? source.failedLoginAttempts : [],
+      blockedBrowsers: Array.isArray(source.blockedBrowsers) ? source.blockedBrowsers : []
     };
 
     const sanitized = sanitizeAndDeduplicateAppData(rawData);
@@ -413,6 +415,12 @@ export const subscribeToAppData = (
           Array.isArray(val.planDispatches) && val.planDispatches.length > 0
             ? val.planDispatches
             : currentLocal.planDispatches || [],
+        failedLoginAttempts: Array.isArray(val.failedLoginAttempts)
+          ? val.failedLoginAttempts
+          : currentLocal.failedLoginAttempts || [],
+        blockedBrowsers: Array.isArray(val.blockedBrowsers)
+          ? val.blockedBrowsers
+          : currentLocal.blockedBrowsers || [],
         years: val.years && val.years.length > 0 ? val.years : currentLocal.years
       };
 
@@ -722,7 +730,9 @@ export const mergeImportedSundaySchoolData = (
       })),
       departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
       submissions: Array.isArray(source.submissions) ? source.submissions : [],
-      planDispatches: Array.isArray(source.planDispatches) ? source.planDispatches : []
+      planDispatches: Array.isArray(source.planDispatches) ? source.planDispatches : [],
+      failedLoginAttempts: Array.isArray(source.failedLoginAttempts) ? source.failedLoginAttempts : [],
+      blockedBrowsers: Array.isArray(source.blockedBrowsers) ? source.blockedBrowsers : []
     });
 
     saveToLocalStorage(replacedData);
@@ -859,7 +869,15 @@ export const mergeImportedSundaySchoolData = (
     planDispatches:
       Array.isArray(source.planDispatches) && source.planDispatches.length > 0
         ? source.planDispatches
-        : currentData.planDispatches || []
+        : currentData.planDispatches || [],
+    failedLoginAttempts:
+      Array.isArray(source.failedLoginAttempts) && source.failedLoginAttempts.length > 0
+        ? source.failedLoginAttempts
+        : currentData.failedLoginAttempts || [],
+    blockedBrowsers:
+      Array.isArray(source.blockedBrowsers) && source.blockedBrowsers.length > 0
+        ? source.blockedBrowsers
+        : currentData.blockedBrowsers || []
   };
 
   const sanitized = sanitizeAndDeduplicateAppData(mergedData);
@@ -932,6 +950,8 @@ export const importBackupJSON = (
         departmentData: source.departmentData && typeof source.departmentData === 'object' ? source.departmentData : {},
         submissions: Array.isArray(source.submissions) ? source.submissions : [],
         planDispatches: Array.isArray(source.planDispatches) ? source.planDispatches : [],
+        failedLoginAttempts: Array.isArray(source.failedLoginAttempts) ? source.failedLoginAttempts : [],
+        blockedBrowsers: Array.isArray(source.blockedBrowsers) ? source.blockedBrowsers : [],
         chapels: DEFAULT_CHAPELS
       });
       saveToLocalStorage(validData);

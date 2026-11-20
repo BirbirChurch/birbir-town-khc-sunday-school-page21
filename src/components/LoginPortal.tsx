@@ -22,9 +22,17 @@ import {
   Sprout,
   HandHeart,
   School,
-  Globe
+  Globe,
+  Ban
 } from 'lucide-react';
-import { OrgUnitId, Role, Teacher } from '../types';
+import {
+  BlockedBrowserRule,
+  BrowserClientInfo,
+  FailedLoginAttemptRecord,
+  OrgUnitId,
+  Role,
+  Teacher
+} from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import {
   DEFAULT_ORG_UNIT_PINS,
@@ -44,6 +52,9 @@ interface LoginPortalProps {
   chapelPins?: { [chapelName: string]: string };
   unitPins?: { [unitId: string]: string };
   chapelList?: string[];
+  blockedRule?: BlockedBrowserRule | null;
+  currentBrowserInfo?: BrowserClientInfo;
+  onFailedLoginAttempt?: (attempt: Omit<FailedLoginAttemptRecord, 'id'>) => void;
   onLoginSuccess: (
     role: Role,
     teacher?: Teacher,
@@ -61,6 +72,9 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   chapelPins = DEFAULT_CHAPEL_PINS,
   unitPins = DEFAULT_ORG_UNIT_PINS,
   chapelList = DEFAULT_CHAPELS,
+  blockedRule = null,
+  currentBrowserInfo,
+  onFailedLoginAttempt,
   onLoginSuccess
 }) => {
   const { lang, setLang, t, unitName, unitDesc, chapelLabel } = useLanguage();
@@ -114,8 +128,41 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     setErrorMsg('');
   };
 
+  const recordFailedAttempt = (
+    attemptedTarget: string,
+    attemptedRoleOrUnit: string,
+    enteredPinPreview: string
+  ) => {
+    if (!onFailedLoginAttempt || !currentBrowserInfo) return;
+    onFailedLoginAttempt({
+      timestamp: new Date().toISOString(),
+      attemptedTarget,
+      attemptedRoleOrUnit,
+      enteredPinPreview,
+      browserId: currentBrowserInfo.browserId,
+      browserFingerprint: currentBrowserInfo.browserFingerprint,
+      browserName: currentBrowserInfo.browserName,
+      osName: currentBrowserInfo.osName,
+      deviceType: currentBrowserInfo.deviceType,
+      screenResolution: currentBrowserInfo.screenResolution,
+      timezone: currentBrowserInfo.timezone,
+      language: currentBrowserInfo.language,
+      userAgent: currentBrowserInfo.userAgent
+    });
+  };
+
   const handleVerifyAndLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockedRule?.isBlocked) {
+      setErrorMsg(
+        t(
+          'ይህ ብራውዘር በዋና አዲሚን ታግዷል፤ መግባት አይችሉም።',
+          'This browser is blocked by the Administrator and cannot sign in.'
+        )
+      );
+      return;
+    }
+
     const entered = pinInput.trim();
     if (!entered) {
       setErrorMsg(t('እባክዎን የመግቢያ ቁልፍ (PIN) ያስገቡ!', 'Please enter your access PIN!'));
@@ -127,6 +174,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       if (entered === expected) {
         onLoginSuccess('admin');
       } else {
+        recordFailedAttempt('ዋና አዲሚን (Super Admin)', 'admin', entered);
         setErrorMsg(t('የዋና አዲሚን መግቢያ ቁልፍ (PIN) ትክክል አይደለም!', 'Incorrect Super Admin PIN!'));
       }
       return;
@@ -139,6 +187,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       if (matchedTeacher) {
         onLoginSuccess('teacher', matchedTeacher, undefined, 'children_ministry');
       } else {
+        recordFailedAttempt('የልጆች አገልግሎት › የሰንበት ት/ቤት መምህር', 'teacher', entered);
         setErrorMsg(t('ያስገቡት የመምህር የምስጥር ቁጥር (PIN) ትክክል አይደለም!', 'Invalid Sunday School teacher PIN!'));
       }
       return;
@@ -155,6 +204,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         if (expected && entered === expected) {
           onLoginSuccess('leader', undefined, selectedChapel, 'chapels_dept');
         } else {
+          recordFailedAttempt(`ቻፕል › ${selectedChapel}`, `chapel:${selectedChapel}`, entered);
           setErrorMsg(
             t(
               `የ${selectedChapel} መግቢያ ቁልፍ (PIN) ትክክል አይደለም!`,
@@ -170,6 +220,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         if (entered === expectedCoordinatorPin) {
           onLoginSuccess('children_coordinator', undefined, undefined, 'children_ministry');
         } else {
+          recordFailedAttempt('የልጆች አገልግሎት አስተባባሪ', 'children_coordinator', entered);
           setErrorMsg(
             t(
               'የ"የልጆች አገልግሎት አስተባባሪ" መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ ዋና አዲሚንን ይጠይቁ።',
@@ -185,6 +236,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         if (entered === expectedYouthCoordinatorPin) {
           onLoginSuccess('youth_coordinator', undefined, undefined, 'youth_ministry');
         } else {
+          recordFailedAttempt('የወጣቶች አገልግሎት አስተባባሪ', 'youth_coordinator', entered);
           setErrorMsg(
             t(
               'የ"የወጣቶች አገልግሎት አስተባባሪ" መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ ዋና አዲሚንን ይጠይቁ።',
@@ -203,6 +255,13 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       if (entered === expectedUnitPin) {
         onLoginSuccess('leader', undefined, undefined, activeUnitId);
       } else {
+        const targetLabel =
+          activeUnitId === 'youth_ministry'
+            ? 'የወጣቶች አገልግሎት › የመሪዎች ገጽ'
+            : activeUnitId === 'chapels_dept'
+            ? 'የ10ሩ ቻፕሎች መምሪያ መሪ'
+            : unitDef.name;
+        recordFailedAttempt(targetLabel, activeUnitId, entered);
         setErrorMsg(
           t(
             `የ"${unitDef.name}" መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ ዋና አዲሚንን ይጠይቁ።`,
@@ -307,6 +366,82 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const eldersTheme = ORG_UNIT_THEMES.elders_council;
   const officeTheme = ORG_UNIT_THEMES.office;
   const spiritualTheme = ORG_UNIT_THEMES.spiritual_council;
+
+  if (blockedRule?.isBlocked) {
+    return (
+      <div className="max-w-xl mx-auto py-8 px-4 sm:px-6 w-full">
+        <div className="bg-white border-2 border-rose-300 rounded-2xl overflow-hidden shadow-sm">
+          <div className="bg-rose-900 text-white p-6 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-rose-700/60 border border-rose-400/40 flex items-center justify-center shrink-0">
+                <Ban className="w-6 h-6 text-rose-100" />
+              </div>
+              <div>
+                <h2 className="text-lg font-extrabold">
+                  {t('ይህ ብራውዘር በአዲሚን ታግዷል', 'Browser Access Blocked')}
+                </h2>
+                <p className="text-xs text-rose-100 mt-0.5">
+                  {t(
+                    'የብርብር ከተማ ቃለ ሕይወት ቤተ ክርስቲያን — የደህንነት ጥበቃ',
+                    'Birbir Town Kale Heywet Church — Security Enforcement'
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 bg-white/10 border border-white/20 rounded-xl p-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setLang('am')}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                  lang === 'am' ? 'bg-amber-400 text-slate-950' : 'text-white hover:bg-white/10'
+                }`}
+              >
+                አማ
+              </button>
+              <button
+                type="button"
+                onClick={() => setLang('en')}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                  lang === 'en' ? 'bg-amber-400 text-slate-950' : 'text-white hover:bg-white/10'
+                }`}
+              >
+                EN
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4 text-xs">
+            <p className="text-slate-700 font-semibold leading-relaxed">
+              {t(
+                'በዚህ ብራውዘር ወደ ሲስተሙ መግባት በዋና አዲሚን (Super Admin) ታግዷል። መልሶ መግባት የሚቻለው አዲሚኑ በአዲሚን ገጽ ላይ ሲፈቅድልዎ ብቻ ነው።',
+                'Sign-in access from this browser has been blocked by the Super Admin. Access can only be restored once the Admin clicks Allow on the Admin panel.'
+              )}
+            </p>
+
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 space-y-1.5 text-rose-950">
+              <div>
+                <span className="font-bold">{t('ብራውዘር / መሣሪያ፦ ', 'Browser / Device: ')}</span>
+                <span className="font-extrabold">
+                  {currentBrowserInfo?.browserName || blockedRule.browserName} ({currentBrowserInfo?.osName || blockedRule.osName})
+                </span>
+              </div>
+              <div>
+                <span className="font-bold">{t('የብራውዘር መለያ ID፦ ', 'Browser ID: ')}</span>
+                <span className="font-mono font-bold">{currentBrowserInfo?.browserId || blockedRule.browserId}</span>
+              </div>
+              {blockedRule.reason && (
+                <div>
+                  <span className="font-bold">{t('ምክንያት፦ ', 'Reason: ')}</span>
+                  <span>{blockedRule.reason}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto py-6 px-4 sm:px-6 w-full">

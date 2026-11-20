@@ -20,10 +20,13 @@ import {
   Send,
   Inbox,
   Briefcase,
-  Package
+  Package,
+  HeartHandshake,
+  Globe
 } from 'lucide-react';
 import {
   AnnualPlanItem,
+  ChoirMember,
   ChurchChild,
   ChurchMember,
   DepartmentActivityRecord,
@@ -34,7 +37,9 @@ import {
   OrgUnitId,
   PlanDispatchItem,
   Role,
-  Student
+  SpiritualMember,
+  Student,
+  Teacher
 } from '../types';
 import {
   CHURCH_ORG_UNITS,
@@ -59,6 +64,16 @@ import type { AutoApplyDispatchMode } from './PlanDispatchPanel';
 
 const PlanBulkSenderPanel = lazy(() =>
   import('./PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
+);
+const CompassionBeneficiariesPanel = lazy(() =>
+  import('./MinistrySpecializedPanels').then((m) => ({
+    default: m.CompassionBeneficiariesPanel
+  }))
+);
+const EvangelismMissionariesPanel = lazy(() =>
+  import('./MinistrySpecializedPanels').then((m) => ({
+    default: m.EvangelismMissionariesPanel
+  }))
 );
 
 interface DepartmentWorkspacePageProps {
@@ -115,6 +130,9 @@ interface DepartmentWorkspacePageProps {
   onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
   onReturnDispatch?: (dispatchId: number, note: string) => void;
   onDeleteDispatch?: (id: number) => void;
+  teachers?: Teacher[];
+  choirMembers?: ChoirMember[];
+  spiritualMembers?: SpiritualMember[];
 }
 
 type SubTabId =
@@ -126,6 +144,8 @@ type SubTabId =
   | 'finances'
   | 'hr'
   | 'assets'
+  | 'beneficiaries'
+  | 'missionaries'
   | 'plans'
   | 'plan_dispatch'
   | 'consolidated_plans'
@@ -172,7 +192,10 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   onDispatchPlans,
   onAcceptDispatch,
   onReturnDispatch,
-  onDeleteDispatch
+  onDeleteDispatch,
+  teachers = [],
+  choirMembers = [],
+  spiritualMembers = []
 }) => {
   const { t, unitName: getUnitLabel, unitDesc: getUnitDescLabel } = useLanguage();
   const unit = getOrgUnitById(unitId);
@@ -193,11 +216,13 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
 
   const defaultTab: SubTabId = useMemo(() => {
     if (!unit) return 'members';
+    if (unitId === 'love_compassion') return 'beneficiaries';
+    if (unitId === 'evangelism') return 'missionaries';
     if (unit.hasChurchRegistry && unit.kind === 'council_registry') return 'church_registry';
     if (unit.kind === 'governance' || unit.kind === 'special_hub') return 'overview';
     if (unit.kind === 'finance') return 'finances';
     return 'members';
-  }, [unit]);
+  }, [unit, unitId]);
 
   const [activeSubTab, setActiveSubTab] = useState<SubTabId>(defaultTab);
   const [lastUnitId, setLastUnitId] = useState<OrgUnitId>(unitId);
@@ -612,6 +637,53 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(finRows), 'ፋይናንስ');
     }
 
+    if (unitId === 'love_compassion' && (ws.beneficiaryRecords || []).length > 0) {
+      const benRows = [
+        [`ፍቅርና ርኅራሄ — ቋሚና ጊዜያዊ ተረጂዎች (${currentYear} ዓ/ም)`],
+        [],
+        ['ተ.ቁ', 'ዓይነት', 'ሙሉ ስም', 'ጾታ', 'ዕድሜ', 'የድጋፍ ዘርፍ', 'መጠን (ብር)', 'ቻፕል', 'ስልክ', 'ሁኔታ'],
+        ...(ws.beneficiaryRecords || []).map((b, i) => [
+          i + 1,
+          b.supportType === 'permanent' ? 'ቋሚ ተረጂ' : 'ጊዜያዊ ተረጂ',
+          b.name,
+          b.gender,
+          b.age ?? '-',
+          b.aidCategory,
+          b.monthlyAidAmount ?? 0,
+          b.chapel || '-',
+          b.phone || '-',
+          b.status
+        ])
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(benRows), 'ቋሚና_ጊዜያዊ_ተረጂ');
+    }
+
+    if (unitId === 'evangelism' && (ws.missionaryRecords || []).length > 0) {
+      const misRows = [
+        [`የወንጌል አገልግሎት — ሚሽነሪዎች (${currentYear} ዓ/ም)`],
+        [],
+        ['ተ.ቁ', 'የሚሽነሪ ምድብ', 'ሙሉ ስም', 'ጾታ', 'የአገልግሎት ቦታ', 'ላኪ አካል', 'ወርሃዊ ድጋፍ (ብር)', 'ስልክ', 'ሁኔታ'],
+        ...(ws.missionaryRecords || []).map((mr, i) => [
+          i + 1,
+          mr.scope === 'international'
+            ? 'አለም አቀፋዊ ሚሽነሪ'
+            : mr.scope === 'national'
+            ? 'አገር አቀፋዊ ሚሽነሪ'
+            : mr.scope === 'regional'
+            ? 'ክልላዊ ሚሽነሪ'
+            : 'አከባቢያዊ ሚሽነሪ',
+          mr.name,
+          mr.gender,
+          mr.missionField,
+          mr.sendingOrganization || '-',
+          mr.monthlySupportAmount ?? 0,
+          mr.phone || '-',
+          mr.status
+        ])
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(misRows), 'ሚሽነሪዎች');
+    }
+
     XLSX.writeFile(wb, `${unit.name}_${currentYear}.xlsx`);
   };
 
@@ -745,6 +817,30 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             id: 'assets' as SubTabId,
             label: t(`ንብረት — ቋሚና አላቂ (${(ws.assetRecords || []).length})`, `Assets — Fixed/Consumable (${(ws.assetRecords || []).length})`),
             icon: Package
+          }
+        ]
+      : []),
+    ...(unitId === 'love_compassion'
+      ? [
+          {
+            id: 'beneficiaries' as SubTabId,
+            label: t(
+              `ቋሚና ጊዜያዊ ተረጂዎች (${(ws.beneficiaryRecords || []).length})`,
+              `Permanent & Temporary Beneficiaries (${(ws.beneficiaryRecords || []).length})`
+            ),
+            icon: HeartHandshake
+          }
+        ]
+      : []),
+    ...(unitId === 'evangelism'
+      ? [
+          {
+            id: 'missionaries' as SubTabId,
+            label: t(
+              `ሚሽነሪዎች (አለም/አገር/ክልል/አከባቢ · ${(ws.missionaryRecords || []).length})`,
+              `Missionaries (${(ws.missionaryRecords || []).length})`
+            ),
+            icon: Globe
           }
         ]
       : []),
@@ -1060,6 +1156,18 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           churchMembers={churchMembers}
           churchChildren={churchChildren}
           chapelList={chapelList}
+          departmentDataMap={departmentDataMap}
+          teachers={teachers}
+          choirMembers={choirMembers}
+          spiritualMembers={spiritualMembers}
+          childrenPlans={childrenPlans}
+          submissions={submissions}
+          planDispatches={planDispatches}
+          onNavigateUnit={(targetUid) => {
+            if (canNavigateToUnit(targetUid)) {
+              onSelectUnit(targetUid);
+            }
+          }}
         />
       )}
 
@@ -1447,6 +1555,33 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             onUpdateDepartmentData(unitId, (prev) => ({ ...prev, assetRecords: next }))
           }
         />
+      )}
+
+      {/* Sub-view: Love & Compassion Permanent & Temporary Beneficiaries */}
+      {activeSubTab === 'beneficiaries' && unitId === 'love_compassion' && (
+        <Suspense fallback={null}>
+          <CompassionBeneficiariesPanel
+            currentYear={currentYear}
+            records={ws.beneficiaryRecords || []}
+            chapelList={chapelList}
+            onSaveRecords={(next) =>
+              onUpdateDepartmentData(unitId, (prev) => ({ ...prev, beneficiaryRecords: next }))
+            }
+          />
+        </Suspense>
+      )}
+
+      {/* Sub-view: Evangelism Missionaries (International, National, Regional, Local) */}
+      {activeSubTab === 'missionaries' && unitId === 'evangelism' && (
+        <Suspense fallback={null}>
+          <EvangelismMissionariesPanel
+            currentYear={currentYear}
+            records={ws.missionaryRecords || []}
+            onSaveRecords={(next) =>
+              onUpdateDepartmentData(unitId, (prev) => ({ ...prev, missionaryRecords: next }))
+            }
+          />
+        </Suspense>
       )}
 
       {/* Sub-view: Spiritual Council Consolidated Chapels & Ministries Plans/Execution Matrix */}

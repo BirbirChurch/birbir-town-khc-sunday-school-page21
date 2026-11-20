@@ -176,5 +176,7 @@ export const INITIAL_APP_DATA: AppData = {
   chapels: DEFAULT_CHAPELS,
   churchChildren: INITIAL_CHURCH_CHILDREN,
   departmentData: {},
-  submissions: []
+  submissions: [],
+  failedLoginAttempts: [],
+  blockedBrowsers: []
 };

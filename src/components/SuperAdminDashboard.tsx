@@ -10,7 +10,8 @@ import {
   Wallet,
   ArrowUpRight,
   Search,
-  Send
+  Send,
+  ShieldAlert
 } from 'lucide-react';
 import { AppData, OrgUnitId } from '../types';
 import {
@@ -29,6 +30,7 @@ interface SuperAdminDashboardProps {
   onOpenOverviewStats: () => void;
   onOpenSyncModal: () => void;
   onOpenPlanDispatcher?: () => void;
+  onOpenSecurityMonitor?: () => void;
 }
 
 export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
@@ -38,7 +40,8 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   onOpenPinManager,
   onOpenOverviewStats,
   onOpenSyncModal,
-  onOpenPlanDispatcher
+  onOpenPlanDispatcher,
+  onOpenSecurityMonitor
 }) => {
   const { t, unitName, unitDesc } = useLanguage();
   const [unitSearch, setUnitSearch] = useState('');
@@ -120,10 +123,10 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             <button
               type="button"
               onClick={onOpenOverviewStats}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 transition cursor-pointer whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-950 transition cursor-pointer whitespace-nowrap"
             >
               <BarChart3 className="w-3.5 h-3.5 text-blue-800" />
-              <span>{t('አጠቃላይ ስታቲስቲክስ', 'Overall Statistics')}</span>
+              <span>{t('የቤተክርስቲያን አጠቃላይ ማጠቃለያ ሠንጠረዥ', 'Full Church Summary Table')}</span>
             </button>
             <button
               type="button"
@@ -133,6 +136,21 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
               <Database className="w-3.5 h-3.5 text-emerald-700" />
               <span>{t('ዳታቤዝ & JSON', 'Database & JSON')}</span>
             </button>
+            {onOpenSecurityMonitor && (
+              <button
+                type="button"
+                onClick={onOpenSecurityMonitor}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-900 transition cursor-pointer whitespace-nowrap"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-700" />
+                <span>
+                  {t('የብራውዘር እገዳና ደህንነት', 'Browser Security')}
+                  {(appData.failedLoginAttempts?.length || 0) > 0
+                    ? ` (${appData.failedLoginAttempts?.length})`
+                    : ''}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -281,6 +299,14 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                     (ws.youthWorshipLeaders?.length || 0) +
                     (ws.youthDiscipleshipMembers?.length || 0);
                   extraNote = `${t('ህብረቶችና ትምህርት', 'Choirs, Leaders & Discipleship')} (${subCount})`;
+                } else if (u.id === 'love_compassion') {
+                  const benList = ws.beneficiaryRecords || [];
+                  const permCnt = benList.filter((b) => b.supportType === 'permanent').length;
+                  const tempCnt = benList.filter((b) => b.supportType === 'temporary').length;
+                  extraNote = `${t('ቋሚ ተረጂ', 'Permanent')} (${permCnt}) · ${t('ጊዜያዊ', 'Temporary')} (${tempCnt})`;
+                } else if (u.id === 'evangelism') {
+                  const misCnt = (ws.missionaryRecords || []).length;
+                  extraNote = `${t('ሚሽነሪዎች', 'Missionaries')} (${misCnt})`;
                 } else if (u.id === 'chapels_dept') {
                   primaryCount = (appData.chapels || []).length;
                   extraNote = `${t('10 ቻፕሎች', '10 Chapels')} · ${churchMembers.length} ${t('አባላት', 'members')}`;

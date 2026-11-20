@@ -3,7 +3,7 @@
  * Prevents timestamp collision even when called many times in the same millisecond or inside tight CSV import loops.
  */
 
-import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission, PlanDispatchItem } from '../types';
+import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission, PlanDispatchItem, FailedLoginAttemptRecord, BlockedBrowserRule } from '../types';
 import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import { CHURCH_ORG_UNITS, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
@@ -317,7 +317,19 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
           })
         : undefined,
       youthCoordinatorNotes:
-        typeof ws.youthCoordinatorNotes === 'string' ? ws.youthCoordinatorNotes : undefined
+        typeof ws.youthCoordinatorNotes === 'string' ? ws.youthCoordinatorNotes : undefined,
+      beneficiaryRecords: Array.isArray(ws.beneficiaryRecords)
+        ? ws.beneficiaryRecords.map((b) => {
+            const checkedId = ensureUniqueId(b?.id);
+            return checkedId !== b?.id ? { ...b, id: checkedId } : b;
+          })
+        : undefined,
+      missionaryRecords: Array.isArray(ws.missionaryRecords)
+        ? ws.missionaryRecords.map((mr) => {
+            const checkedId = ensureUniqueId(mr?.id);
+            return checkedId !== mr?.id ? { ...mr, id: checkedId } : mr;
+          })
+        : undefined
     };
   });
 
@@ -342,6 +354,21 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
         return checkedId !== disp?.id || dispPlans !== disp?.plans
           ? { ...disp, id: checkedId, plans: dispPlans }
           : disp;
+      })
+    : [];
+
+  // 10e. Sanitize failedLoginAttempts and blockedBrowsers arrays
+  const sanitizedFailedLoginAttempts: FailedLoginAttemptRecord[] = Array.isArray(data.failedLoginAttempts)
+    ? data.failedLoginAttempts.map((att) => {
+        const checkedId = ensureUniqueId(att?.id);
+        return checkedId !== att?.id ? { ...att, id: checkedId } : att;
+      })
+    : [];
+
+  const sanitizedBlockedBrowsers: BlockedBrowserRule[] = Array.isArray(data.blockedBrowsers)
+    ? data.blockedBrowsers.map((rule) => {
+        const checkedId = ensureUniqueId(rule?.id);
+        return checkedId !== rule?.id ? { ...rule, id: checkedId } : rule;
       })
     : [];
 
@@ -427,7 +454,9 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     churchMembers: sanitizedChurchMembers,
     departmentData: sanitizedDepartmentData,
     submissions: sanitizedSubmissions,
-    planDispatches: sanitizedPlanDispatches
+    planDispatches: sanitizedPlanDispatches,
+    failedLoginAttempts: sanitizedFailedLoginAttempts,
+    blockedBrowsers: sanitizedBlockedBrowsers
   };
   _sanitizedAppDataCache.add(sanitizedResult);
   return sanitizedResult;

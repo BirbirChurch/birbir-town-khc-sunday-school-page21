@@ -57,6 +57,7 @@ import {
   NameScriptMode,
   transliterateAmharicToEnglish
 } from '../utils/amharicTransliterator';
+import { copyTextSafely } from '../utils/clipboard';
 import {
   ChurchMemberBreakdownSection,
   SpiritualFilterValue
@@ -826,7 +827,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
   const handleCopyMemberCode = (id: number, code: string) => {
     if (!code) return;
-    navigator.clipboard.writeText(code);
+    void copyTextSafely(code);
     setCopiedCodeId(id);
     setTimeout(() => setCopiedCodeId(null), 1800);
   };
@@ -1138,7 +1139,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               </span>
             </button>
 
-            {onBulkIncrementAges && !officialLoggedInChapel && (
+            {currentUserRole === 'admin' && onBulkIncrementAges && !officialLoggedInChapel && (
               <button
                 type="button"
                 onClick={() => setIsAgeModalOpen(true)}
@@ -2675,7 +2676,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         chapelList={chapelStats.chapels}
       />
 
-      {onBulkIncrementAges && (
+      {currentUserRole === 'admin' && onBulkIncrementAges && (
         <AnnualAgeIncrementModal
           isOpen={isAgeModalOpen}
           onClose={() => setIsAgeModalOpen(false)}

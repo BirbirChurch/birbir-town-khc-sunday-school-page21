@@ -105,7 +105,9 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
 
   const handleCopyPhone = (id: string | number, phone: string) => {
     if (!phone || phone === '-') return;
-    navigator.clipboard.writeText(phone);
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(phone).catch(() => {});
+    }
     setCopiedPhoneId(id);
     setTimeout(() => setCopiedPhoneId(null), 2000);
   };

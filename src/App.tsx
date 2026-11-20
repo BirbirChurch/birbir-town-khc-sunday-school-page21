@@ -12,7 +12,8 @@ import {
   BarChart3,
   X,
   Building2,
-  Send
+  Send,
+  ShieldAlert
 } from 'lucide-react';
 import {
   Role,
@@ -29,7 +30,10 @@ import {
   ChurchMember,
   DepartmentWorkspaceData,
   MinistrySubmission,
-  PlanDispatchItem
+  PlanDispatchItem,
+  FailedLoginAttemptRecord,
+  BlockedBrowserRule,
+  BrowserDeviceType
 } from './types';
 import type { AutoApplyDispatchMode } from './components/PlanDispatchPanel';
 import { CLASS_LIST, DEFAULT_ANNUAL_PLAN, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from './constants/initialData';
@@ -58,6 +62,7 @@ import {
 import { Header } from './components/Header';
 import { LoginPortal } from './components/LoginPortal';
 import { NameScriptMode } from './utils/amharicTransliterator';
+import { findActiveBrowserBlock, getCurrentBrowserInfo } from './utils/browserIdentity';
 import { useLanguage } from './context/LanguageContext';
 
 const PinManageTab = lazy(() =>
@@ -98,6 +103,11 @@ const ChapelsHubPage = lazy(() =>
 const PlanBulkSenderPanel = lazy(() =>
   import('./components/PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
 );
+const AdminSecurityMonitorTab = lazy(() =>
+  import('./components/AdminSecurityMonitorTab').then((m) => ({
+    default: m.AdminSecurityMonitorTab
+  }))
+);
 
 export default function App() {
   const { t, unitName, chapelLabel } = useLanguage();
@@ -110,7 +120,12 @@ export default function App() {
   const [loggedInUnit, setLoggedInUnit] = useState<OrgUnitId | null>(null);
   const [activeOrgUnit, setActiveOrgUnit] = useState<OrgUnitId>('office');
   const [activeAdminView, setActiveAdminView] = useState<
-    'adminOverview' | 'pinManageTab' | 'churchOverviewStatsTab' | 'planDispatchTab' | 'unitPage'
+    | 'adminOverview'
+    | 'pinManageTab'
+    | 'churchOverviewStatsTab'
+    | 'planDispatchTab'
+    | 'securityMonitorTab'
+    | 'unitPage'
   >('adminOverview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
@@ -220,7 +235,31 @@ export default function App() {
     []
   );
 
+  const currentBrowserInfo = useMemo(() => getCurrentBrowserInfo(), []);
+
+  const activeBrowserBlock = useMemo(
+    () => findActiveBrowserBlock(appData?.blockedBrowsers, currentBrowserInfo),
+    [appData?.blockedBrowsers, currentBrowserInfo]
+  );
+
   const [loggedInChapel, setLoggedInChapel] = useState<string | null>(null);
+
+  const handleLogout = useCallback(() => {
+    setCurrentUserRole(null);
+    setLoggedInTeacher(null);
+    setLoggedInChapel(null);
+    setLoggedInUnit(null);
+    setActiveAdminView('adminOverview');
+    setActiveOrgUnit('office');
+    setIsMobileSidebarOpen(false);
+  }, []);
+
+  // Enforce browser blocking in real time for non-admin sessions
+  useEffect(() => {
+    if (currentUserRole && currentUserRole !== 'admin' && activeBrowserBlock?.isBlocked) {
+      handleLogout();
+    }
+  }, [currentUserRole, activeBrowserBlock, handleLogout]);
 
   // Handlers for Login
   const handleLoginSuccess = (
@@ -229,6 +268,9 @@ export default function App() {
     chapel?: string,
     unitId?: OrgUnitId
   ) => {
+    if (role !== 'admin' && activeBrowserBlock?.isBlocked) {
+      return;
+    }
     setCurrentUserRole(role);
     setIsMobileSidebarOpen(false);
     if (role === 'admin') {
@@ -270,15 +312,156 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    setCurrentUserRole(null);
-    setLoggedInTeacher(null);
-    setLoggedInChapel(null);
-    setLoggedInUnit(null);
-    setActiveAdminView('adminOverview');
-    setActiveOrgUnit('office');
-    setIsMobileSidebarOpen(false);
-  };
+  // Security Monitor & Browser Block / Allow handlers
+  const handleFailedLoginAttempt = useCallback(
+    (attempt: Omit<FailedLoginAttemptRecord, 'id'>) => {
+      const record: FailedLoginAttemptRecord = {
+        ...attempt,
+        id: generateUniqueId()
+      };
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          failedLoginAttempts: [record, ...(prev.failedLoginAttempts || [])].slice(0, 300)
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleBlockBrowser = useCallback(
+    (
+      browserInfo: {
+        browserId: string;
+        browserFingerprint?: string;
+        browserName: string;
+        osName: string;
+        deviceType: BrowserDeviceType;
+        screenResolution?: string;
+        timezone?: string;
+        userAgent?: string;
+        lastTargetAttempted?: string;
+      },
+      reason?: string,
+      matchFingerprintToo = true
+    ) => {
+      if (browserInfo.browserId === currentBrowserInfo.browserId) return;
+      updateAppData(
+        (prev) => {
+          const existing = prev.blockedBrowsers || [];
+          const idx = existing.findIndex((r) => r.browserId === browserInfo.browserId);
+          const nowIso = new Date().toISOString();
+          if (idx >= 0) {
+            const next = [...existing];
+            next[idx] = {
+              ...next[idx],
+              browserFingerprint: browserInfo.browserFingerprint || next[idx].browserFingerprint,
+              matchFingerprintToo,
+              browserName: browserInfo.browserName,
+              osName: browserInfo.osName,
+              deviceType: browserInfo.deviceType,
+              screenResolution: browserInfo.screenResolution || next[idx].screenResolution,
+              timezone: browserInfo.timezone || next[idx].timezone,
+              userAgent: browserInfo.userAgent || next[idx].userAgent,
+              lastTargetAttempted: browserInfo.lastTargetAttempted || next[idx].lastTargetAttempted,
+              isBlocked: true,
+              reason: reason || next[idx].reason,
+              updatedAt: nowIso,
+              updatedBy: 'ዋና አዲሚን (Super Admin)'
+            };
+            return { ...prev, blockedBrowsers: next };
+          }
+          const newRule: BlockedBrowserRule = {
+            id: generateUniqueId(),
+            browserId: browserInfo.browserId,
+            browserFingerprint: browserInfo.browserFingerprint,
+            matchFingerprintToo,
+            browserName: browserInfo.browserName,
+            osName: browserInfo.osName,
+            deviceType: browserInfo.deviceType,
+            screenResolution: browserInfo.screenResolution,
+            timezone: browserInfo.timezone,
+            userAgent: browserInfo.userAgent,
+            lastTargetAttempted: browserInfo.lastTargetAttempted,
+            isBlocked: true,
+            reason: reason || 'በአዲሚን ታግዷል',
+            updatedAt: nowIso,
+            updatedBy: 'ዋና አዲሚን (Super Admin)'
+          };
+          return { ...prev, blockedBrowsers: [newRule, ...existing] };
+        },
+        { immediate: true }
+      );
+    },
+    [currentBrowserInfo.browserId, updateAppData]
+  );
+
+  const handleAllowBrowser = useCallback(
+    (browserId: string) => {
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          blockedBrowsers: (prev.blockedBrowsers || []).map((r) =>
+            r.browserId === browserId
+              ? {
+                  ...r,
+                  isBlocked: false,
+                  updatedAt: new Date().toISOString(),
+                  updatedBy: 'ዋና አዲሚን (Super Admin)'
+                }
+              : r
+          )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleToggleFingerprintMatch = useCallback(
+    (ruleId: number) => {
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          blockedBrowsers: (prev.blockedBrowsers || []).map((r) =>
+            r.id === ruleId
+              ? {
+                  ...r,
+                  matchFingerprintToo: !r.matchFingerprintToo,
+                  updatedAt: new Date().toISOString()
+                }
+              : r
+          )
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleDeleteBrowserRule = useCallback(
+    (ruleId: number) => {
+      updateAppData(
+        (prev) => ({
+          ...prev,
+          blockedBrowsers: (prev.blockedBrowsers || []).filter((r) => r.id !== ruleId)
+        }),
+        { immediate: true }
+      );
+    },
+    [updateAppData]
+  );
+
+  const handleClearFailedAttempts = useCallback(() => {
+    updateAppData(
+      (prev) => ({
+        ...prev,
+        failedLoginAttempts: []
+      }),
+      { immediate: true }
+    );
+  }, [updateAppData]);
 
   const canNavigateToUnit = useCallback(
     (targetUnitId: OrgUnitId): boolean => {
@@ -1455,9 +1638,10 @@ export default function App() {
     );
   };
 
-  // Annual bulk age increment across all members/children (baseline 2017 E.C.)
+  // Annual bulk age increment across all members/children (STRICTLY ADMIN-ONLY)
   const handleBulkIncrementAges = useCallback(
     (options: Omit<BulkAgeIncrementOptions, 'targetAcademicYear'>): BulkAgeIncrementStats | null => {
+      if (currentUserRole !== 'admin') return null;
       const currentSnapshot = latestDataRef.current || appData;
       if (!currentSnapshot) return null;
 
@@ -1481,7 +1665,7 @@ export default function App() {
       setTimeout(() => setAgeSyncFeedback(''), 8000);
       return stats;
     },
-    [appData, currentYear, updateAppData]
+    [appData, currentUserRole, currentYear, updateAppData]
   );
 
   const handleAddChurchMember = (newMember: Omit<ChurchMember, 'id'>): ChurchMember => {
@@ -1888,6 +2072,7 @@ export default function App() {
 
   const quickJsonInputRef = useRef<HTMLInputElement>(null);
   const [quickJsonFeedback, setQuickJsonFeedback] = useState<string>('');
+  const [quickJsonError, setQuickJsonError] = useState<string>('');
 
   const handleQuickJsonUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1899,12 +2084,15 @@ export default function App() {
       if (restored) {
         setAppData(restored);
         syncAppDataToFirebase(restored);
+        setQuickJsonError('');
         setQuickJsonFeedback(
           `✓ JSON ፋይል በተሳካ ሁኔታ ወደ አዲሱ Firebase ገብቷል! (ተማሪዎች፦ ${countStudentsInData(restored)}፣ አባላት፦ ${restored.churchMembers?.length || 0}፣ ልጆች፦ ${restored.churchChildren?.length || 0})`
         );
         setTimeout(() => setQuickJsonFeedback(''), 6000);
       } else {
-        alert('የተመረጠው ፋይል ትክክለኛ JSON ፎርማት አይደለም!');
+        setQuickJsonFeedback('');
+        setQuickJsonError('የተመረጠው ፋይል ትክክለኛ JSON ፎርማት አይደለም!');
+        setTimeout(() => setQuickJsonError(''), 6000);
       }
     };
     reader.readAsText(file);
@@ -1913,9 +2101,9 @@ export default function App() {
 
   if (!appData) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-4">
+      <div className="min-h-screen min-h-[100dvh] bg-slate-900 flex flex-col items-center justify-center text-white p-4">
         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <h2 className="text-lg font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h2>
+        <h2 className="text-lg font-bold text-center">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h2>
         <p className="text-xs text-blue-300 mt-1">ዳታቤዝ በመገናኘት ላይ ነው...</p>
       </div>
     );
@@ -1927,10 +2115,10 @@ export default function App() {
     (currentUserRole === 'leader' && !loggedInChapel && sidebarUnits.length > 1);
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans print:min-h-0 print:bg-white print:block">
+    <div className="min-h-screen min-h-[100dvh] overflow-x-clip bg-slate-100/70 text-slate-900 flex flex-col font-sans print:min-h-0 print:bg-white print:block">
       {!currentUserRole ? (
         // CLEAN OUTSIDE LOGIN SCREEN: Nothing from dashboard/database is visible outside!
-        <div className="flex-1 flex flex-col justify-center items-center py-8 px-4">
+        <div className="flex-1 flex flex-col justify-center items-center py-6 sm:py-8 px-3 sm:px-4">
           <LoginPortal
             teachers={appData.teachers}
             adminPin={appData.pins?.admin || '1234'}
@@ -1940,6 +2128,9 @@ export default function App() {
             chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
             unitPins={appData.pins?.units || DEFAULT_ORG_UNIT_PINS}
             chapelList={appData.chapels || DEFAULT_CHAPELS}
+            blockedRule={activeBrowserBlock}
+            currentBrowserInfo={currentBrowserInfo}
+            onFailedLoginAttempt={handleFailedLoginAttempt}
             onLoginSuccess={handleLoginSuccess}
           />
         </div>
@@ -2087,6 +2278,11 @@ export default function App() {
                   {quickJsonFeedback}
                 </div>
               )}
+              {quickJsonError && (
+                <div className="max-w-7xl mx-auto mt-2 bg-rose-800/95 border border-rose-400/60 text-rose-100 px-3 py-1.5 rounded-lg font-bold text-[11px]">
+                  {quickJsonError}
+                </div>
+              )}
               {ageSyncFeedback && (
                 <div className="max-w-7xl mx-auto mt-2 bg-amber-500/95 border border-amber-300 text-slate-950 px-3 py-1.5 rounded-lg font-extrabold text-[11px]">
                   {ageSyncFeedback}
@@ -2095,15 +2291,9 @@ export default function App() {
             </div>
           )}
 
-          {/* Annual Age Increment Banner (shown to Admin / Office / Elders / Spiritual / Children Leaders) */}
+          {/* Annual Age Increment Banner (STRICTLY ADMIN-ONLY) */}
           {appData &&
-            !loggedInChapel &&
-            currentUserRole !== 'teacher' &&
-            (currentUserRole === 'admin' ||
-              loggedInUnit === 'elders_council' ||
-              loggedInUnit === 'office' ||
-              loggedInUnit === 'spiritual_council' ||
-              loggedInUnit === 'children_ministry') &&
+            currentUserRole === 'admin' &&
             (parseInt(currentYear, 10) || 0) > (appData.ageReferenceYear || 2017) &&
             dismissedAgeBannerYear !== currentYear && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 print:hidden text-xs">
@@ -2150,7 +2340,7 @@ export default function App() {
               </div>
             )}
 
-          <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:max-w-none print:w-full print:p-0 print:m-0">
+          <div className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 print:max-w-none print:w-full print:p-0 print:m-0">
             <div className={showSidebar ? 'flex flex-col lg:flex-row gap-6 items-start' : 'space-y-6'}>
               {/* Hierarchical Sidebar (Super Admin & Governing Councils) */}
               {showSidebar && (
@@ -2164,8 +2354,8 @@ export default function App() {
                   <aside
                     className={`${
                       isMobileSidebarOpen
-                        ? 'fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 p-4 overflow-y-auto'
-                        : 'hidden lg:block lg:w-72 shrink-0 bg-white border border-slate-200 rounded-2xl p-3.5 sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto'
+                        ? 'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white border-r border-slate-200 p-4 overflow-y-auto'
+                        : 'hidden lg:block lg:w-72 shrink-0 bg-white border border-slate-200 rounded-2xl p-3.5 sticky top-4 max-h-[calc(100dvh-2rem)] overflow-y-auto'
                     } print:hidden`}
                   >
                     <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 lg:hidden">
@@ -2243,6 +2433,34 @@ export default function App() {
                         >
                           <KeyRound className="w-3.5 h-3.5 shrink-0" />
                           <span>{t('የሁሉም መግቢያ ቁልፎች (PINs)', 'Access PIN Manager')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveAdminView('securityMonitorTab');
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition cursor-pointer ${
+                            activeAdminView === 'securityMonitorTab'
+                              ? 'bg-rose-800 text-white'
+                              : 'text-slate-700 hover:bg-rose-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 min-w-0">
+                            <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{t('የደህንነት ቁጥጥር እና ብራውዘር እገዳ', 'Security & Browser Block')}</span>
+                          </span>
+                          {(appData.failedLoginAttempts?.length || 0) > 0 && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold tabular-nums shrink-0 ${
+                                activeAdminView === 'securityMonitorTab'
+                                  ? 'bg-white text-rose-900'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {appData.failedLoginAttempts?.length}
+                            </span>
+                          )}
                         </button>
                       </div>
                     )}
@@ -2334,6 +2552,18 @@ export default function App() {
                     onOpenOverviewStats={() => setActiveAdminView('churchOverviewStatsTab')}
                     onOpenSyncModal={() => setIsSyncModalOpen(true)}
                     onOpenPlanDispatcher={() => setActiveAdminView('planDispatchTab')}
+                    onOpenSecurityMonitor={() => setActiveAdminView('securityMonitorTab')}
+                  />
+                ) : currentUserRole === 'admin' && activeAdminView === 'securityMonitorTab' ? (
+                  <AdminSecurityMonitorTab
+                    failedAttempts={appData.failedLoginAttempts || []}
+                    blockedBrowsers={appData.blockedBrowsers || []}
+                    currentBrowserInfo={currentBrowserInfo}
+                    onBlockBrowser={handleBlockBrowser}
+                    onAllowBrowser={handleAllowBrowser}
+                    onToggleFingerprintMatch={handleToggleFingerprintMatch}
+                    onDeleteBrowserRule={handleDeleteBrowserRule}
+                    onClearFailedAttempts={handleClearFailedAttempts}
                   />
                 ) : currentUserRole === 'admin' && activeAdminView === 'planDispatchTab' ? (
                   <PlanBulkSenderPanel
@@ -2367,6 +2597,14 @@ export default function App() {
                     churchChildren={appData.churchChildren || []}
                     chapelList={appData.chapels || DEFAULT_CHAPELS}
                     loggedInChapel={loggedInChapel}
+                    departmentDataMap={appData.departmentData || {}}
+                    teachers={appData.teachers || []}
+                    choirMembers={appData.choirMembers || []}
+                    spiritualMembers={appData.spiritualMembers || []}
+                    childrenPlans={appData.plans || []}
+                    submissions={appData.submissions || []}
+                    planDispatches={appData.planDispatches || []}
+                    onNavigateUnit={handleSelectUnit}
                     onNavigateTab={(tabId) => {
                       if (tabId === 'churchMasterTab') {
                         handleSelectUnit('office');
@@ -2409,7 +2647,7 @@ export default function App() {
                     onBatchAddChildren={handleBatchAddChurchChildren}
                     onEnrollToSundaySchool={handleEnrollChildToSundaySchool}
                     onImportMissingStudentsToChurchChildren={handleImportMissingStudentsToChurchChildren}
-                    onBulkIncrementAges={handleBulkIncrementAges}
+                    onBulkIncrementAges={currentUserRole === 'admin' ? handleBulkIncrementAges : undefined}
                     onDeleteChapel={handleDeleteChapel}
                     onUpdateStudentWeeklyAttendance={handleUpdateStudentWeeklyAttendance}
                     onBatchUpdateWeeklyAttendance={handleBatchUpdateWeeklyAttendance}
@@ -2471,7 +2709,7 @@ export default function App() {
                     onBatchAddChildren={handleBatchAddChurchChildren}
                     onEnrollToSundaySchool={handleEnrollChildToSundaySchool}
                     onImportMissingStudentsToChurchChildren={handleImportMissingStudentsToChurchChildren}
-                    onBulkIncrementAges={!loggedInChapel ? handleBulkIncrementAges : undefined}
+                    onBulkIncrementAges={currentUserRole === 'admin' && !loggedInChapel ? handleBulkIncrementAges : undefined}
                     onDeleteChapel={handleDeleteChapel}
                     nameScriptMode={nameScriptMode}
                     onChangeNameScriptMode={handleChangeNameScriptMode}
@@ -2529,7 +2767,7 @@ export default function App() {
                     onDeleteMember={handleDeleteChurchMember}
                     onClearChurchMembers={handleClearChurchMembers}
                     onExtractChildrenToChildrenTab={handleBatchAddChurchChildren}
-                    onBulkIncrementAges={handleBulkIncrementAges}
+                    onBulkIncrementAges={currentUserRole === 'admin' ? handleBulkIncrementAges : undefined}
                     nameScriptMode={nameScriptMode}
                     onChangeNameScriptMode={handleChangeNameScriptMode}
                     onOpenTransliterator={() => setIsTransliteratorModalOpen(true)}
@@ -2546,6 +2784,9 @@ export default function App() {
                     onAcceptDispatch={handleAcceptDispatchedPlan}
                     onReturnDispatch={handleReturnDispatchedPlan}
                     onDeleteDispatch={handleDeleteDispatchedPlan}
+                    teachers={appData.teachers || []}
+                    choirMembers={appData.choirMembers || []}
+                    spiritualMembers={appData.spiritualMembers || []}
                   />
                 )}
                 </Suspense>
