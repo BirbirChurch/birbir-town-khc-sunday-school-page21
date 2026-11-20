@@ -275,6 +275,12 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                 } else if (u.id === 'children_ministry') {
                   primaryCount = churchChildren.length;
                   extraNote = `${t('ሰንበት ተማሪዎች', 'Sunday Students')} (${totalSundayStudents})`;
+                } else if (u.id === 'youth_ministry') {
+                  const subCount =
+                    (ws.youthChoirMembers?.length || 0) +
+                    (ws.youthWorshipLeaders?.length || 0) +
+                    (ws.youthDiscipleshipMembers?.length || 0);
+                  extraNote = `${t('ህብረቶችና ትምህርት', 'Choirs, Leaders & Discipleship')} (${subCount})`;
                 } else if (u.id === 'chapels_dept') {
                   primaryCount = (appData.chapels || []).length;
                   extraNote = `${t('10 ቻፕሎች', '10 Chapels')} · ${churchMembers.length} ${t('አባላት', 'members')}`;
@@ -333,6 +339,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                       {u.id === 'children_ministry' && (
                         <div className="text-[10px] font-sans font-bold text-emerald-700">
                           {t('አስተባባሪ:', 'Coordinator:')} <span className="font-mono">{appData.pins?.childrenCoordinator || '5679'}</span>
+                        </div>
+                      )}
+                      {u.id === 'youth_ministry' && (
+                        <div className="text-[10px] font-sans font-bold text-purple-700">
+                          {t('አስተባባሪ:', 'Coordinator:')} <span className="font-mono">{appData.pins?.youthCoordinator || '3214'}</span>
                         </div>
                       )}
                     </td>

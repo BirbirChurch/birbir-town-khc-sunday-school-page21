@@ -229,6 +229,7 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
   const pinsNeedUpdate =
     !data.pins ||
     !data.pins.childrenCoordinator ||
+    !data.pins.youthCoordinator ||
     !data.pins.chapels ||
     !data.pins.units ||
     DEFAULT_CHAPELS.some((ch) => !existingChapelPins[ch]) ||
@@ -292,7 +293,31 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
                   : []
               ])
             )
-          : {}
+          : {},
+      youthChoirGroups: Array.isArray(ws.youthChoirGroups) ? ws.youthChoirGroups : undefined,
+      youthChoirMembers: Array.isArray(ws.youthChoirMembers)
+        ? ws.youthChoirMembers.map((m) => {
+            const checkedId = ensureUniqueId(m?.id);
+            return checkedId !== m?.id ? { ...m, id: checkedId } : m;
+          })
+        : undefined,
+      youthWorshipLeaders: Array.isArray(ws.youthWorshipLeaders)
+        ? ws.youthWorshipLeaders.map((m) => {
+            const checkedId = ensureUniqueId(m?.id);
+            return checkedId !== m?.id ? { ...m, id: checkedId } : m;
+          })
+        : undefined,
+      youthDiscipleshipGroups: Array.isArray(ws.youthDiscipleshipGroups)
+        ? ws.youthDiscipleshipGroups
+        : undefined,
+      youthDiscipleshipMembers: Array.isArray(ws.youthDiscipleshipMembers)
+        ? ws.youthDiscipleshipMembers.map((m) => {
+            const checkedId = ensureUniqueId(m?.id);
+            return checkedId !== m?.id ? { ...m, id: checkedId } : m;
+          })
+        : undefined,
+      youthCoordinatorNotes:
+        typeof ws.youthCoordinatorNotes === 'string' ? ws.youthCoordinatorNotes : undefined
     };
   });
 
@@ -384,6 +409,7 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       admin: data.pins?.admin || '1234',
       leader: mergedUnitPins.children_ministry || data.pins?.leader || '5678',
       childrenCoordinator: data.pins?.childrenCoordinator || '5679',
+      youthCoordinator: data.pins?.youthCoordinator || '3214',
       chapels: mergedChapelPins,
       units: mergedUnitPins
     },

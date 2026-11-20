@@ -40,6 +40,7 @@ interface LoginPortalProps {
   adminPin?: string;
   leaderPin?: string;
   childrenCoordinatorPin?: string;
+  youthCoordinatorPin?: string;
   chapelPins?: { [chapelName: string]: string };
   unitPins?: { [unitId: string]: string };
   chapelList?: string[];
@@ -56,6 +57,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   adminPin = '1234',
   leaderPin = '5678',
   childrenCoordinatorPin = '5679',
+  youthCoordinatorPin = '3214',
   chapelPins = DEFAULT_CHAPEL_PINS,
   unitPins = DEFAULT_ORG_UNIT_PINS,
   chapelList = DEFAULT_CHAPELS,
@@ -66,6 +68,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const [activeUnitId, setActiveUnitId] = useState<OrgUnitId | null>(null);
   const [chapelAuthMode, setChapelAuthMode] = useState<'dept' | 'single_chapel'>('single_chapel');
   const [childrenAuthMode, setChildrenAuthMode] = useState<'coordinator' | 'leader' | 'teacher'>('coordinator');
+  const [youthAuthMode, setYouthAuthMode] = useState<'coordinator' | 'leader'>('coordinator');
   const [selectedChapel, setSelectedChapel] = useState<string>(chapelList[0] || DEFAULT_CHAPELS[0]);
   const [pinInput, setPinInput] = useState<string>('');
   const [showPin, setShowPin] = useState<boolean>(false);
@@ -93,6 +96,9 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     setErrorMsg('');
     if (unitId === 'children_ministry') {
       setChildrenAuthMode('coordinator');
+    }
+    if (unitId === 'youth_ministry') {
+      setYouthAuthMode('coordinator');
     }
     if (unitId === 'chapels_dept') {
       setChapelAuthMode('single_chapel');
@@ -168,6 +174,21 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
             t(
               'የ"የልጆች አገልግሎት አስተባባሪ" መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ ዋና አዲሚንን ይጠይቁ።',
               'Incorrect Children Ministry Coordinator PIN! Please contact Super Admin.'
+            )
+          );
+        }
+        return;
+      }
+
+      if (activeUnitId === 'youth_ministry' && youthAuthMode === 'coordinator') {
+        const expectedYouthCoordinatorPin = String(youthCoordinatorPin || '3214').trim();
+        if (entered === expectedYouthCoordinatorPin) {
+          onLoginSuccess('youth_coordinator', undefined, undefined, 'youth_ministry');
+        } else {
+          setErrorMsg(
+            t(
+              'የ"የወጣቶች አገልግሎት አስተባባሪ" መግቢያ ቁልፍ (PIN) ትክክል አይደለም! እባክዎ ዋና አዲሚንን ይጠይቁ።',
+              'Incorrect Youth Ministry Coordinator PIN! Please contact Super Admin.'
             )
           );
         }
@@ -712,6 +733,60 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     </div>
                   )}
 
+                  {/* Youth Ministry: Coordinator vs Leaders Switcher */}
+                  {activeMode === 'unit' && activeUnitId === 'youth_ministry' && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-1 bg-purple-50 border border-purple-200 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setYouthAuthMode('coordinator');
+                            setErrorMsg('');
+                          }}
+                          className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                            youthAuthMode === 'coordinator'
+                              ? 'bg-emerald-700 text-white shadow-xs'
+                              : 'text-emerald-950 hover:bg-emerald-100/70'
+                          }`}
+                        >
+                          <Shield className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t('የወጣቶች አገልግሎት አስተባባሪ ገጽ', 'Youth Coordinator Page')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setYouthAuthMode('leader');
+                            setErrorMsg('');
+                          }}
+                          className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                            youthAuthMode === 'leader'
+                              ? 'bg-purple-700 text-white shadow-xs'
+                              : 'text-purple-950 hover:bg-purple-100/70'
+                          }`}
+                        >
+                          <Users className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t('የወጣቶች አገልግሎት መሪዎች ገጽ', 'Youth Leaders Page')}</span>
+                        </button>
+                      </div>
+
+                      {youthAuthMode === 'coordinator' ? (
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] font-semibold">
+                          {t(
+                            'የወጣቶች አገልግሎት አስተባባሪ የአስተባባሪ ገጽን፣ የመሪዎች ገጽን፣ የመዘምራን ህብረትን፣ የመዝሙር መሪዎችን፣ የደቀ መዝሙርነት ትምህርትንና PIN ቁልፎችን ሙሉ በሙሉ ያስተዳድራል።',
+                            'Youth Ministry Coordinator oversees the Coordinator Page, Leaders Page, Choirs, Worship Leaders, Discipleship Trainings, and PIN access.'
+                          )}
+                        </div>
+                      ) : (
+                        <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-[11px] font-semibold">
+                          {t(
+                            'የመሪዎች ገጽ የወጣቶች አባላትን፣ 7ቱን የመዘምራን ህብረቶች፣ የመዝሙር መሪዎች ህብረትንና የደቀ መዝሙርነት ትምህርቶችን ለማስተዳደር ያገለግላል።',
+                            'Youth Leaders Page manages Youth members, Choir fellowships, Worship Leaders fellowship, and Discipleship trainings.'
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* PIN Input */}
                   <div>
                     <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
@@ -723,6 +798,10 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                           ? t('የመምህር የግል ምስጥር ቁጥር (PIN) ያስገቡ፦', 'Enter Teacher Personal PIN:')
                           : activeMode === 'unit' && activeUnitId === 'children_ministry' && childrenAuthMode === 'coordinator'
                           ? t('የልጆች አገልግሎት አስተባባሪ መግቢያ ቁልፍ (PIN) ያስገቡ፦', 'Enter Children Coordinator PIN:')
+                          : activeMode === 'unit' && activeUnitId === 'youth_ministry' && youthAuthMode === 'coordinator'
+                          ? t('የወጣቶች አገልግሎት አስተባባሪ መግቢያ ቁልፍ (PIN) ያስገቡ፦', 'Enter Youth Coordinator PIN:')
+                          : activeMode === 'unit' && activeUnitId === 'youth_ministry' && youthAuthMode === 'leader'
+                          ? t('የወጣቶች አገልግሎት መሪዎች መግቢያ ቁልፍ (PIN) ያስገቡ፦', 'Enter Youth Leaders PIN:')
                           : activeUnit
                           ? t(`የ${activeUnit.name} መግቢያ ቁልፍ (PIN) ያስገቡ፦`, `Enter PIN for ${unitName(activeUnit.id, activeUnit.name)}:`)
                           : t('የዋና አዲሚን መግቢያ ቁልፍ (PIN) ያስገቡ፦', 'Enter Super Admin PIN:')}

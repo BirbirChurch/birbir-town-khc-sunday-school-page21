@@ -20,6 +20,7 @@ interface PinManageTabProps {
   adminPin: string;
   leaderPin: string;
   childrenCoordinatorPin?: string;
+  youthCoordinatorPin?: string;
   chapelPins?: { [chapelName: string]: string };
   unitPins?: { [unitId: string]: string };
   chapelList?: string[];
@@ -29,7 +30,8 @@ interface PinManageTabProps {
     leaderPin: string,
     chapelPins: { [chapelName: string]: string },
     unitPins?: { [unitId: string]: string },
-    childrenCoordinatorPin?: string
+    childrenCoordinatorPin?: string,
+    youthCoordinatorPin?: string
   ) => void;
   onUpdateTeacher?: (teacher: Teacher) => void;
 }
@@ -38,6 +40,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   adminPin,
   leaderPin,
   childrenCoordinatorPin = '5679',
+  youthCoordinatorPin = '3214',
   chapelPins = DEFAULT_CHAPEL_PINS,
   unitPins = DEFAULT_ORG_UNIT_PINS,
   chapelList = DEFAULT_CHAPELS,
@@ -48,6 +51,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   const [newAdminPin, setNewAdminPin] = useState(adminPin);
   const [newLeaderPin, setNewLeaderPin] = useState(leaderPin);
   const [newCoordinatorPin, setNewCoordinatorPin] = useState(childrenCoordinatorPin);
+  const [newYouthCoordinatorPin, setNewYouthCoordinatorPin] = useState(youthCoordinatorPin);
   const [editedChapelPins, setEditedChapelPins] = useState<{ [chapelName: string]: string }>(() => {
     const initial: { [k: string]: string } = {};
     chapelList.forEach((ch, idx) => {
@@ -80,6 +84,10 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   }, [childrenCoordinatorPin]);
 
   useEffect(() => {
+    setNewYouthCoordinatorPin(youthCoordinatorPin);
+  }, [youthCoordinatorPin]);
+
+  useEffect(() => {
     const next: { [k: string]: string } = {};
     chapelList.forEach((ch, idx) => {
       next[ch] = chapelPins?.[ch] || DEFAULT_CHAPEL_PINS[ch] || String(2001 + idx);
@@ -102,6 +110,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   const [showAdminPin, setShowAdminPin] = useState(false);
   const [showLeaderPin, setShowLeaderPin] = useState(false);
   const [showCoordinatorPin, setShowCoordinatorPin] = useState(false);
+  const [showYouthCoordinatorPin, setShowYouthCoordinatorPin] = useState(false);
   const [showUnitPins, setShowUnitPins] = useState(true);
   const [showChapelPins, setShowChapelPins] = useState(true);
   const [showTeacherPins, setShowTeacherPins] = useState(true);
@@ -171,8 +180,9 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     e.preventDefault();
     const resolvedChildrenPin = (editedUnitPins.children_ministry || newLeaderPin || '').trim();
     const resolvedCoordinatorPin = (newCoordinatorPin || '').trim();
-    if (!newAdminPin.trim() || !resolvedChildrenPin || !resolvedCoordinatorPin) {
-      alert('እባክዎን የዋና አዲሚን፣ የልጆች አገልግሎት አስተባባሪ እና የአመራር PIN ቁጥሮችን ያስገቡ!');
+    const resolvedYouthCoordinatorPin = (newYouthCoordinatorPin || '').trim();
+    if (!newAdminPin.trim() || !resolvedChildrenPin || !resolvedCoordinatorPin || !resolvedYouthCoordinatorPin) {
+      setSavedSuccess('እባክዎን የዋና አዲሚን፣ የልጆችና የወጣቶች አስተባባሪ እንዲሁም የአመራር PIN ቁጥሮችን ያስገቡ!');
       return;
     }
 
@@ -180,7 +190,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     for (const ch of chapelList) {
       const val = (editedChapelPins[ch] || '').trim();
       if (!val) {
-        alert(`እባክዎን የ"${ch}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
+        setSavedSuccess(`እባክዎን የ"${ch}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
         return;
       }
       cleanedChapelPins[ch] = val;
@@ -193,14 +203,21 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
           ? resolvedChildrenPin
           : (editedUnitPins[u.id] || '').trim();
       if (!val) {
-        alert(`እባክዎን የ"${u.name}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
+        setSavedSuccess(`እባክዎን የ"${u.name}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
         return;
       }
       cleanedUnitPins[u.id] = val;
     }
 
-    onSavePins(newAdminPin.trim(), resolvedChildrenPin, cleanedChapelPins, cleanedUnitPins, resolvedCoordinatorPin);
-    setSavedSuccess('✓ የዋና አዲሚን፣ የልጆች አገልግሎት አስተባባሪ፣ የሁሉም መዋቅር ክፍሎች እና የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs) ተቀምጠዋል!');
+    onSavePins(
+      newAdminPin.trim(),
+      resolvedChildrenPin,
+      cleanedChapelPins,
+      cleanedUnitPins,
+      resolvedCoordinatorPin,
+      resolvedYouthCoordinatorPin
+    );
+    setSavedSuccess('✓ የዋና አዲሚን፣ የልጆችና የወጣቶች አስተባባሪ፣ የሁሉም መዋቅር ክፍሎች እና የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs) ተቀምጠዋል!');
     setTimeout(() => setSavedSuccess(''), 4000);
   };
 
@@ -263,7 +280,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
             <span>የዋና አስተባባሪና የቤተክርስቲያን መሪዎች መግቢያ ቁልፍ (PIN)</span>
           </h4>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Shield className="w-4 h-4 text-blue-700" />
@@ -309,7 +326,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-emerald-800 mt-1 font-semibold">
-                የልጆች አገልግሎት ገጽን ሙሉ በሙሉ የሚቆጣጠርና የሚያስተዳድር
+                የልጆች አገልግሎት ገጽን ሙሉ በሙሉ የሚቆጣጠር
               </p>
             </div>
 
@@ -341,6 +358,32 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                   {showLeaderPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-purple-700" />
+                የወጣቶች አገልግሎት አስተባባሪ PIN፦
+              </label>
+              <div className="relative">
+                <input
+                  type={showYouthCoordinatorPin ? 'text' : 'password'}
+                  value={newYouthCoordinatorPin}
+                  onChange={(e) => setNewYouthCoordinatorPin(e.target.value)}
+                  placeholder="የወጣቶች አስተባባሪ PIN"
+                  className="w-full px-3.5 py-2.5 pr-10 border border-purple-300 bg-purple-50/40 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-purple-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowYouthCoordinatorPin(!showYouthCoordinatorPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  {showYouthCoordinatorPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-purple-800 mt-1 font-semibold">
+                የወጣቶች አስተባባሪ ገጽ (የመሪዎች PIN ከታች ያለው 3204 ነው)
+              </p>
             </div>
           </div>
         </div>
@@ -393,6 +436,8 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                     <div className="text-[10px] text-slate-500 truncate">
                       {unit.id === 'children_ministry'
                         ? 'ከመሪዎች PIN ጋር የተያያዘ'
+                        : unit.id === 'youth_ministry'
+                        ? 'የወጣቶች አገልግሎት መሪዎች ገጽ PIN'
                         : unit.hasChurchRegistry
                         ? 'የቤተክርስቲያን መረጃ ቋትን ያካትታል'
                         : unit.id === 'chapels_dept'

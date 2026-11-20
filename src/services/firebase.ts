@@ -165,6 +165,10 @@ export const loadStoredLocalData = (): AppData => {
       pins: {
         admin: source.pins?.admin || INITIAL_APP_DATA.pins.admin,
         leader: source.pins?.leader || INITIAL_APP_DATA.pins.leader,
+        childrenCoordinator:
+          source.pins?.childrenCoordinator || INITIAL_APP_DATA.pins.childrenCoordinator,
+        youthCoordinator:
+          source.pins?.youthCoordinator || INITIAL_APP_DATA.pins.youthCoordinator,
         chapels: { ...DEFAULT_CHAPEL_PINS, ...(source.pins?.chapels || {}) },
         units: { ...DEFAULT_ORG_UNIT_PINS, ...(source.pins?.units || {}) }
       },

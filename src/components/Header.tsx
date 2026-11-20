@@ -31,6 +31,9 @@ export const Header: React.FC<HeaderProps> = ({
     if (currentUserRole === 'children_coordinator') {
       return t('የልጆች አገልግሎት አስተባባሪ', 'Children Ministry Coordinator');
     }
+    if (currentUserRole === 'youth_coordinator') {
+      return t('የወጣቶች አገልግሎት አስተባባሪ', 'Youth Ministry Coordinator');
+    }
     if (currentUserRole === 'leader') {
       if (loggedInChapel) return chapelLabel(loggedInChapel);
       if (loggedInUnit) return unitName(loggedInUnit);
@@ -156,7 +159,9 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2 text-xs text-slate-300 font-semibold">
             {currentUserRole ? (
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-900/60 border border-blue-700/60 text-slate-200 text-xs font-medium">
-                {currentUserRole === 'admin' || currentUserRole === 'children_coordinator' ? (
+                {currentUserRole === 'admin' ||
+                currentUserRole === 'children_coordinator' ||
+                currentUserRole === 'youth_coordinator' ? (
                   <Shield className="w-3.5 h-3.5 text-amber-400" />
                 ) : (
                   <User className="w-3.5 h-3.5 text-cyan-400" />

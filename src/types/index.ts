@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'children_coordinator' | 'leader' | 'teacher';
+export type Role = 'admin' | 'children_coordinator' | 'youth_coordinator' | 'leader' | 'teacher';
 
 export interface Teacher {
   id: number;
@@ -231,6 +231,20 @@ export interface ChurchAssetRecord {
   notes?: string;
 }
 
+export interface YouthGroupMemberRecord {
+  id: number;
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  age?: number | string;
+  phone?: string;
+  chapel?: string;
+  group: string;
+  roleTitle?: string;
+  status?: string;
+  joinDate?: string;
+  notes?: string;
+}
+
 export interface DepartmentWorkspaceData {
   members: DepartmentMemberRecord[];
   activities: DepartmentActivityRecord[];
@@ -239,6 +253,12 @@ export interface DepartmentWorkspaceData {
   hrRecords?: ChurchHRRecord[];
   assetRecords?: ChurchAssetRecord[];
   chapelPlans?: { [chapelName: string]: AnnualPlanItem[] };
+  youthChoirGroups?: string[];
+  youthChoirMembers?: YouthGroupMemberRecord[];
+  youthWorshipLeaders?: YouthGroupMemberRecord[];
+  youthDiscipleshipGroups?: string[];
+  youthDiscipleshipMembers?: YouthGroupMemberRecord[];
+  youthCoordinatorNotes?: string;
 }
 
 export type SubmissionType = 'plan' | 'report' | 'letter';
@@ -315,6 +335,7 @@ export interface AppData {
     admin: string;
     leader: string;
     childrenCoordinator?: string;
+    youthCoordinator?: string;
     chapels?: { [chapelName: string]: string };
     units?: { [unitId: string]: string };
   };

@@ -171,7 +171,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'youth_ministry',
     code: '1.2.4',
     name: 'የወጣቶች አገልግሎት',
-    shortDesc: 'የወጣቶች አምልኮ፣ ኳይር፣ የመጽሐፍ ቅዱስ ጥናት፣ ስነ-ጽሑፍና የአገልግሎት ቡድኖች',
+    shortDesc: 'የአስተባባሪ ገጽ፣ የመሪዎች ገጽ፣ የመዘምራን ህብረት (ሀ-መ፣ ሴቶች፣ ፋሬስ፣ ባማ)፣ የመዝሙር መሪዎች ህብረት እና የደቀ መዝሙርነት ትምህርት (መቅህማ፣ ቢቲሲፒ)',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3204',
@@ -179,10 +179,23 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     hasChurchRegistry: false,
     supportsFinance: true,
     memberNoun: 'ወጣት አባል',
-    roleColumnLabel: 'የአገልግሎት ቡድን',
-    roleOptions: ['የወጣቶች መሪ', 'መዘምራን (ኳይር)', 'አምልኮ መሪ', 'ድራማና ስነ-ጽሑፍ', 'ወንጌል ቡድን', 'አባል'],
-    activityCategories: ['የወጣቶች አምልኮ', 'መጽሐፍ ቅዱስ ጥናት', 'የወጣቶች ካምፕ/ኮንፈረንስ', 'የመዝሙር ልምምድ'],
-    financeCategories: ['የወጣቶች መዋጮ', 'የሙዚቃ መሳሪያ/ጥገና', 'የኮንፈረንስ ወጪ'],
+    roleColumnLabel: 'የአገልግሎት ድርሻ',
+    roleOptions: [
+      'የወጣቶች አስተባባሪ',
+      'የወጣቶች መሪ',
+      'የመዘምራን ህብረት',
+      'የመዝሙር መሪዎች ህብረት',
+      'የደቀ መዝሙርነት ትምህርት',
+      'አባል'
+    ],
+    activityCategories: [
+      'የወጣቶች አምልኮ',
+      'የመዘምራን ልምምድ',
+      'የመዝሙር መሪዎች ስብሰባ',
+      'የደቀ መዝሙርነት ትምህርት',
+      'የወጣቶች ካምፕ/ኮንፈረንስ'
+    ],
+    financeCategories: ['የወጣቶች መዋጮ', 'የሙዚቃ መሳሪያ/ጥገና', 'የትምህርት/ስልጠና ወጪ', 'የኮንፈረንስ ወጪ'],
     churchMemberSyncFilter: 'youth'
   },
   {
@@ -333,6 +346,21 @@ export const DEFAULT_ORG_UNIT_PINS: { [unitId: string]: string } = CHURCH_ORG_UN
   {} as { [unitId: string]: string }
 );
 
+export const DEFAULT_YOUTH_CHOIR_GROUPS: string[] = [
+  'ሀ መዘመራን',
+  'ለ መዘመራን',
+  'ሐ መዘመራን',
+  'መ መዘመራን',
+  'ሴቶች መዘመራን',
+  'ፋሬስ መዘመራን',
+  'ባማ መዘመራን'
+];
+
+export const DEFAULT_YOUTH_DISCIPLESHIP_GROUPS: string[] = [
+  'መቅህማ',
+  'ቢቲሲፒ (BTCP)'
+];
+
 export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData => ({
   members: [],
   activities: [],
@@ -340,7 +368,13 @@ export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData =>
   plans: [],
   hrRecords: [],
   assetRecords: [],
-  chapelPlans: {}
+  chapelPlans: {},
+  youthChoirGroups: [...DEFAULT_YOUTH_CHOIR_GROUPS],
+  youthChoirMembers: [],
+  youthWorshipLeaders: [],
+  youthDiscipleshipGroups: [...DEFAULT_YOUTH_DISCIPLESHIP_GROUPS],
+  youthDiscipleshipMembers: [],
+  youthCoordinatorNotes: ''
 });
 
 export const getOrgUnitById = (id: OrgUnitId | string | null | undefined): OrgUnitDefinition | undefined => {

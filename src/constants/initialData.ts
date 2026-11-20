@@ -153,6 +153,7 @@ export const INITIAL_APP_DATA: AppData = {
     admin: "1234",
     leader: "5678",
     childrenCoordinator: "5679",
+    youthCoordinator: "3214",
     chapels: DEFAULT_CHAPEL_PINS,
     units: DEFAULT_ORG_UNIT_PINS
   },

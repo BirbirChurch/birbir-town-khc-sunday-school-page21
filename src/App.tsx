@@ -87,6 +87,11 @@ const ChildrenMinistryPortal = lazy(() =>
     default: m.ChildrenMinistryPortal
   }))
 );
+const YouthMinistryPortal = lazy(() =>
+  import('./components/YouthMinistryPortal').then((m) => ({
+    default: m.YouthMinistryPortal
+  }))
+);
 const ChapelsHubPage = lazy(() =>
   import('./components/ChapelsHubPage').then((m) => ({ default: m.ChapelsHubPage }))
 );
@@ -237,6 +242,11 @@ export default function App() {
       setLoggedInChapel(null);
       setLoggedInUnit('children_ministry');
       setActiveOrgUnit('children_ministry');
+    } else if (role === 'youth_coordinator') {
+      setLoggedInTeacher(null);
+      setLoggedInChapel(null);
+      setLoggedInUnit('youth_ministry');
+      setActiveOrgUnit('youth_ministry');
     } else if (role === 'teacher' && teacher) {
       setLoggedInTeacher(teacher);
       setSelectedClass(
@@ -275,6 +285,9 @@ export default function App() {
       if (currentUserRole === 'admin') return true;
       if (currentUserRole === 'children_coordinator') {
         return targetUnitId === 'children_ministry';
+      }
+      if (currentUserRole === 'youth_coordinator') {
+        return targetUnitId === 'youth_ministry';
       }
       if (currentUserRole === 'teacher' || loggedInChapel) return false;
       if (!loggedInUnit) return false;
@@ -1796,7 +1809,8 @@ export default function App() {
     leaderPin: string,
     chapelPins?: { [chapelName: string]: string },
     unitPins?: { [unitId: string]: string },
-    childrenCoordinatorPin?: string
+    childrenCoordinatorPin?: string,
+    youthCoordinatorPin?: string
   ) => {
     updateAppData(
       (prev) => {
@@ -1813,6 +1827,8 @@ export default function App() {
             leader: mergedUnits.children_ministry || leaderPin,
             childrenCoordinator:
               childrenCoordinatorPin ?? prev.pins?.childrenCoordinator ?? '5679',
+            youthCoordinator:
+              youthCoordinatorPin ?? prev.pins?.youthCoordinator ?? '3214',
             chapels: chapelPins || prev.pins?.chapels || DEFAULT_CHAPEL_PINS,
             units: mergedUnits
           }
@@ -1837,6 +1853,30 @@ export default function App() {
             admin: prev.pins?.admin || '1234',
             leader: leaderPin,
             childrenCoordinator: coordinatorPin,
+            chapels: prev.pins?.chapels || DEFAULT_CHAPEL_PINS,
+            units: mergedUnits
+          }
+        };
+      },
+      { immediate: true }
+    );
+  };
+
+  const handleSaveYouthPins = (coordinatorPin: string, leaderPin: string) => {
+    updateAppData(
+      (prev) => {
+        const mergedUnits = {
+          ...DEFAULT_ORG_UNIT_PINS,
+          ...(prev.pins?.units || {}),
+          youth_ministry: leaderPin
+        };
+        return {
+          ...prev,
+          pins: {
+            ...prev.pins,
+            admin: prev.pins?.admin || '1234',
+            leader: prev.pins?.leader || '5678',
+            youthCoordinator: coordinatorPin,
             chapels: prev.pins?.chapels || DEFAULT_CHAPEL_PINS,
             units: mergedUnits
           }
@@ -1896,6 +1936,7 @@ export default function App() {
             adminPin={appData.pins?.admin || '1234'}
             leaderPin={appData.pins?.leader || '5678'}
             childrenCoordinatorPin={appData.pins?.childrenCoordinator || '5679'}
+            youthCoordinatorPin={appData.pins?.youthCoordinator || '3214'}
             chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
             unitPins={appData.pins?.units || DEFAULT_ORG_UNIT_PINS}
             chapelList={appData.chapels || DEFAULT_CHAPELS}
@@ -1938,6 +1979,14 @@ export default function App() {
                   ) : currentUserRole === 'children_coordinator' ? (
                     <span className="font-bold text-emerald-200">
                       {t('የልጆች አገልግሎት › የልጆች አገልግሎት አስተባባሪ (ሙሉ መቆጣጠሪያ)', 'Children Ministry › Children Coordinator (Full Control)')}
+                    </span>
+                  ) : currentUserRole === 'youth_coordinator' ? (
+                    <span className="font-bold text-emerald-200">
+                      {t('የወጣቶች አገልግሎት › የወጣቶች አገልግሎት አስተባባሪ (ሙሉ መቆጣጠሪያ)', 'Youth Ministry › Youth Coordinator (Full Control)')}
+                    </span>
+                  ) : loggedInUnit === 'youth_ministry' ? (
+                    <span className="font-bold text-purple-200">
+                      {t('የወጣቶች አገልግሎት › የመሪዎች ገጽ', 'Youth Ministry › Leaders Page')}
                     </span>
                   ) : loggedInUnit ? (
                     <span className="font-bold text-slate-100">
@@ -2300,6 +2349,7 @@ export default function App() {
                     adminPin={appData.pins?.admin || '1234'}
                     leaderPin={appData.pins?.leader || '5678'}
                     childrenCoordinatorPin={appData.pins?.childrenCoordinator || '5679'}
+                    youthCoordinatorPin={appData.pins?.youthCoordinator || '3214'}
                     chapelPins={appData.pins?.chapels || DEFAULT_CHAPEL_PINS}
                     unitPins={appData.pins?.units || DEFAULT_ORG_UNIT_PINS}
                     chapelList={appData.chapels || DEFAULT_CHAPELS}
@@ -2437,6 +2487,25 @@ export default function App() {
                     planDispatches={appData.planDispatches || []}
                     onAcceptDispatch={handleAcceptDispatchedPlan}
                     onReturnDispatch={handleReturnDispatchedPlan}
+                  />
+                ) : activeOrgUnit === 'youth_ministry' && !loggedInChapel ? (
+                  <YouthMinistryPortal
+                    currentYear={currentYear}
+                    currentUserRole={currentUserRole}
+                    departmentDataMap={appData.departmentData || {}}
+                    onUpdateDepartmentData={handleUpdateDepartmentData}
+                    churchMembers={appData.churchMembers || []}
+                    chapelList={appData.chapels || DEFAULT_CHAPELS}
+                    submissions={appData.submissions || []}
+                    onCreateSubmission={handleCreateSubmission}
+                    onResubmitSubmission={handleResubmitSubmission}
+                    onDeleteSubmission={handleDeleteSubmission}
+                    planDispatches={appData.planDispatches || []}
+                    onAcceptDispatch={handleAcceptDispatchedPlan}
+                    onReturnDispatch={handleReturnDispatchedPlan}
+                    youthCoordinatorPin={appData.pins?.youthCoordinator || '3214'}
+                    youthLeaderPin={appData.pins?.units?.youth_ministry || '3204'}
+                    onSaveYouthPins={handleSaveYouthPins}
                   />
                 ) : (
                   <DepartmentWorkspacePage
