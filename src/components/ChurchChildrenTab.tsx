@@ -1,0 +1,4043 @@
+import React, { useState, useMemo, useRef } from 'react';
+import {
+  Users,
+  UserPlus,
+  FileSpreadsheet,
+  Printer,
+  Download,
+  Upload,
+  Search,
+  Filter,
+  CheckCircle2,
+  AlertCircle,
+  Edit2,
+  Trash2,
+  ArrowRight,
+  GraduationCap,
+  Calendar,
+  Phone,
+  Home,
+  User,
+  X,
+  FileUp,
+  HelpCircle,
+  UserCheck,
+  ChevronRight,
+  Church,
+  Copy,
+  Check,
+  PhoneCall,
+  BookOpen,
+  Briefcase,
+  SlidersHorizontal,
+  Languages,
+  KeyRound,
+  Hash
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { ChurchChild, ChurchMember, Student, Role } from '../types';
+import { downloadXLSX } from '../utils/csv';
+import { DEFAULT_CHAPELS } from '../constants/initialData';
+import { NameCrossReferenceModal } from './NameCrossReferenceModal';
+import { AnnualAgeIncrementModal } from './AnnualAgeIncrementModal';
+import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpdater';
+import { canonicalizeEducationLevel, canonicalizeOccupation } from '../utils/amharicCategoryCanonicalizer';
+import { formatDualDateText, formatDualDateTimeText, getAdjustedNow } from '../utils/ethiopianDate';
+import {
+  matchesAmharicSearch,
+  parseChurchWorkbookAllSheets,
+  SheetRowOverrideMapping
+} from '../utils/churchExcelParser';
+import {
+  findAllMatchingMembersByCode,
+  getNextFamilySubCode,
+  getRootFamilyBaseCode,
+  normalizeCodeForLookup
+} from '../utils/memberCodeGenerator';
+import {
+  NameScriptMode,
+  transliterateAmharicToEnglish
+} from '../utils/amharicTransliterator';
+import { copyTextSafely } from '../utils/clipboard';
+
+interface ChurchChildrenTabProps {
+  currentYear: string;
+  ageReferenceYear?: number;
+  classList: string[];
+  churchChildren: ChurchChild[];
+  churchMembers?: ChurchMember[];
+  chapelList?: string[];
+  studentsByClass: { [className: string]: Student[] };
+  onAddChild: (child: Omit<ChurchChild, 'id'>) => void;
+  onAddChurchMember?: (member: Omit<ChurchMember, 'id'>) => ChurchMember | void;
+  onUpdateChild: (child: ChurchChild) => void;
+  onDeleteChild: (id: number) => void;
+  onClearChurchChildren?: (chapelFilter?: string | string[]) => void;
+  onBatchAddChildren: (children: Omit<ChurchChild, 'id'>[], mode?: 'append' | 'replace') => void;
+  onEnrollToSundaySchool: (child: ChurchChild, targetClass: string) => void;
+  onImportMissingStudentsToChurchChildren: (
+    students: { name: string; gender: string; age: number | string; className: string; chapel?: string; phone?: string }[]
+  ) => void;
+  onBulkIncrementAges?: (options: Omit<BulkAgeIncrementOptions, 'targetAcademicYear'>) => BulkAgeIncrementStats | null;
+  currentUserRole: Role | null;
+  loggedInChapel?: string | null;
+  onDeleteChapel?: (chapelName: string) => void;
+  nameScriptMode?: NameScriptMode;
+  onChangeNameScriptMode?: (mode: NameScriptMode) => void;
+  onOpenTransliterator?: () => void;
+}
+
+// Comprehensive Normalization function to match Amharic names accurately
+export const normalizeAmharicName = (name: string): string => {
+  if (!name) return '';
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()\[\]"'’`\d\u1360-\u137C]/g, ' ')
+    .replace(/\s+/g, ' ')
+    // Normalize ሀ / ሐ / ኀ / ኃ variations across all 7 orders
+    .replace(/[ሐኀኃ]/g, 'ሀ')
+    .replace(/[ሑኁኂ]/g, 'ሁ')
+    .replace(/[ሒኂ]/g, 'ሂ')
+    .replace(/[ሓኃ]/g, 'ሃ')
+    .replace(/[ሔኄ]/g, 'ሄ')
+    .replace(/[ሕኅ]/g, 'ህ')
+    .replace(/[ሖኆ]/g, 'ሆ')
+    // Normalize ሰ / ሠ variations across all 7 orders
+    .replace(/ሠ/g, 'ሰ')
+    .replace(/ሡ/g, 'ሱ')
+    .replace(/ሢ/g, 'ሲ')
+    .replace(/ሣ/g, 'ሳ')
+    .replace(/ሤ/g, 'ሴ')
+    .replace(/ሥ/g, 'ስ')
+    .replace(/ሦ/g, 'ሶ')
+    // Normalize አ / ዐ variations across all 7 orders
+    .replace(/[ዐኣዓ]/g, 'አ')
+    .replace(/[ዑ]/g, 'ኡ')
+    .replace(/[ዒ]/g, 'ኢ')
+    .replace(/[ዔ]/g, 'ኤ')
+    .replace(/[ዕ]/g, 'እ')
+    .replace(/[ዖ]/g, 'ኦ')
+    // Normalize ጸ / ፀ variations across all 7 orders
+    .replace(/ፀ/g, 'ጸ')
+    .replace(/ፁ/g, 'ጹ')
+    .replace(/ፂ/g, 'ጺ')
+    .replace(/ፃ/g, 'ጻ')
+    .replace(/ፄ/g, 'ጼ')
+    .replace(/ፅ/g, 'ጽ')
+    .replace(/ፆ/g, 'ጾ')
+    .trim();
+};
+
+export interface SundaySchoolStudentMatch {
+  student: Student;
+  className: string;
+  matchType: 'exact' | 'first_father' | 'partial';
+  matchLabel: string;
+}
+
+export interface SundaySchoolIndexStructure {
+  allStudentsList: { student: Student; className: string }[];
+  exactMap: Map<string, { student: Student; className: string }>;
+  firstTwoMap: Map<string, { student: Student; className: string }>;
+}
+
+export const buildSundaySchoolIndex = (studentsByClass: { [className: string]: Student[] }): SundaySchoolIndexStructure => {
+  const exactMap = new Map<string, { student: Student; className: string }>();
+  const firstTwoMap = new Map<string, { student: Student; className: string }>();
+  const allStudentsList: { student: Student; className: string }[] = [];
+
+  Object.entries(studentsByClass || {}).forEach(([className, students]) => {
+    if (Array.isArray(students)) {
+      students.forEach((s) => {
+        if (s && s.name && s.name.trim()) {
+          const norm = normalizeAmharicName(s.name);
+          if (norm) {
+            const entry = { student: s, className };
+            allStudentsList.push(entry);
+            if (!exactMap.has(norm)) {
+              exactMap.set(norm, entry);
+            }
+            const parts = norm.split(' ').filter(Boolean);
+            if (parts.length >= 2) {
+              const two = `${parts[0]} ${parts[1]}`;
+              if (!firstTwoMap.has(two)) {
+                firstTwoMap.set(two, entry);
+              }
+            }
+          }
+        }
+      });
+    }
+  });
+
+  return { allStudentsList, exactMap, firstTwoMap };
+};
+
+// Match child name with Sunday School registry strictly by name - regardless of age differences
+export const matchChildNameToSundaySchool = (
+  childName: string,
+  index: SundaySchoolIndexStructure
+): SundaySchoolStudentMatch | null => {
+  if (!childName) return null;
+  const normChild = normalizeAmharicName(childName);
+  if (!normChild || normChild.length < 2) return null;
+
+  // 1. Exact full name match (regardless of age)
+  const exact = index.exactMap.get(normChild);
+  if (exact) {
+    return {
+      student: exact.student,
+      className: exact.className,
+      matchType: 'exact',
+      matchLabel: 'ሙሉ ስም ተመሳስሏል'
+    };
+  }
+
+  // 2. First name + Father's name match (regardless of age)
+  const childParts = normChild.split(' ').filter(Boolean);
+  if (childParts.length >= 2) {
+    const childTwo = `${childParts[0]} ${childParts[1]}`;
+    const twoMatch = index.firstTwoMap.get(childTwo);
+    if (twoMatch) {
+      return {
+        student: twoMatch.student,
+        className: twoMatch.className,
+        matchType: 'first_father',
+        matchLabel: 'ስምና የአባት ስም ተመሳስሏል'
+      };
+    }
+  }
+
+  // 3. Substring / Prefix match if at least 2 words (regardless of age)
+  if (childParts.length >= 2) {
+    for (const item of index.allStudentsList) {
+      const normStudent = normalizeAmharicName(item.student.name);
+      if (!normStudent) continue;
+      const sParts = normStudent.split(' ').filter(Boolean);
+      if (sParts.length >= 2) {
+        if (normChild.startsWith(normStudent) || normStudent.startsWith(normChild)) {
+          return {
+            student: item.student,
+            className: item.className,
+            matchType: 'partial',
+            matchLabel: 'ተቀራራቢ ስም ተመሳስሏል'
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
+
+// Strict mapping of any Amharic or English sheet/column name to ONLY the 10 official chapels
+export const mapToOfficialChapel = (rawInput: string, sheetIndex?: number): string => {
+  const str = String(rawInput || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+
+  // 1. El-Roi / ኤልሮኢ
+  if (
+    str.includes('elroi') ||
+    str.includes('elrohe') ||
+    str.includes('elro') ||
+    str.includes('ኤልሮኢ') ||
+    str.includes('ኤልሮይ') ||
+    str.includes('ሮኢ')
+  ) {
+    return DEFAULT_CHAPELS[0];
+  }
+
+  // 2. Shalom / ሻሎም
+  if (
+    str.includes('shalom') ||
+    str.includes('shaloam') ||
+    str.includes('salom') ||
+    str.includes('ሻሎም') ||
+    str.includes('ሳሎም')
+  ) {
+    return DEFAULT_CHAPELS[1];
+  }
+
+  // 3. Bethel / ቤቴል
+  if (
+    str.includes('bethel') ||
+    str.includes('betel') ||
+    str.includes('ቤቴል') ||
+    str.includes('በቴል') ||
+    str.includes('ቤትኤል')
+  ) {
+    return DEFAULT_CHAPELS[2];
+  }
+
+  // 4. Yahweh / ያህዌ
+  if (
+    str.includes('yahweh') ||
+    str.includes('yahwe') ||
+    str.includes('yahuweh') ||
+    str.includes('yahve') ||
+    str.includes('yahveh') ||
+    str.includes('jah') ||
+    str.includes('ያህዌ') ||
+    str.includes('ያህዌህ') ||
+    str.includes('ያህወ')
+  ) {
+    return DEFAULT_CHAPELS[3];
+  }
+
+  // 5. Eden / ኤዴን
+  if (
+    str.includes('eden') ||
+    str.includes('edan') ||
+    str.includes('ኤዴን') ||
+    str.includes('ኤደን') ||
+    str.includes('ኤዲን')
+  ) {
+    return DEFAULT_CHAPELS[4];
+  }
+
+  // 6. Ebenezer / አቤንኤዘር
+  if (
+    str.includes('ebenezer') ||
+    str.includes('abenezer') ||
+    str.includes('ebenezer') ||
+    str.includes('ebnezer') ||
+    str.includes('አቤንኤዘር') ||
+    str.includes('አበንኤዘር') ||
+    str.includes('እቤንኤዘር') ||
+    str.includes('አቤኔዘር')
+  ) {
+    return DEFAULT_CHAPELS[5];
+  }
+
+  // 7. Rehoboth / ርኆቦት
+  if (
+    str.includes('rehoboth') ||
+    str.includes('rehobot') ||
+    str.includes('rohoboth') ||
+    str.includes('rohobot') ||
+    str.includes('rehaboth') ||
+    str.includes('rehabot') ||
+    str.includes('ርኆቦት') ||
+    str.includes('ርሆቦት') ||
+    str.includes('ርህቦት') ||
+    str.includes('ርኮቦት')
+  ) {
+    return DEFAULT_CHAPELS[6];
+  }
+
+  // 8. Elshaddai / ኤልሻዳይ
+  if (
+    str.includes('elshaddai') ||
+    str.includes('elshaday') ||
+    str.includes('elshadday') ||
+    str.includes('shaddai') ||
+    str.includes('shaday') ||
+    str.includes('ኤልሻዳይ') ||
+    str.includes('ሻዳይ')
+  ) {
+    return DEFAULT_CHAPELS[7];
+  }
+
+  // 9. Ruhama / ሩሐማ
+  if (
+    str.includes('ruhama') ||
+    str.includes('ruhamah') ||
+    str.includes('ruhamaa') ||
+    str.includes('ruhamma') ||
+    str.includes('ruham') ||
+    str.includes('ሩሐማ') ||
+    str.includes('ሩሃማ') ||
+    str.includes('ሩሀማ')
+  ) {
+    return DEFAULT_CHAPELS[8];
+  }
+
+  // 10. Adonai / አዶናይ
+  if (
+    str.includes('adonai') ||
+    str.includes('adonay') ||
+    str.includes('adonaiy') ||
+    str.includes('አዶናይ') ||
+    str.includes('አደናይ')
+  ) {
+    return DEFAULT_CHAPELS[9];
+  }
+
+  // Check numbered indicators e.g. Sheet 1, Sheet 10, or "1", "10"
+  if (/\b10\b/.test(str) || str.endsWith('10') || str.includes('sheet10')) return DEFAULT_CHAPELS[9];
+  if (/\b1\b/.test(str) || str.endsWith('1') || str.includes('sheet1')) return DEFAULT_CHAPELS[0];
+  if (/\b2\b/.test(str) || str.endsWith('2') || str.includes('sheet2')) return DEFAULT_CHAPELS[1];
+  if (/\b3\b/.test(str) || str.endsWith('3') || str.includes('sheet3')) return DEFAULT_CHAPELS[2];
+  if (/\b4\b/.test(str) || str.endsWith('4') || str.includes('sheet4')) return DEFAULT_CHAPELS[3];
+  if (/\b5\b/.test(str) || str.endsWith('5') || str.includes('sheet5')) return DEFAULT_CHAPELS[4];
+  if (/\b6\b/.test(str) || str.endsWith('6') || str.includes('sheet6')) return DEFAULT_CHAPELS[5];
+  if (/\b7\b/.test(str) || str.endsWith('7') || str.includes('sheet7')) return DEFAULT_CHAPELS[6];
+  if (/\b8\b/.test(str) || str.endsWith('8') || str.includes('sheet8')) return DEFAULT_CHAPELS[7];
+  if (/\b9\b/.test(str) || str.endsWith('9') || str.includes('sheet9')) return DEFAULT_CHAPELS[8];
+
+  // If sheetIndex was provided (0 to 9)
+  if (typeof sheetIndex === 'number' && sheetIndex >= 0 && sheetIndex < DEFAULT_CHAPELS.length) {
+    return DEFAULT_CHAPELS[sheetIndex];
+  }
+
+  return DEFAULT_CHAPELS[0];
+};
+
+// Normalization function to match chapel names flexibly (e.g. 'ቤቴል' vs 'ቤቴል ቻፕል')
+export const normalizeChapel = (name: string): string => {
+  return (name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/ቻፕል|አጥቢያ|ማዕከል|ቤተክርስቲያን|ቅርንጫፍ/g, '')
+    .replace(/[ሐኀ]/g, 'ሀ')
+    .replace(/ሠ/g, 'ሰ')
+    .replace(/[ፀፅ]/g, 'ጸ')
+    .replace(/[ዐዓዑዒዔዕዖ]/g, 'አ')
+    .trim();
+};
+
+// Normalization function for Excel header matching (handles ዕ vs እ, ጾ vs ፆ, etc.)
+export const normalizeHeader = (str: string): string => {
+  return (str || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[ዐዓዑዒዔዕዖ]/g, (c) => {
+      const map: Record<string, string> = { 'ዐ': 'አ', 'ዓ': 'አ', 'ዑ': 'ኡ', 'ዒ': 'ኢ', 'ዔ': 'ኤ', 'ዕ': 'እ', 'ዖ': 'ኦ' };
+      return map[c] || 'አ';
+    })
+    .replace(/[ሐኀ]/g, 'ሀ')
+    .replace(/ሠ/g, 'ሰ')
+    .replace(/[ፀፅ]/g, 'ጸ')
+    .replace(/ፆ/g, 'ጾ');
+};
+
+// Comprehensive, robust age parser for Ethiopian church databases
+export const parseChildAge = (
+  rawVal: any,
+  refYear: number = 2018,
+  ageMode: 'auto' | 'direct' | 'birthyear' = 'auto'
+): { age: number; isChild: boolean; detectedBirthYear?: number } => {
+  if (rawVal === undefined || rawVal === null || rawVal === '') {
+    return { age: -1, isChild: false };
+  }
+
+  const currentGregYear = new Date().getFullYear();
+
+  // If XLSX date object
+  if (rawVal instanceof Date) {
+    const y = rawVal.getFullYear();
+    if (y >= 1930) {
+      const calcAge = y <= refYear ? Math.max(0, refYear - y) : Math.max(0, currentGregYear - y);
+      return { age: calcAge, isChild: calcAge >= 0 && calcAge <= 14, detectedBirthYear: y };
+    }
+  }
+
+  // If number
+  if (typeof rawVal === 'number') {
+    // Excel date serial number (e.g. 25000 to 65000)
+    if (rawVal >= 25000 && rawVal <= 65000) {
+      try {
+        const parsed = XLSX.SSF.parse_date_code(rawVal);
+        if (parsed && parsed.y) {
+          const y = parsed.y;
+          const calcAge = y <= refYear ? Math.max(0, refYear - y) : Math.max(0, currentGregYear - y);
+          return { age: calcAge, isChild: calcAge >= 0 && calcAge <= 14, detectedBirthYear: y };
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    if (ageMode === 'birthyear') {
+      const calcAge = rawVal <= refYear ? Math.max(0, refYear - rawVal) : Math.max(0, currentGregYear - rawVal);
+      return { age: calcAge, isChild: calcAge >= 0 && calcAge <= 14, detectedBirthYear: rawVal };
+    }
+
+    if (ageMode === 'direct') {
+      const n = Math.round(rawVal);
+      return { age: n, isChild: n >= 0 && n <= 14 };
+    }
+
+    // Auto mode
+    // 0 to 14: Direct child age
+    if (rawVal >= 0 && rawVal <= 14) {
+      return { age: Math.round(rawVal), isChild: true };
+    }
+
+    // 15 to 120: Direct adult age
+    if (rawVal >= 15 && rawVal <= 120) {
+      return { age: Math.round(rawVal), isChild: false };
+    }
+
+    // 4-digit Year (e.g. 1950 to 2035)
+    if (rawVal >= 1930 && rawVal <= 2035) {
+      const calcAge = rawVal <= refYear ? Math.max(0, refYear - rawVal) : Math.max(0, currentGregYear - rawVal);
+      return { age: calcAge, isChild: calcAge >= 0 && calcAge <= 14, detectedBirthYear: rawVal };
+    }
+  }
+
+  // String handling
+  const str = String(rawVal).trim();
+  if (!str) return { age: -1, isChild: false };
+
+  // Check if string indicates months for infant (e.g. "6 ወር", "8 ወር", "2 ወር")
+  if ((str.includes('ወር') || str.toLowerCase().includes('month')) && !str.includes('ዓመት') && !str.includes('አመት')) {
+    return { age: 0, isChild: true };
+  }
+
+  if (ageMode === 'direct') {
+    const m = str.match(/\d+/);
+    if (m) {
+      const n = parseInt(m[0], 10);
+      return { age: n, isChild: n >= 0 && n <= 14 };
+    }
+  }
+
+  // Search for 4-digit year (e.g. 2012 in "12/04/2012", "2015-08-01", "2012 ዓ.ም", "2014 E.C.")
+  const yearMatch = str.match(/\b(19\d{2}|20\d{2})\b/);
+  if (yearMatch) {
+    const y = parseInt(yearMatch[1], 10);
+    const calcAge = y <= refYear ? Math.max(0, refYear - y) : Math.max(0, currentGregYear - y);
+    return { age: calcAge, isChild: calcAge >= 0 && calcAge <= 14, detectedBirthYear: y };
+  }
+
+  // Search for date pattern DD/MM/YY (e.g. "12/04/14" -> 2014)
+  const dateMatch = str.match(/\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.](\d{2})\b/);
+  if (dateMatch) {
+    const yy = parseInt(dateMatch[1], 10);
+    const y = yy <= 30 ? 2000 + yy : 1900 + yy;
+    const calcAge = y <= refYear ? Math.max(0, refYear - y) : Math.max(0, currentGregYear - y);
+    return { age: calcAge, isChild: calcAge >= 0 && calcAge <= 14, detectedBirthYear: y };
+  }
+
+  // Standalone numbers e.g. "5 ዓመት", "8", "12 ዓ/ም"
+  const numMatch = str.match(/\d+/);
+  if (numMatch) {
+    const n = parseInt(numMatch[0], 10);
+    if (ageMode === 'birthyear' && n >= 1930) {
+      const calcAge = n <= refYear ? Math.max(0, refYear - n) : Math.max(0, currentGregYear - n);
+      return { age: calcAge, isChild: calcAge >= 0 && calcAge <= 14, detectedBirthYear: n };
+    }
+    if (n >= 0 && n <= 14) {
+      return { age: n, isChild: true };
+    }
+    if (n >= 15 && n <= 120) {
+      return { age: n, isChild: false };
+    }
+    if (n >= 1930) {
+      const calcAge = n <= refYear ? Math.max(0, refYear - n) : Math.max(0, currentGregYear - n);
+      return { age: calcAge, isChild: calcAge >= 0 && calcAge <= 14, detectedBirthYear: n };
+    }
+  }
+
+  return { age: -1, isChild: false };
+};
+
+type ViewFilter = 'all' | 'enrolled' | 'not_enrolled' | 'missing_from_church';
+type AgeFilter = 'all' | '0-3' | '4-6' | '7-9' | '10-12' | '13-14' | '15+';
+
+export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
+  currentYear,
+  ageReferenceYear = 2017,
+  classList,
+  churchChildren = [],
+  churchMembers = [],
+  chapelList = DEFAULT_CHAPELS,
+  studentsByClass = {},
+  onAddChild,
+  onAddChurchMember,
+  onUpdateChild,
+  onDeleteChild,
+  onClearChurchChildren,
+  onBatchAddChildren,
+  onEnrollToSundaySchool,
+  onImportMissingStudentsToChurchChildren,
+  onBulkIncrementAges,
+  currentUserRole,
+  loggedInChapel,
+  onDeleteChapel,
+  nameScriptMode,
+  onChangeNameScriptMode,
+  onOpenTransliterator
+}) => {
+  const [localScriptMode, setLocalScriptMode] = useState<NameScriptMode>('am');
+  const activeNameMode: NameScriptMode = nameScriptMode ?? localScriptMode;
+  const setActiveNameMode = (mode: NameScriptMode) => {
+    setLocalScriptMode(mode);
+    if (onChangeNameScriptMode) onChangeNameScriptMode(mode);
+  };
+  const officialLoggedInChapel = useMemo(
+    () => (loggedInChapel ? mapToOfficialChapel(loggedInChapel) : null),
+    [loggedInChapel]
+  );
+
+  // Strict data isolation: when a Chapel Leader logs in, expose ONLY their chapel's children
+  const effectiveChurchChildren = useMemo(() => {
+    if (!officialLoggedInChapel) return churchChildren;
+    return churchChildren.filter(
+      (c) => mapToOfficialChapel(c.chapel || '') === officialLoggedInChapel
+    );
+  }, [churchChildren, officialLoggedInChapel]);
+
+  // State
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
+  const [ageFilter, setAgeFilter] = useState<AgeFilter>('all');
+  const [genderFilter, setGenderFilter] = useState<string>('all');
+  const [selectedChapelFilter, setSelectedChapelFilter] = useState<string>(officialLoggedInChapel || 'all');
+  // Multi-Chapel Filtering for Main Registry Tab
+  const [selectedChapels, setSelectedChapels] = useState<string[]>(
+    officialLoggedInChapel ? [officialLoggedInChapel] : []
+  );
+  const [displayLayoutMode, setDisplayLayoutMode] = useState<'table' | 'grouped_chapels'>('table');
+  const [copiedPhoneId, setCopiedPhoneId] = useState<number | null>(null);
+
+  // Modals
+  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [editingChild, setEditingChild] = useState<ChurchChild | null>(null);
+  const [enrollTargetChild, setEnrollTargetChild] = useState<ChurchChild | null>(null);
+  const [selectedEnrollClass, setSelectedEnrollClass] = useState<string>(classList[0] || 'ማቆያ ክፍል');
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [isClearModalOpen, setIsClearModalOpen] = useState<boolean>(false);
+  const [isAgeModalOpen, setIsAgeModalOpen] = useState<boolean>(false);
+  const [clearScope, setClearScope] = useState<'all' | 'selected'>(officialLoggedInChapel ? 'selected' : 'all');
+  const [clearSelectedChapels, setClearSelectedChapels] = useState<string[]>(
+    officialLoggedInChapel ? [officialLoggedInChapel] : []
+  );
+  const [clearConfirmWord, setClearConfirmWord] = useState<string>('');
+
+  // Form state
+  const [childAddMode, setChildAddMode] = useState<'new' | 'by_code'>('new');
+  const [childLookupCode, setChildLookupCode] = useState<string>('');
+  const [childLookupChapelHint, setChildLookupChapelHint] = useState<string>('');
+  const [childCodeSuccessMsg, setChildCodeSuccessMsg] = useState<string>('');
+  const [formName, setFormName] = useState<string>('');
+  const [formGender, setFormGender] = useState<'ወ' | 'ሴ' | ''>('ወ');
+  const [formAge, setFormAge] = useState<string>('5');
+  const [formEducationLevel, setFormEducationLevel] = useState<string>('1ኛ ክፍል');
+  const [formOccupation, setFormOccupation] = useState<string>('ተማሪ');
+  const [formChapel, setFormChapel] = useState<string>(officialLoggedInChapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+  const [formParent, setFormParent] = useState<string>('');
+  const [formPhone, setFormPhone] = useState<string>('');
+  const [formResidence, setFormResidence] = useState<string>('');
+  const [formVillage, setFormVillage] = useState<string>('');
+  const [formNotes, setFormNotes] = useState<string>('');
+
+  // Sync loggedInChapel when selected chapel changes
+  React.useEffect(() => {
+    if (officialLoggedInChapel) {
+      setSelectedChapelFilter(officialLoggedInChapel);
+      setSelectedChapels([officialLoggedInChapel]);
+      setFormChapel(officialLoggedInChapel);
+      setClearScope('selected');
+      setClearSelectedChapels([officialLoggedInChapel]);
+    }
+  }, [officialLoggedInChapel]);
+
+  // Import preview state (General church database 0-14 filter)
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importFileName, setImportFileName] = useState<string>('');
+  const [importWorkbookRef, setImportWorkbookRef] = useState<XLSX.WorkBook | null>(null);
+  const [importRawRows, setImportRawRows] = useState<any[][]>([]);
+  const [importHeaderCols, setImportHeaderCols] = useState<{ index: number; label: string }[]>([]);
+  const [importHeaderRowIdx, setImportHeaderRowIdx] = useState<number>(0);
+  const [importColName, setImportColName] = useState<number>(0);
+  const [importColFather, setImportColFather] = useState<number>(-1);
+  const [importColGrandfather, setImportColGrandfather] = useState<number>(-1);
+  const [importColGender, setImportColGender] = useState<number>(1);
+  const [importColAge, setImportColAge] = useState<number>(2);
+  const [importColChapel, setImportColChapel] = useState<number>(-1);
+  const [importColEducation, setImportColEducation] = useState<number>(-1);
+  const [importColOccupation, setImportColOccupation] = useState<number>(-1);
+  const [importColParent, setImportColParent] = useState<number>(-1);
+  const [importColPhone, setImportColPhone] = useState<number>(-1);
+  const [importColResidence, setImportColResidence] = useState<number>(-1);
+  const [importDefaultChapel, setImportDefaultChapel] = useState<string>(chapelList[0] || 'ኤልሮኢ ቻፕል');
+  const [importRefYear, setImportRefYear] = useState<number>(ageReferenceYear || parseInt(currentYear, 10) || 2017);
+  const [importAgeMode, setImportAgeMode] = useState<'auto' | 'direct' | 'birthyear'>('auto');
+  const [isColumnMappingOpen, setIsColumnMappingOpen] = useState<boolean>(false);
+
+  // Parsed children & Multi-Chapel Selection in Import Modal
+  const [importChildrenPreview, setImportChildrenPreview] = useState<Omit<ChurchChild, 'id'>[]>([]);
+  const [importAdultsSkipped, setImportAdultsSkipped] = useState<{ name: string; age: number; gender: string; reason: string }[]>([]);
+  const [importTotalRows, setImportTotalRows] = useState<number>(0);
+  const [importActiveTab, setImportActiveTab] = useState<'children' | 'adults'>('children');
+  const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
+  const [importSelectedChapels, setImportSelectedChapels] = useState<string[]>([]);
+  const [isNameCompareModalOpen, setIsNameCompareModalOpen] = useState<boolean>(false);
+
+  // 1. Build an index of Sunday School students for fast cross-referencing
+  const sundaySchoolIndex = useMemo(() => {
+    return buildSundaySchoolIndex(studentsByClass);
+  }, [studentsByClass]);
+
+  // 2. Identify Church Children enrollment status (strictly by name, regardless of age differences)
+  const churchChildrenWithStatus = useMemo(() => {
+    return effectiveChurchChildren.map((child) => {
+      const match = matchChildNameToSundaySchool(child.name, sundaySchoolIndex);
+      return {
+        ...child,
+        isEnrolled: Boolean(match),
+        enrolledClass: match ? match.className : null,
+        matchedStudent: match ? match.student : null,
+        matchTypeLabel: match ? match.matchLabel : null,
+        studentAge: match?.student?.age ?? null
+      };
+    });
+  }, [effectiveChurchChildren, sundaySchoolIndex]);
+
+  // 3. Identify Sunday School students MISSING from Church Children Registry (strictly by name)
+  const missingFromChurchChildren = useMemo(() => {
+    const missing: { student: Student; className: string }[] = [];
+
+    sundaySchoolIndex.allStudentsList.forEach((item) => {
+      // When logged in as a chapel, only compare students assigned to that chapel (or unassigned)
+      if (officialLoggedInChapel && item.student.chapel && mapToOfficialChapel(item.student.chapel) !== officialLoggedInChapel) {
+        return;
+      }
+
+      const normStudent = normalizeAmharicName(item.student.name);
+      const studentParts = normStudent.split(' ').filter(Boolean);
+      const studentTwo = studentParts.slice(0, 2).join(' ');
+
+      const foundInChurch = effectiveChurchChildren.some((child) => {
+        const normChild = normalizeAmharicName(child.name);
+        if (normChild === normStudent) return true;
+        const childParts = normChild.split(' ').filter(Boolean);
+        if (childParts.length >= 2 && studentParts.length >= 2 && childParts.slice(0, 2).join(' ') === studentTwo) {
+          return true;
+        }
+        if (childParts.length >= 2 && studentParts.length >= 2 && (normChild.startsWith(normStudent) || normStudent.startsWith(normChild))) {
+          return true;
+        }
+        return false;
+      });
+
+      if (!foundInChurch) {
+        missing.push(item);
+      }
+    });
+
+    return missing;
+  }, [effectiveChurchChildren, sundaySchoolIndex, officialLoggedInChapel]);
+
+  // 4. Chapel Breakdown Statistics Matrix
+  const chapelStats = useMemo(() => {
+    const chapels = officialLoggedInChapel
+      ? [officialLoggedInChapel]
+      : Array.from(
+          new Set([
+            ...chapelList,
+            ...(churchChildrenWithStatus.map((c) => c.chapel).filter(Boolean) as string[])
+          ])
+        );
+
+    const statsMap: { [chapel: string]: { total: number; enrolled: number; notEnrolled: number; male: number; female: number } } = {};
+    chapels.forEach((ch) => {
+      statsMap[ch] = { total: 0, enrolled: 0, notEnrolled: 0, male: 0, female: 0 };
+    });
+
+    churchChildrenWithStatus.forEach((child) => {
+      const ch = officialLoggedInChapel || child.chapel || 'ያልተገለጸ ቻፕል';
+      if (!statsMap[ch]) {
+        statsMap[ch] = { total: 0, enrolled: 0, notEnrolled: 0, male: 0, female: 0 };
+      }
+      statsMap[ch].total++;
+      if (child.gender === 'ወ') statsMap[ch].male++;
+      if (child.gender === 'ሴ') statsMap[ch].female++;
+
+      if (child.isEnrolled) statsMap[ch].enrolled++;
+      else statsMap[ch].notEnrolled++;
+    });
+
+    return {
+      chapels: Object.keys(statsMap),
+      statsMap
+    };
+  }, [chapelList, churchChildrenWithStatus, officialLoggedInChapel]);
+
+  // 5. Age Demographic Cohorts Calculation (0-3, 4-6, 7-9, 10-12, 13-14, 15+)
+  const demographicStats = useMemo(() => {
+    const cohorts = [
+      { key: '0-3', label: 'ከ0 - 3 ዓመት (ጨቅላና ህፃናት)', min: 0, max: 3, male: 0, female: 0, total: 0, enrolled: 0, notEnrolled: 0 },
+      { key: '4-6', label: 'ከ4 - 6 ዓመት (ጀማሪ ህፃናት)', min: 4, max: 6, male: 0, female: 0, total: 0, enrolled: 0, notEnrolled: 0 },
+      { key: '7-9', label: 'ከ7 - 9 ዓመት (መካከለኛ ህፃናት)', min: 7, max: 9, male: 0, female: 0, total: 0, enrolled: 0, notEnrolled: 0 },
+      { key: '10-12', label: 'ከ10 - 12 ዓመት (ታዳጊዎች)', min: 10, max: 12, male: 0, female: 0, total: 0, enrolled: 0, notEnrolled: 0 },
+      { key: '13-14', label: 'ከ13 - 14 ዓመት (ታዳጊ ወጣቶች)', min: 13, max: 14, male: 0, female: 0, total: 0, enrolled: 0, notEnrolled: 0 },
+      { key: '15+', label: 'ከ15 ዓመት በላይ & ያልተገለጸ', min: 15, max: 999, male: 0, female: 0, total: 0, enrolled: 0, notEnrolled: 0 }
+    ];
+
+    let totalMale = 0;
+    let totalFemale = 0;
+    let totalEnrolled = 0;
+    let totalNotEnrolled = 0;
+
+    churchChildrenWithStatus.forEach((child) => {
+      const parsedAgeNum = parseInt(String(child.age ?? '0'), 10);
+      const numAge = isNaN(parsedAgeNum) ? 0 : parsedAgeNum;
+      const isMale = child.gender === 'ወ';
+      const isFemale = child.gender === 'ሴ';
+
+      if (isMale) totalMale++;
+      if (isFemale) totalFemale++;
+      if (child.isEnrolled) totalEnrolled++;
+      else totalNotEnrolled++;
+
+      let assigned = false;
+      for (const cohort of cohorts) {
+        if (numAge >= cohort.min && numAge <= cohort.max) {
+          cohort.total++;
+          if (isMale) cohort.male++;
+          if (isFemale) cohort.female++;
+          if (child.isEnrolled) cohort.enrolled++;
+          else cohort.notEnrolled++;
+          assigned = true;
+          break;
+        }
+      }
+      if (!assigned) {
+        const last = cohorts[cohorts.length - 1];
+        last.total++;
+        if (isMale) last.male++;
+        if (isFemale) last.female++;
+        if (child.isEnrolled) last.enrolled++;
+        else last.notEnrolled++;
+      }
+    });
+
+    const totalChildren = churchChildrenWithStatus.length;
+
+    return {
+      cohorts,
+      totalChildren,
+      totalMale,
+      totalFemale,
+      totalEnrolled,
+      totalNotEnrolled
+    };
+  }, [churchChildrenWithStatus]);
+
+  // 6. Filtered Church Children
+  const filteredChildren = useMemo(() => {
+    return churchChildrenWithStatus.filter((child) => {
+      // 1. Search term (Amharic homophones, multi-word child names, parent, phone, chapel, Sunday school class)
+      if (searchTerm.trim()) {
+        const matchedSearch = matchesAmharicSearch(
+          searchTerm,
+          child.memberCode,
+          child.familyCode,
+          child.name,
+          child.parentName,
+          child.phone,
+          child.residence,
+          child.chapel,
+          child.fellowshipOrVillage,
+          child.enrolledClass,
+          child.matchedStudent?.name,
+          child.educationLevel,
+          child.occupation
+        );
+        if (!matchedSearch) return false;
+      }
+
+      // 2. View filter (enrolled / not_enrolled)
+      if (viewFilter === 'enrolled' && !child.isEnrolled) return false;
+      if (viewFilter === 'not_enrolled' && child.isEnrolled) return false;
+
+      // 3. Multi-Chapel filter
+      if (selectedChapels.length > 0) {
+        const childChapelNorm = normalizeChapel(child.chapel || 'ያልተገለጸ ቻፕል');
+        const matches = selectedChapels.some((filterCh) => {
+          const fNorm = normalizeChapel(filterCh);
+          return (
+            fNorm === childChapelNorm ||
+            (child.chapel || '').includes(filterCh) ||
+            filterCh.includes(child.chapel || '')
+          );
+        });
+        if (!matches) return false;
+      } else if (selectedChapelFilter !== 'all') {
+        const childChapelNorm = normalizeChapel(child.chapel || 'ያልተገለጸ ቻፕል');
+        const fNorm = normalizeChapel(selectedChapelFilter);
+        if (
+          childChapelNorm !== fNorm &&
+          !(child.chapel || '').includes(selectedChapelFilter) &&
+          !selectedChapelFilter.includes(child.chapel || '')
+        ) {
+          return false;
+        }
+      }
+
+      // 4. Gender filter
+      if (genderFilter !== 'all' && child.gender !== genderFilter) return false;
+
+      // 5. Age filter
+      if (ageFilter !== 'all') {
+        const numAge = parseInt(String(child.age || '0'), 10) || 0;
+        if (ageFilter === '0-3' && (numAge < 0 || numAge > 3)) return false;
+        if (ageFilter === '4-6' && (numAge < 4 || numAge > 6)) return false;
+        if (ageFilter === '7-9' && (numAge < 7 || numAge > 9)) return false;
+        if (ageFilter === '10-12' && (numAge < 10 || numAge > 12)) return false;
+        if (ageFilter === '13-14' && (numAge < 13 || numAge > 14)) return false;
+        if (ageFilter === '15+' && numAge < 15) return false;
+      }
+
+      return true;
+    });
+  }, [churchChildrenWithStatus, searchTerm, viewFilter, selectedChapels, selectedChapelFilter, genderFilter, ageFilter]);
+
+  // Filtered missing Sunday School students when searching by name
+  const filteredMissingFromChurchChildren = useMemo(() => {
+    if (!searchTerm.trim()) return missingFromChurchChildren;
+    return missingFromChurchChildren.filter((item) =>
+      matchesAmharicSearch(
+        searchTerm,
+        item.student.name,
+        item.className,
+        item.student.chapel,
+        item.student.phone,
+        item.student.parentName
+      )
+    );
+  }, [missingFromChurchChildren, searchTerm]);
+
+  // 7. Group filtered children by Chapel for Multi-Chapel All-in-One View
+  const childrenGroupedByChapel = useMemo(() => {
+    const groups: { [chapel: string]: typeof filteredChildren } = {};
+    chapelStats.chapels.forEach((ch) => {
+      groups[ch] = [];
+    });
+    filteredChildren.forEach((child) => {
+      const ch = child.chapel || 'ዋናው ማዕከል ቻፕል';
+      if (!groups[ch]) groups[ch] = [];
+      groups[ch].push(child);
+    });
+    return groups;
+  }, [chapelStats.chapels, filteredChildren]);
+
+  // Copy phone handler
+  const handleCopyPhone = (id: number, phone: string) => {
+    if (!phone) return;
+    void copyTextSafely(phone);
+    setCopiedPhoneId(id);
+    setTimeout(() => setCopiedPhoneId(null), 2000);
+  };
+
+  const scopedChurchMembers = useMemo(() => {
+    if (!officialLoggedInChapel) return churchMembers;
+    return churchMembers.filter(
+      (m) => mapToOfficialChapel(m.chapel || '') === officialLoggedInChapel
+    );
+  }, [churchMembers, officialLoggedInChapel]);
+
+  const activeChildLookupScope = useMemo(
+    () => officialLoggedInChapel || childLookupChapelHint || undefined,
+    [officialLoggedInChapel, childLookupChapelHint]
+  );
+
+  const matchedChildCodeAll = useMemo(() => {
+    if (!childLookupCode.trim()) return [];
+    return findAllMatchingMembersByCode(
+      scopedChurchMembers,
+      childLookupCode,
+      activeChildLookupScope
+    );
+  }, [scopedChurchMembers, childLookupCode, activeChildLookupScope]);
+
+  const matchedChildFamilyHead = useMemo(() => {
+    if (matchedChildCodeAll.length === 1) return matchedChildCodeAll[0];
+    return null;
+  }, [matchedChildCodeAll]);
+
+  const childLookupSuggestions = useMemo(() => {
+    const q = childLookupCode.trim();
+    if (!q || matchedChildFamilyHead || matchedChildCodeAll.length > 0) return [];
+    const normQ = normalizeCodeForLookup(q);
+    return scopedChurchMembers
+      .filter((m) => {
+        if (activeChildLookupScope && mapToOfficialChapel(m.chapel || '') !== activeChildLookupScope) {
+          return false;
+        }
+        return (
+          (m.memberCode && normalizeCodeForLookup(m.memberCode).includes(normQ)) ||
+          matchesAmharicSearch(q, m.name)
+        );
+      })
+      .slice(0, 8);
+  }, [scopedChurchMembers, childLookupCode, matchedChildFamilyHead, matchedChildCodeAll, activeChildLookupScope]);
+
+  const childNextSubCodePreview = useMemo(() => {
+    if (!matchedChildFamilyHead) return '';
+    const ch = officialLoggedInChapel || mapToOfficialChapel(matchedChildFamilyHead.chapel || '');
+    return getNextFamilySubCode(
+      churchMembers,
+      matchedChildFamilyHead.familyCode || matchedChildFamilyHead.memberCode || '',
+      ch
+    );
+  }, [churchMembers, matchedChildFamilyHead, officialLoggedInChapel]);
+
+  const applyChildFamilyMatch = (matched: ChurchMember) => {
+    const ch = officialLoggedInChapel || mapToOfficialChapel(matched.chapel || '');
+    setFormChapel(ch);
+    setFormParent(matched.parentName || matched.name || '');
+    setFormPhone(matched.phone || '');
+    setFormResidence(matched.residence || '');
+  };
+
+  // Modal helpers
+  const openAddModal = () => {
+    setEditingChild(null);
+    setChildAddMode('new');
+    setChildLookupCode('');
+    setChildLookupChapelHint('');
+    setFormName('');
+    setFormGender('ወ');
+    setFormAge('5');
+    setFormEducationLevel('1ኛ ክፍል');
+    setFormOccupation('ተማሪ');
+    setFormChapel(officialLoggedInChapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+    setFormParent('');
+    setFormPhone('');
+    setFormResidence('');
+    setFormVillage('');
+    setFormNotes('');
+    setIsAddModalOpen(true);
+  };
+
+  const openAddByCodeModal = () => {
+    setEditingChild(null);
+    setChildAddMode('by_code');
+    setChildLookupCode('');
+    setChildLookupChapelHint('');
+    setFormName('');
+    setFormGender('ወ');
+    setFormAge('5');
+    setFormEducationLevel('1ኛ ክፍል');
+    setFormOccupation('ተማሪ');
+    setFormChapel(officialLoggedInChapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+    setFormParent('');
+    setFormPhone('');
+    setFormResidence('');
+    setFormVillage('');
+    setFormNotes('');
+    setIsAddModalOpen(true);
+  };
+
+  const openEditModal = (child: ChurchChild) => {
+    setEditingChild(child);
+    setChildAddMode('new');
+    setChildLookupCode('');
+    setChildLookupChapelHint('');
+    setFormName(child.name);
+    setFormGender((child.gender as 'ወ' | 'ሴ') || 'ወ');
+    setFormAge(String(child.age || '5'));
+    setFormEducationLevel(canonicalizeEducationLevel(child.educationLevel) || '1ኛ ክፍል');
+    setFormOccupation(canonicalizeOccupation(child.occupation) || 'ተማሪ');
+    setFormChapel(officialLoggedInChapel || child.chapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል');
+    setFormParent(child.parentName || '');
+    setFormPhone(child.phone || '');
+    setFormResidence(child.residence || '');
+    setFormVillage(child.fellowshipOrVillage || '');
+    setFormNotes(child.notes || '');
+    setIsAddModalOpen(true);
+  };
+
+  const handleSaveChild = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formName.trim()) {
+      alert('እባክዎ የልጁን ሙሉ ስም ያስገቡ!');
+      return;
+    }
+
+    if (!editingChild && childAddMode === 'by_code' && onAddChurchMember) {
+      if (!matchedChildFamilyHead) {
+        alert('እባክዎን ትክክለኛ የወላጅ/ቤተሰብ ኮድ (ለምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513 ወይም 0513) ያስገቡ!');
+        return;
+      }
+      const parsedFormAge = parseInt(formAge, 10);
+      const ageNum = isNaN(parsedFormAge) ? 5 : Math.max(0, parsedFormAge);
+      const officialCh = officialLoggedInChapel || mapToOfficialChapel(matchedChildFamilyHead.chapel || '');
+      const rootFamCode = getRootFamilyBaseCode(
+        matchedChildFamilyHead.familyCode || matchedChildFamilyHead.memberCode || '',
+        officialCh
+      );
+      const created = onAddChurchMember({
+        name: formName.trim(),
+        gender: formGender || 'ወ',
+        age: ageNum,
+        educationLevel: canonicalizeEducationLevel(formEducationLevel),
+        occupation: canonicalizeOccupation(formOccupation) || 'ተማሪ',
+        chapel: officialCh,
+        parentName: formParent.trim() || matchedChildFamilyHead.parentName || matchedChildFamilyHead.name,
+        phone: formPhone.trim() || matchedChildFamilyHead.phone || undefined,
+        residence: formResidence.trim() || matchedChildFamilyHead.residence || undefined,
+        relationToHead: 'ልጅ',
+        familyCode: rootFamCode || undefined,
+        registeredDate: new Date().toISOString().split('T')[0]
+      });
+      const assignedCode =
+        (created && 'memberCode' in created && created.memberCode) || childNextSubCodePreview;
+      setChildCodeSuccessMsg(
+        `✓ "${formName.trim()}" በቤተሰብ ኮድ ${rootFamCode} ስር በንዑስ ኮድ ${assignedCode} ተመዝግቧል!`
+      );
+      setTimeout(() => setChildCodeSuccessMsg(''), 8000);
+      setIsAddModalOpen(false);
+      return;
+    }
+
+    const parsedFormAge = parseInt(formAge, 10);
+    const payload: Omit<ChurchChild, 'id'> = {
+      name: formName.trim(),
+      gender: formGender || 'ወ',
+      age: isNaN(parsedFormAge) ? 5 : Math.max(0, parsedFormAge),
+      educationLevel: canonicalizeEducationLevel(formEducationLevel),
+      occupation: canonicalizeOccupation(formOccupation),
+      chapel: officialLoggedInChapel || formChapel.trim() || undefined,
+      parentName: formParent.trim() || undefined,
+      phone: formPhone.trim() || undefined,
+      residence: formResidence.trim() || undefined,
+      fellowshipOrVillage: formVillage.trim() || undefined,
+      notes: formNotes.trim() || undefined,
+      registeredDate: editingChild?.registeredDate || new Date().toISOString().split('T')[0]
+    };
+
+    if (editingChild) {
+      onUpdateChild({
+        ...payload,
+        memberCode: editingChild.memberCode,
+        familyCode: editingChild.familyCode,
+        id: editingChild.id
+      });
+    } else {
+      onAddChild(payload);
+    }
+
+    setIsAddModalOpen(false);
+  };
+
+  // Enroll in Sunday School handler
+  const handleConfirmEnroll = () => {
+    if (!enrollTargetChild || !selectedEnrollClass) return;
+    onEnrollToSundaySchool(enrollTargetChild, selectedEnrollClass);
+    setEnrollTargetChild(null);
+  };
+
+  // Batch import all missing Sunday School students into Church Registry
+  const handleBatchImportMissing = () => {
+    if (missingFromChurchChildren.length === 0) return;
+    const confirmMsg = `በሰንበት ት/ቤት ያሉትን ${missingFromChurchChildren.length} ተማሪዎች ወደ ቤተክርስቲያኒቱ አጠቃላይ የልጆች መረጃ ቋት ማስገባት ይፈልጋሉ?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const toImport = missingFromChurchChildren.map((item) => ({
+      name: item.student.name,
+      gender: item.student.gender || 'ወ',
+      age: item.student.age || 7,
+      className: item.className,
+      chapel: item.student.chapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል',
+      phone: item.student.phone
+    }));
+
+    onImportMissingStudentsToChurchChildren(toImport);
+    setViewFilter('all');
+  };
+
+  // Single import of a missing Sunday School student
+  const handleImportSingleMissing = (item: { student: Student; className: string }) => {
+    onImportMissingStudentsToChurchChildren([
+      {
+        name: item.student.name,
+        gender: item.student.gender || 'ወ',
+        age: item.student.age || 7,
+        className: item.className,
+        chapel: item.student.chapel || chapelList[0] || 'ዋናው ማዕከል ቻፕል',
+        phone: item.student.phone
+      }
+    ]);
+  };
+
+  // Excel Export Handler
+  const handleExportExcel = () => {
+    // Sheet 1: Children list (0-14 years)
+    const headers = [
+      'ተ.ቁ',
+      'መለያ ኮድ',
+      activeNameMode === 'en' ? 'የልጁ ሙሉ ስም (English)' : 'የልጁ ሙሉ ስም',
+      ...(activeNameMode === 'both' ? ['Child Name (English)'] : []),
+      'ጾታ',
+      'ዕድሜ',
+      'የዕድሜ ምድብ',
+      'የትምህርት ደረጃ',
+      'የስራ ዓይነት',
+      'ቻፕል (አጥቢያ)',
+      'በሰንበት ት/ቤት ይማራል?',
+      'የሰንበት ት/ቤት ክፍል',
+      activeNameMode === 'en' ? 'የወላጅ/አሳዳጊ ስም (English)' : 'የወላጅ/አሳዳጊ ስም',
+      ...(activeNameMode === 'both' ? ['Parent Name (English)'] : []),
+      'የወላጅ ስልክ ቁጥር',
+      'መኖሪያ አካባቢ',
+      'ህብረት/መንደር',
+      'የተመዘገበበት ቀን',
+      'ማስታወሻ'
+    ];
+
+    const rows = filteredChildren.map((c, idx) => {
+      const numAge = parseInt(String(c.age || '0'), 10) || 0;
+      let ageGroupStr = '15+';
+      if (numAge <= 3) ageGroupStr = '0-3 ዓመት';
+      else if (numAge <= 6) ageGroupStr = '4-6 ዓመት';
+      else if (numAge <= 9) ageGroupStr = '7-9 ዓመት';
+      else if (numAge <= 12) ageGroupStr = '10-12 ዓመት';
+      else if (numAge <= 14) ageGroupStr = '13-14 ዓመት';
+
+      const enChildName = transliterateAmharicToEnglish(c.name);
+      const enParentName = c.parentName ? transliterateAmharicToEnglish(c.parentName) : '-';
+
+      return [
+        idx + 1,
+        c.memberCode || '-',
+        activeNameMode === 'en' ? enChildName : c.name,
+        ...(activeNameMode === 'both' ? [enChildName] : []),
+        c.gender === 'ወ' ? 'ወንድ' : c.gender === 'ሴ' ? 'ሴት' : '-',
+        c.age || '-',
+        ageGroupStr,
+        canonicalizeEducationLevel(c.educationLevel) || (numAge <= 3 ? 'ጨቅላ/ያልጀመረ' : numAge <= 6 ? 'መዋዕለ ሕፃናት (KG)' : `${numAge - 6}ኛ ክፍል`),
+        canonicalizeOccupation(c.occupation) || (numAge <= 3 ? 'የቤት ውስጥ' : 'ተማሪ'),
+        c.chapel || 'ዋናው ማዕከል ቻፕል',
+        c.isEnrolled ? 'አዎ (ይማራል)' : 'አይማርም',
+        c.enrolledClass || '-',
+        activeNameMode === 'en' ? enParentName : c.parentName || '-',
+        ...(activeNameMode === 'both' ? [enParentName] : []),
+        c.phone || '-',
+        c.residence || '-',
+        c.fellowshipOrVillage || '-',
+        formatDualDateText(c.registeredDate, '-'),
+        c.notes || ''
+      ];
+    });
+
+    // Sheet 2: Chapel breakdown stats
+    const chapelHeaders = ['ቻፕል (አጥቢያ ማዕከል)', 'ጠቅላላ ልጆች', 'በሰንበት ት/ቤት የሚማሩ', 'የማይማሩ', 'ወንድ', 'ሴት', 'የመማር ምጣኔ (%)'];
+    const chapelRows = chapelStats.chapels.map((ch) => {
+      const st = chapelStats.statsMap[ch];
+      const rate = st.total > 0 ? `${Math.round((st.enrolled / st.total) * 100)}%` : '0%';
+      return [ch, st.total, st.enrolled, st.notEnrolled, st.male, st.female, rate];
+    });
+
+    // Sheet 3: Age Demographic stats table
+    const statHeaders = ['የዕድሜ ምድብ', 'ወንድ', 'ሴት', 'ድምር', 'በሰንበት ት/ቤት የሚማሩ', 'የማይማሩ', 'የመቶኛ ድርሻ (%)'];
+    const statRows = demographicStats.cohorts.map((coh) => [
+      coh.label,
+      coh.male,
+      coh.female,
+      coh.total,
+      coh.enrolled,
+      coh.notEnrolled,
+      demographicStats.totalChildren > 0
+        ? `${Math.round((coh.total / demographicStats.totalChildren) * 100)}%`
+        : '0%'
+    ]);
+
+    const sheets = [
+      { name: 'የልጆች ቋት (0-14 ዓመት)', data: [headers, ...rows] },
+      { name: 'የቻፕሎች ስታትስቲክስ', data: [chapelHeaders, ...chapelRows] },
+      { name: 'የዕድሜ ምድብ ስታቲስቲክስ', data: [statHeaders, ...statRows] }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    sheets.forEach((sh) => {
+      const ws = XLSX.utils.aoa_to_sheet(sh.data);
+      XLSX.utils.book_append_sheet(wb, ws, sh.name);
+    });
+
+    const fileName = `የብርብር_ቤተክርስቲያን_የልጆች_ቋት_${currentYear}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  // Download Sample Excel Template
+  const handleDownloadSampleTemplate = () => {
+    const headers = [
+      'ተ.ቁ',
+      'የልጁ ሙሉ ስም',
+      'ጾታ (ወ/ሴ)',
+      'ዕድሜ (0-14)',
+      'የትምህርት ደረጃ',
+      'የስራ ዓይነት',
+      'ቻፕል',
+      'የወላጅ ስም',
+      'የወላጅ ስልክ',
+      'መኖሪያ አካባቢ',
+      'ህብረት/መንደር',
+      'ማስታወሻ'
+    ];
+    const sampleRows = [
+      [1, 'ዮናታን ዳዊት', 'ወ', 2, 'ጨቅላ/ያልጀመረ', 'የቤት ውስጥ', 'ኤልሮኢ ቻፕል', 'ዳዊት ታደሰ', '0911223344', 'ቀበሌ 01', 'ቤቴል ህብረት', 'ጨቅላ ህፃን'],
+      [2, 'ሩት ተስፋዬ', 'ሴ', 5, 'መዋዕለ ሕፃናት (KG 2)', 'ተማሪ', 'ሻሎም ቻፕል', 'ተስፋዬ በቀለ', '0922334455', 'ቀበሌ 02', 'ሰላም ህብረት', ''],
+      [3, 'አማኑኤል መሠረት', 'ወ', 8, '2ኛ ክፍል', 'ተማሪ', 'ቤቴል ቻፕል', 'መሠረት ሌቃ', '0933445566', 'ቀበሌ 01', 'አማኑኤል ህብረት', ''],
+      [4, 'ራሔል አሸናፊ', 'ሴ', 11, '5ኛ ክፍል', 'ተማሪ', 'ያህዌ ቻፕል', 'አሸናፊ ጫፋ', '0944556677', 'ቀበሌ 03', 'ጽዮን ህብረት', ''],
+      [5, 'ዳዊት መስፍን', 'ወ', 14, '8ኛ ክፍል', 'ተማሪ', 'ኤዴን ቻፕል', 'መስፍን ማንጁራ', '0955667788', 'መንደር 1', 'ቤቴል ህብረት', '']
+    ];
+    downloadXLSX([headers, ...sampleRows], 'የልጆች_መረጃ_መሙያ_ናሙና.xlsx', 'የልጆች መረጃ');
+  };
+
+  // Apply parsed workbook output into Import Preview state
+  const applyParsedWorkbookToPreview = (
+    workbook: XLSX.WorkBook,
+    refYear: number,
+    ageMode: 'auto' | 'direct' | 'birthyear',
+    defChapel: string,
+    overrideFirst?: SheetRowOverrideMapping
+  ) => {
+    const effectiveDefaultChapel = officialLoggedInChapel || defChapel;
+    const parsed = parseChurchWorkbookAllSheets(workbook, parseChildAge, {
+      refYear,
+      ageMode,
+      defaultChapelFallback: effectiveDefaultChapel,
+      firstSheetOverride: overrideFirst
+    });
+
+    if (parsed.firstSheetCols) {
+      const c = parsed.firstSheetCols;
+      if (!overrideFirst) {
+        setImportHeaderCols(c.headerCols);
+        setImportHeaderRowIdx(c.headerIdx);
+        setImportColName(c.nameIdx);
+        setImportColFather(c.fatherIdx);
+        setImportColGrandfather(c.grandfatherIdx);
+        setImportColGender(c.genderIdx);
+        setImportColAge(c.ageIdx);
+        setImportColChapel(c.chapelIdx);
+        setImportColEducation(c.educationIdx);
+        setImportColOccupation(c.occupationIdx);
+        setImportColParent(c.parentIdx);
+        setImportColPhone(c.phoneIdx);
+        setImportColResidence(c.residenceIdx);
+      }
+    }
+    if (parsed.firstSheetRawRows) {
+      setImportRawRows(parsed.firstSheetRawRows);
+    }
+
+    const scopedChildren = officialLoggedInChapel
+      ? parsed.children.filter((ch) => mapToOfficialChapel(ch.chapel || effectiveDefaultChapel) === officialLoggedInChapel)
+      : parsed.children;
+
+    setImportTotalRows(parsed.members.length);
+    setImportChildrenPreview(scopedChildren);
+    setImportAdultsSkipped(parsed.adultsSkipped);
+
+    const chapelsMap: Record<string, number> = {};
+    scopedChildren.forEach((ch) => {
+      const name = ch.chapel || effectiveDefaultChapel;
+      chapelsMap[name] = (chapelsMap[name] || 0) + 1;
+    });
+    setImportSelectedChapels(officialLoggedInChapel ? [officialLoggedInChapel] : Object.keys(chapelsMap));
+    setImportActiveTab('children');
+  };
+
+  // Handle File Upload from General Church Database with 0-14 Child Filter (ALL Sheets + Family Phone Propagation)
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportFileName(file.name);
+    const reader = new FileReader();
+
+    reader.onload = (evt) => {
+      try {
+        const buffer = evt.target?.result;
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          alert('ፋይሉ ምንም ሺት (Sheet) አልያዘም!');
+          return;
+        }
+
+        setImportWorkbookRef(workbook);
+        applyParsedWorkbookToPreview(workbook, importRefYear, importAgeMode, importDefaultChapel);
+      } catch (err) {
+        console.error('Error parsing excel file', err);
+        alert('ፋይሉን ማንበብ አልተቻለም። እባክዎ ትክክለኛ Excel ወይም CSV ፋይል መሆኑን ያረጋግጡ።');
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Re-run processing whenever user alters column mappings or age settings
+  const handleReapplyMapping = (
+    updatedMapping?: Partial<{
+      nameIdx: number;
+      fatherIdx: number;
+      grandfatherIdx: number;
+      genderIdx: number;
+      ageIdx: number;
+      chapelIdx: number;
+      educationIdx: number;
+      occupationIdx: number;
+      parentIdx: number;
+      phoneIdx: number;
+      residenceIdx: number;
+    }>,
+    updatedYear?: number,
+    updatedMode?: 'auto' | 'direct' | 'birthyear',
+    updatedDefChapel?: string
+  ) => {
+    if (!importWorkbookRef) return;
+    const overrideFirst: SheetRowOverrideMapping = {
+      headerIdx: importHeaderRowIdx,
+      nameIdx: updatedMapping?.nameIdx ?? importColName,
+      fatherIdx: updatedMapping?.fatherIdx ?? importColFather,
+      grandfatherIdx: updatedMapping?.grandfatherIdx ?? importColGrandfather,
+      genderIdx: updatedMapping?.genderIdx ?? importColGender,
+      ageIdx: updatedMapping?.ageIdx ?? importColAge,
+      chapelIdx: updatedMapping?.chapelIdx ?? importColChapel,
+      educationIdx: updatedMapping?.educationIdx ?? importColEducation,
+      occupationIdx: updatedMapping?.occupationIdx ?? importColOccupation,
+      parentIdx: updatedMapping?.parentIdx ?? importColParent,
+      phoneIdx: updatedMapping?.phoneIdx ?? importColPhone,
+      residenceIdx: updatedMapping?.residenceIdx ?? importColResidence
+    };
+    const refY = updatedYear ?? importRefYear;
+    const mode = updatedMode ?? importAgeMode;
+    const defCh = updatedDefChapel ?? importDefaultChapel;
+
+    applyParsedWorkbookToPreview(importWorkbookRef, refY, mode, defCh, overrideFirst);
+  };
+
+  // Distinct Chapels in the uploaded Excel file with child counts
+  const importChapelsSummary = useMemo(() => {
+    const map: { [chapel: string]: number } = {};
+    importChildrenPreview.forEach((c) => {
+      const ch = c.chapel || importDefaultChapel;
+      map[ch] = (map[ch] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, count]) => ({ name, count }));
+  }, [importChildrenPreview, importDefaultChapel]);
+
+  // Children filtered by Multi-Chapel Selection in the Import Preview
+  const displayedImportChildren = useMemo(() => {
+    if (importSelectedChapels.length === 0) return importChildrenPreview;
+    return importChildrenPreview.filter((c) => {
+      const chNorm = normalizeChapel(c.chapel || importDefaultChapel);
+      return importSelectedChapels.some(
+        (sel) =>
+          normalizeChapel(sel) === chNorm ||
+          (c.chapel || '').includes(sel) ||
+          sel.includes(c.chapel || '')
+      );
+    });
+  }, [importChildrenPreview, importSelectedChapels, importDefaultChapel]);
+
+  // Toggle individual chapel selection in Import modal
+  const handleToggleImportChapel = (chapelName: string) => {
+    if (officialLoggedInChapel) return;
+    setImportSelectedChapels((prev) => {
+      if (prev.includes(chapelName)) {
+        return prev.filter((c) => c !== chapelName);
+      } else {
+        return [...prev, chapelName];
+      }
+    });
+  };
+
+  // Toggle individual chapel filter in Main Tab
+  const handleToggleTabChapelFilter = (chapelName: string) => {
+    if (officialLoggedInChapel) return;
+    setSelectedChapels((prev) => {
+      if (prev.includes(chapelName)) {
+        return prev.filter((c) => c !== chapelName);
+      } else {
+        return [...prev, chapelName];
+      }
+    });
+  };
+
+  // Confirm Import (Supports multi-chapel filter and Clear Old & Replace)
+  const handleConfirmImport = () => {
+    if (displayedImportChildren.length === 0) return;
+
+    if (importMode === 'replace') {
+      if (officialLoggedInChapel) {
+        if (onClearChurchChildren) {
+          onClearChurchChildren([officialLoggedInChapel]);
+        }
+        onBatchAddChildren(displayedImportChildren, 'append');
+      } else if (
+        importSelectedChapels.length === 0 ||
+        importSelectedChapels.length >= importChapelsSummary.length
+      ) {
+        // Clear all church children and replace
+        onBatchAddChildren(displayedImportChildren, 'replace');
+      } else {
+        // Clear only selected chapels
+        if (onClearChurchChildren) {
+          onClearChurchChildren(importSelectedChapels);
+        }
+        onBatchAddChildren(displayedImportChildren, 'append');
+      }
+    } else {
+      onBatchAddChildren(displayedImportChildren, 'append');
+    }
+
+    setIsImportModalOpen(false);
+    setImportChildrenPreview([]);
+    setImportAdultsSkipped([]);
+    setImportTotalRows(0);
+    setImportRawRows([]);
+    setImportSelectedChapels([]);
+    setImportFileName('');
+  };
+
+  // Clear Church Children data handler (Supports Clear All or Clear Selected Chapels)
+  const handleExecuteClear = () => {
+    if (!onClearChurchChildren) return;
+    if (officialLoggedInChapel) {
+      onClearChurchChildren([officialLoggedInChapel]);
+    } else if (clearScope === 'all') {
+      onClearChurchChildren('all');
+    } else {
+      onClearChurchChildren(clearSelectedChapels);
+    }
+    setIsClearModalOpen(false);
+    setClearConfirmWord('');
+    setClearSelectedChapels(officialLoggedInChapel ? [officialLoggedInChapel] : []);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Printable Letterhead (Shown only when printing) */}
+      <div className="hidden print:block text-center border-b-2 border-slate-900 pb-4 mb-4">
+        <h1 className="text-xl font-black text-slate-900">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
+        <h2 className="text-base font-bold text-slate-800">የልጆች አገልግሎት ዘርፍ</h2>
+        <h3 className="text-sm font-semibold text-slate-700 mt-1">
+          የቤተክርስቲያኒቱ ልጆች የመረጃ ቋት እና የሰንበት ት/ቤት የመማር ሁኔታ ሪፖርት ({currentYear} ዓ.ም)
+        </h3>
+        <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
+          የታተመበት ቀንና ሰዓት፦ {formatDualDateTimeText(getAdjustedNow())}
+        </p>
+      </div>
+
+      {/* Top Banner / Toolbar */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm print:hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-900 flex items-center justify-center font-bold">
+                <Users className="w-5 h-5 text-blue-900" />
+              </div>
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900">
+                  {officialLoggedInChapel
+                    ? `${officialLoggedInChapel} - የልጆች መረጃ ቋት`
+                    : 'የቤተክርስቲያኒቱ አጠቃላይ የልጆች መረጃ ቋት'}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {officialLoggedInChapel
+                    ? `የ${officialLoggedInChapel} ብቻ የ0-14 ዓመት ልጆች መዝገብ እና የሰንበት ት/ቤት የመማር ሁኔታ ማስተባበሪያ`
+                    : 'ከሰንበት ት/ቤት ጋር በስም በማገናኘት የሚማሩና የማይማሩትን፣ ቻፕላቸውን እና የወላጅ ስልክ ቁጥር ማስተባበሪያ'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {onAddChurchMember && (
+              <button
+                type="button"
+                onClick={openAddByCodeModal}
+                className="bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="በወላጅ/ቤተሰብ ኮድ (0513 → 0513/2) ልጅ መመዝገቢያ"
+              >
+                <KeyRound className="w-4 h-4 text-amber-200" />
+                <span>🔑 በቤተሰብ ኮድ ልጅ ጨምር</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
+            >
+              <UserPlus className="w-4 h-4 text-amber-300" />
+              <span>+ አዲስ ልጅ መዝግብ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsImportModalOpen(true)}
+              className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
+              title="ልጆችን ከExcel (.xlsx) ወይም CSV ፋይል አስገባ"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>📥 ኤክሴል አስገባ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 border border-slate-200"
+              title="ሙሉ መረጃውን በExcel አውርድ"
+            >
+              <Download className="w-4 h-4 text-slate-600" />
+              <span>📤 ኤክሴል አውርድ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsNameCompareModalOpen(true)}
+              className="bg-indigo-900 hover:bg-indigo-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm border border-indigo-700/60 cursor-pointer"
+              title="ከሰንበት ትምህርት ቤት ጋር በስም (ዕድሜው ባይገናኝም) አስተያይና አመሳክር"
+            >
+              <GraduationCap className="w-4 h-4 text-indigo-300" />
+              <span>⚖️ በስም አስተያይ (ማመሳሰያ)</span>
+            </button>
+
+            {currentUserRole === 'admin' && onBulkIncrementAges && !officialLoggedInChapel && (
+              <button
+                type="button"
+                onClick={() => setIsAgeModalOpen(true)}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm border border-amber-300 cursor-pointer"
+                title="የ2017 ዓ/ም ልጆች እና አባላት ላይ በየዓመቱ ዕድሜ በአንዴ መጨመሪያ"
+              >
+                <Calendar className="w-4 h-4 text-slate-900" />
+                <span>📅 ዓመታዊ ዕድሜ ጨምር ({ageReferenceYear} ዓ/ም)</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              title="ሪፖርት አትም ወይም በPDF አስቀምጥ"
+            >
+              <Printer className="w-4 h-4" />
+              <span>🖨️ ፕሪንት / PDF</span>
+            </button>
+
+            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1" title="ስሞችን ያለ ትርጉም በቀጥታ ወደ እንግሊዝኛ መቀየሪያ">
+              <Languages className="w-3.5 h-3.5 text-indigo-700 ml-1" />
+              <button
+                type="button"
+                onClick={() => setActiveNameMode('am')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  activeNameMode === 'am' ? 'bg-blue-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                አማ
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveNameMode('both')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  activeNameMode === 'both' ? 'bg-blue-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                አማ+EN
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveNameMode('en')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  activeNameMode === 'en' ? 'bg-blue-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                English
+              </button>
+            </div>
+
+            {onOpenTransliterator && (
+              <button
+                type="button"
+                onClick={onOpenTransliterator}
+                className="bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="ስሞችን ያለ ትርጉም በቀጥታ ወደ እንግሊዝኛ መቀየሪያ"
+              >
+                <Languages className="w-4 h-4 text-amber-300" />
+                <span>ስም ወደ EN ቀይር</span>
+              </button>
+            )}
+
+            {onClearChurchChildren && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (officialLoggedInChapel) {
+                    setClearScope('selected');
+                    setClearSelectedChapels([officialLoggedInChapel]);
+                  } else if (selectedChapels.length > 0) {
+                    setClearScope('selected');
+                    setClearSelectedChapels(selectedChapels);
+                  } else if (selectedChapelFilter !== 'all') {
+                    setClearScope('selected');
+                    setClearSelectedChapels([selectedChapelFilter]);
+                  } else {
+                    setClearScope('all');
+                  }
+                  setIsClearModalOpen(true);
+                }}
+                className="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 border border-rose-200/80 shadow-2xs cursor-pointer"
+                title={
+                  officialLoggedInChapel
+                    ? `የ${officialLoggedInChapel}ን የልጆች መረጃ አጽዳ`
+                    : 'ቀድሞ የገባውን የልጆች መረጃ ሙሉ በሙሉ ወይም በቻፕል ለይተህ አጽዳ'
+                }
+              >
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                <span>🧹 መረጃ አጽዳ</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {childCodeSuccessMsg && (
+          <div className="mt-3 p-3 bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-xl text-xs font-extrabold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{childCodeSuccessMsg}</span>
+          </div>
+        )}
+      </div>
+
+      {/* KPI & Summary Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 print:grid-cols-5">
+        {/* Total Children */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-3.5 shadow-xs">
+          <p className="text-[11px] font-semibold text-slate-500">ጠቅላላ የቤተክርስቲያን ልጆች</p>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-2xl font-black text-slate-900 tabular-nums">
+              {demographicStats.totalChildren}
+            </span>
+            <span className="text-xs font-bold text-slate-400">100%</span>
+          </div>
+        </div>
+
+        {/* Male */}
+        <div className="bg-white rounded-xl border border-blue-200/80 bg-blue-50/20 p-3.5 shadow-xs">
+          <p className="text-[11px] font-semibold text-blue-700">ወንዶች ልጆች</p>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-2xl font-black text-blue-900 tabular-nums">
+              {demographicStats.totalMale}
+            </span>
+            <span className="text-xs font-bold text-blue-600">
+              {demographicStats.totalChildren > 0
+                ? `${Math.round((demographicStats.totalMale / demographicStats.totalChildren) * 100)}%`
+                : '0%'}
+            </span>
+          </div>
+        </div>
+
+        {/* Female */}
+        <div className="bg-white rounded-xl border border-rose-200/80 bg-rose-50/20 p-3.5 shadow-xs">
+          <p className="text-[11px] font-semibold text-rose-700">ሴቶች ልጆች</p>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-2xl font-black text-rose-900 tabular-nums">
+              {demographicStats.totalFemale}
+            </span>
+            <span className="text-xs font-bold text-rose-600">
+              {demographicStats.totalChildren > 0
+                ? `${Math.round((demographicStats.totalFemale / demographicStats.totalChildren) * 100)}%`
+                : '0%'}
+            </span>
+          </div>
+        </div>
+
+        {/* Enrolled in Sunday School */}
+        <div className="bg-white rounded-xl border border-emerald-200/80 bg-emerald-50/20 p-3.5 shadow-xs">
+          <p className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>በሰንበት ት/ቤት የሚማሩ</span>
+          </p>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-2xl font-black text-emerald-900 tabular-nums">
+              {demographicStats.totalEnrolled}
+            </span>
+            <span className="text-xs font-bold text-emerald-700">
+              {demographicStats.totalChildren > 0
+                ? `${Math.round((demographicStats.totalEnrolled / demographicStats.totalChildren) * 100)}%`
+                : '0%'}
+            </span>
+          </div>
+        </div>
+
+        {/* Not Enrolled in Sunday School */}
+        <div className="bg-white rounded-xl border border-amber-200/80 bg-amber-50/20 p-3.5 shadow-xs">
+          <p className="text-[11px] font-semibold text-amber-800 flex items-center gap-1">
+            <AlertCircle className="w-3.5 h-3.5" />
+            <span>የማይማሩ (ክትትል የሚሹ)</span>
+          </p>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-2xl font-black text-amber-900 tabular-nums">
+              {demographicStats.totalNotEnrolled}
+            </span>
+            <span className="text-xs font-bold text-amber-700">
+              {demographicStats.totalChildren > 0
+                ? `${Math.round((demographicStats.totalNotEnrolled / demographicStats.totalChildren) * 100)}%`
+                : '0%'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Chapel Breakdown Strip: Direct Chapel connection & Multi-Chapel Filtering */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100 gap-2">
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+              <Church className="w-4 h-4 text-blue-900" />
+              <span>የቻፕሎች (አጥቢያዎች) የመማር ሁኔታ ማጠቃለያ እና ማጣሪያ</span>
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              በየቻፕሉ ያሉ ልጆች፣ የሚማሩ፣ የማይማሩ እና የወላጅ ስልክ መገናኛ (አንድ ወይም ከዚያ በላይ ቻፕሎችን መርጠው ማጣራት ይችላሉ)
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap print:hidden">
+            {!officialLoggedInChapel && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedChapels(chapelStats.chapels);
+                  setSelectedChapelFilter('all');
+                }}
+                className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs"
+                title="በስርዓቱ ውስጥ ያሉትን 10ሩንም ቻፕሎች በአንድ ጊዜ ምረጥ"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-blue-800" />
+                <span>✓ ሁሉንም ቻፕሎች በአንድ ጊዜ ምረጥ</span>
+              </button>
+            )}
+
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setDisplayLayoutMode('table')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  displayLayoutMode === 'table'
+                    ? 'bg-blue-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="ሁሉንም የቤተክርስቲያን ልጆች በአንድ የተደራጀ ማስተር ሰንጠረዥ አሳይ"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>📋 በአንድ ሰንጠረዥ</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayLayoutMode('grouped_chapels')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  displayLayoutMode === 'grouped_chapels'
+                    ? 'bg-blue-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="በየቻፕሉ የተከፋፈለ እይታ"
+              >
+                <Church className="w-3.5 h-3.5 text-amber-300" />
+                <span>🏛️ በየቻፕሉ የተከፋፈለ እይታ</span>
+              </button>
+            </div>
+
+            {!officialLoggedInChapel && (selectedChapels.length > 0 || selectedChapelFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedChapels([]);
+                  setSelectedChapelFilter('all');
+                }}
+                className="text-xs font-bold text-rose-700 hover:text-rose-900 bg-rose-50 px-3 py-1.5 rounded-xl transition cursor-pointer border border-rose-200"
+              >
+                ✕ የቻፕል ማጣሪያዎችን አጽዳ ({selectedChapels.length > 0 ? `${selectedChapels.length} ቻፕሎች` : selectedChapelFilter})
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className={`grid grid-cols-2 sm:grid-cols-3 ${officialLoggedInChapel ? 'lg:grid-cols-1 max-w-sm' : 'lg:grid-cols-6'} gap-3`}>
+          {chapelStats.chapels.map((ch) => {
+            const st = chapelStats.statsMap[ch];
+            const isSelected = selectedChapels.includes(ch) || selectedChapelFilter === ch;
+            const rate = st.total > 0 ? Math.round((st.enrolled / st.total) * 100) : 0;
+
+            return (
+              <div
+                key={`chapel_stat_${ch}`}
+                onClick={() => handleToggleTabChapelFilter(ch)}
+                className={`p-3.5 rounded-2xl border ${officialLoggedInChapel ? 'cursor-default' : 'cursor-pointer'} transition-all text-left relative ${
+                  isSelected
+                    ? 'border-blue-800 bg-blue-50/90 ring-2 ring-blue-700/30 shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-xs text-slate-900 truncate pr-1" title={ch}>
+                    {ch}
+                  </h4>
+                  <div className="flex items-center gap-1">
+                    {!officialLoggedInChapel && onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'children_coordinator' || currentUserRole === 'leader') && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`"${ch}" ቻፕል ከስርዓቱ በቋሚነት እንዲሰረዝ ይፈልጋሉ?`)) {
+                            onDeleteChapel(ch);
+                          }
+                        }}
+                        className="p-1 hover:bg-rose-100 text-slate-400 hover:text-rose-700 rounded transition cursor-pointer"
+                        title="ቻፕል ሰርዝ"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}} // handled by parent onClick
+                      className="w-3.5 h-3.5 text-blue-900 rounded focus:ring-blue-600 pointer-events-none shrink-0"
+                    />
+                  </div>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="text-xl font-black text-slate-900 tabular-nums">{st.total}</span>
+                  <span className="text-[10px] text-slate-500 font-semibold">{rate}% ይማራሉ</span>
+                </div>
+                <div className="mt-1.5 flex items-center justify-between text-[11px] font-semibold pt-1.5 border-t border-slate-200/60">
+                  <span className="text-emerald-700 flex items-center gap-0.5">
+                    <span>✓</span>
+                    <span className="font-bold">{st.enrolled}</span>
+                  </span>
+                  <span className="text-amber-800 flex items-center gap-0.5">
+                    <span>✕</span>
+                    <span className="font-bold">{st.notEnrolled}</span>
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Age Cohorts Matrix Table (0-3, 4-6, 7-9, 10-12, 13-14) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100 gap-2">
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-blue-800" />
+              <span>የልጆች የዕድሜ ምድቦች ስታቲስቲክስ (ከ0-3፣ ከ4-6፣ ከ7-9፣ ከ10-12 እና ከ13-14)</span>
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              በዕድሜ ምድብ፣ በጾታ (ወንድ/ሴት) እና በሰንበት ት/ቤት የመማር ሁኔታ የተተነተነ ማጠቃለያ
+            </p>
+          </div>
+          {ageFilter !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setAgeFilter('all')}
+              className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 px-2.5 py-1 rounded-lg transition self-start print:hidden"
+            >
+              ✕ የዕድሜ ማጣሪያ አጽዳ
+            </button>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-center">
+                <th className="py-2.5 px-3 text-left">የዕድሜ ምድብ</th>
+                <th className="py-2.5 px-3 bg-blue-50/60 text-blue-900">ወንድ</th>
+                <th className="py-2.5 px-3 bg-rose-50/60 text-rose-900">ሴት</th>
+                <th className="py-2.5 px-3 font-extrabold text-slate-900">ድምር</th>
+                <th className="py-2.5 px-3 bg-emerald-50/60 text-emerald-900">በሰንበት ት/ቤት የሚማሩ</th>
+                <th className="py-2.5 px-3 bg-amber-50/60 text-amber-900">የማይማሩ</th>
+                <th className="py-2.5 px-3">የመቶኛ ድርሻ (%)</th>
+                <th className="py-2.5 px-3 text-right print:hidden">ማጣሪያ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-center">
+              {demographicStats.cohorts.map((coh) => {
+                const isSelected = ageFilter === coh.key;
+                const percentage =
+                  demographicStats.totalChildren > 0
+                    ? Math.round((coh.total / demographicStats.totalChildren) * 100)
+                    : 0;
+
+                return (
+                  <tr
+                    key={coh.key}
+                    onClick={() => setAgeFilter(isSelected ? 'all' : (coh.key as AgeFilter))}
+                    className={`cursor-pointer transition-colors ${
+                      isSelected ? 'bg-blue-50/80 font-bold' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <td className="py-2.5 px-3 text-left font-bold text-slate-900">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full ${
+                            coh.key === '0-3'
+                              ? 'bg-purple-500'
+                              : coh.key === '4-6'
+                              ? 'bg-blue-500'
+                              : coh.key === '7-9'
+                              ? 'bg-emerald-500'
+                              : coh.key === '10-12'
+                              ? 'bg-amber-500'
+                              : coh.key === '13-14'
+                              ? 'bg-rose-500'
+                              : 'bg-slate-400'
+                          }`}
+                        />
+                        <span>{coh.label}</span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3 tabular-nums font-bold text-blue-900 bg-blue-50/30">
+                      {coh.male}
+                    </td>
+                    <td className="py-2.5 px-3 tabular-nums font-bold text-rose-900 bg-rose-50/30">
+                      {coh.female}
+                    </td>
+                    <td className="py-2.5 px-3 tabular-nums font-extrabold text-slate-900">
+                      {coh.total}
+                    </td>
+                    <td className="py-2.5 px-3 tabular-nums font-bold text-emerald-800 bg-emerald-50/30">
+                      {coh.enrolled}
+                    </td>
+                    <td className="py-2.5 px-3 tabular-nums font-bold text-amber-800 bg-amber-50/30">
+                      {coh.notEnrolled}
+                    </td>
+                    <td className="py-2.5 px-3 tabular-nums font-semibold text-slate-600">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden print:hidden">
+                          <div
+                            className="bg-blue-900 h-1.5 rounded-full"
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                        <span>{percentage}%</span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3 text-right print:hidden">
+                      <span className="text-[11px] text-blue-700 font-semibold hover:underline">
+                        {isSelected ? '✓ ተመርጧል' : 'አሳይ →'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-100 font-black border-t-2 border-slate-300 text-center text-slate-900">
+                <td className="py-2.5 px-3 text-left">ጠቅላላ ድምር</td>
+                <td className="py-2.5 px-3 text-blue-950 tabular-nums">{demographicStats.totalMale}</td>
+                <td className="py-2.5 px-3 text-rose-950 tabular-nums">{demographicStats.totalFemale}</td>
+                <td className="py-2.5 px-3 text-slate-950 tabular-nums">{demographicStats.totalChildren}</td>
+                <td className="py-2.5 px-3 text-emerald-950 tabular-nums">{demographicStats.totalEnrolled}</td>
+                <td className="py-2.5 px-3 text-amber-950 tabular-nums">{demographicStats.totalNotEnrolled}</td>
+                <td className="py-2.5 px-3 tabular-nums">100%</td>
+                <td className="py-2.5 px-3 print:hidden"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      {/* Segmented View Filters & Sunday School Sync Hub */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm print:hidden">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Segmented Filter Buttons */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl overflow-x-auto scrollbar-thin">
+            <button
+              type="button"
+              onClick={() => setViewFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${
+                viewFilter === 'all'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>ሁሉም ልጆች</span>
+              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700">
+                {effectiveChurchChildren.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewFilter('enrolled')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${
+                viewFilter === 'enrolled'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>በሰንበት ት/ቤት የሚማሩ</span>
+              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800">
+                {demographicStats.totalEnrolled}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewFilter('not_enrolled')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${
+                viewFilter === 'not_enrolled'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>የማይማሩ (ክትትል & ስልክ)</span>
+              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900">
+                {demographicStats.totalNotEnrolled}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewFilter('missing_from_church')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${
+                viewFilter === 'missing_from_church'
+                  ? 'bg-purple-700 text-white shadow-xs'
+                  : 'text-purple-700 hover:text-purple-900 bg-purple-50'
+              }`}
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>በቋቱ የሌሉ የሰንበት ተማሪዎች</span>
+              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-purple-200 text-purple-900 font-extrabold">
+                {missingFromChurchChildren.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Quick Notice / Action */}
+          {missingFromChurchChildren.length > 0 && viewFilter === 'missing_from_church' && (
+            <button
+              type="button"
+              onClick={handleBatchImportMissing}
+              className="bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shrink-0 shadow-sm"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>ሁሉንም ({missingFromChurchChildren.length}) ወደ ቋቱ አስገባ</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Search and Column Filter Strip (shown across all views so searching by child's name always works) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm print:hidden">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="የልጅ ስም ጽፈው ይፈልጉ (ወይም ወላጅ፣ ስልክ)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white font-medium text-slate-900"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="ፍለጋውን አጽዳ"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {viewFilter !== 'missing_from_church' && (
+            <>
+              {/* Chapel Filter Dropdown */}
+              <div className="flex items-center gap-1.5">
+                <Church className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={selectedChapelFilter}
+                  disabled={Boolean(officialLoggedInChapel)}
+                  onChange={(e) => {
+                    if (officialLoggedInChapel) return;
+                    setSelectedChapelFilter(e.target.value);
+                    setSelectedChapels([]);
+                  }}
+                  className={`w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                    officialLoggedInChapel ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                  }`}
+                >
+                  {!officialLoggedInChapel && <option value="all">ሁሉም ቻፕሎች (አጥቢያዎች)</option>}
+                  {chapelStats.chapels.map((ch) => (
+                    <option key={`opt_ch_${ch}`} value={ch}>
+                      {ch}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Age Filter */}
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={ageFilter}
+                  onChange={(e) => setAgeFilter(e.target.value as AgeFilter)}
+                  className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="all">ሁሉም የዕድሜ ምድቦች</option>
+                  <option value="0-3">ከ0 - 3 ዓመት (ጨቅላና ህፃናት)</option>
+                  <option value="4-6">ከ4 - 6 ዓመት (ጀማሪ ህፃናት)</option>
+                  <option value="7-9">ከ7 - 9 ዓመት (መካከለኛ ህፃናት)</option>
+                  <option value="10-12">ከ10 - 12 ዓመት (ታዳጊዎች)</option>
+                  <option value="13-14">ከ13 - 14 ዓመት (ታዳጊ ወጣቶች)</option>
+                  <option value="15+">ከ15 ዓመት በላይ</option>
+                </select>
+              </div>
+
+              {/* Gender Filter */}
+              <div className="flex items-center gap-1.5">
+                <User className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={genderFilter}
+                  onChange={(e) => setGenderFilter(e.target.value)}
+                  className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="all">ሁሉም ጾታ (ወንድና ሴት)</option>
+                  <option value="ወ">ወንድ ብቻ</option>
+                  <option value="ሴ">ሴት ብቻ</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Reset / Count Indicator */}
+          <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-600">
+            <span>
+              የተገኙ፦{' '}
+              <strong className="text-blue-900 font-extrabold">
+                {viewFilter === 'missing_from_church'
+                  ? filteredMissingFromChurchChildren.length
+                  : filteredChildren.length}
+              </strong>
+            </span>
+            {(searchTerm ||
+              ageFilter !== 'all' ||
+              genderFilter !== 'all' ||
+              (!officialLoggedInChapel && (selectedChapelFilter !== 'all' || selectedChapels.length > 0))) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  setAgeFilter('all');
+                  setGenderFilter('all');
+                  if (!officialLoggedInChapel) {
+                    setSelectedChapelFilter('all');
+                    setSelectedChapels([]);
+                  }
+                }}
+                className="text-rose-600 hover:text-rose-800 hover:underline font-bold cursor-pointer"
+              >
+                ሁሉንም አጽዳ
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Helpful reminder if searching yields 0 while chapel/age/view filters restrict results */}
+        {searchTerm.trim() &&
+          viewFilter !== 'missing_from_church' &&
+          filteredChildren.length === 0 &&
+          churchChildrenWithStatus.length > 0 &&
+          ((!officialLoggedInChapel && (selectedChapelFilter !== 'all' || selectedChapels.length > 0)) ||
+            ageFilter !== 'all' ||
+            genderFilter !== 'all' ||
+            viewFilter !== 'all') && (
+            <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-amber-800 bg-amber-50/70 px-3 py-1.5 rounded-xl">
+              <span>በአሁኑ ማጣሪያ (ቻፕል/ዕድሜ/ሁኔታ) ውስጥ አልተገኘም። በሁሉም ቋት ውስጥ መፈለግ ይፈልጋሉ?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewFilter('all');
+                  if (!officialLoggedInChapel) {
+                    setSelectedChapelFilter('all');
+                    setSelectedChapels([]);
+                  }
+                  setAgeFilter('all');
+                  setGenderFilter('all');
+                }}
+                className="font-extrabold text-blue-900 underline ml-2 cursor-pointer"
+              >
+                በሁሉም ቋት ውስጥ ፈልግ
+              </button>
+            </div>
+          )}
+      </div>
+
+      {/* Main Table or Grouped Chapels View */}
+      {viewFilter !== 'missing_from_church' ? (
+        displayLayoutMode === 'grouped_chapels' ? (
+          <div className="space-y-6">
+            {chapelStats.chapels.map((chName) => {
+              const chChildren = childrenGroupedByChapel[chName] || [];
+              const chStat = chapelStats.statsMap[chName] || { total: 0, enrolled: 0, notEnrolled: 0, male: 0, female: 0 };
+              const rate = chStat.total > 0 ? Math.round((chStat.enrolled / chStat.total) * 100) : 0;
+
+              return (
+                <div key={`grouped_sec_${chName}`} className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden print:break-inside-avoid">
+                  {/* Chapel Section Header */}
+                  <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <Church className="w-5 h-5 text-amber-300 shrink-0" />
+                      <div>
+                        <h3 className="font-extrabold text-base text-white flex items-center gap-2">
+                          <span>{chName}</span>
+                          <span className="bg-amber-400 text-slate-950 text-xs font-black px-2.5 py-0.5 rounded-full">
+                            {chStat.total} ልጆች
+                          </span>
+                        </h3>
+                        <p className="text-[11px] text-slate-300 mt-0.5">
+                          ወንድ፦ <strong>{chStat.male}</strong> | ሴት፦ <strong>{chStat.female}</strong> | በሰንበት ት/ቤት የሚማሩ፦ <strong className="text-emerald-300">{chStat.enrolled} ({rate}%)</strong> | የማይማሩ፦ <strong className="text-amber-300">{chStat.notEnrolled}</strong>
+                        </p>
+                      </div>
+                    </div>
+
+                    {!officialLoggedInChapel && (
+                      <div className="flex items-center gap-2 print:hidden shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleTabChapelFilter(chName)}
+                          className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-white/20 transition shrink-0 cursor-pointer"
+                        >
+                          {selectedChapels.includes(chName) ? '✕ ምርጫውን አስወግድ' : '🔍 ይህን ቻፕል ብቻ አሳይ'}
+                        </button>
+                        {onDeleteChapel && (currentUserRole === 'admin' || currentUserRole === 'children_coordinator' || currentUserRole === 'leader') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`"${chName}" ቻፕል ከስርዓቱ በቋሚነት እንዲሰረዝ ይፈልጋሉ?`)) {
+                                onDeleteChapel(chName);
+                              }
+                            }}
+                            className="bg-rose-500/20 hover:bg-rose-500/40 text-rose-200 hover:text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-rose-400/40 transition shrink-0 cursor-pointer flex items-center gap-1"
+                            title="ቻፕል ሰርዝ"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-300" />
+                            <span>ቻፕል ሰርዝ</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Chapel Children Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
+                          <th className="py-2.5 px-3 text-center w-10">ተ.ቁ</th>
+                          <th className="py-2.5 px-4 font-extrabold text-[12pt] text-slate-900 min-w-[180px]">የልጁ ሙሉ ስም</th>
+                          <th className="py-2.5 px-3 text-center w-14">ጾታ</th>
+                          <th className="py-2.5 px-3 text-center w-14">ዕድሜ</th>
+                          <th className="py-2.5 px-3 min-w-[110px]">የትምህርት ደረጃ</th>
+                          <th className="py-2.5 px-3 min-w-[130px]">የሰንበት ት/ቤት ሁኔታ</th>
+                          <th className="py-2.5 px-3 min-w-[130px]">የወላጅ ስም</th>
+                          <th className="py-2.5 px-3 min-w-[130px]">የወላጅ ስልክ</th>
+                          <th className="py-2.5 px-3 text-center w-20 print:hidden">እርምጃዎች</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {chChildren.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="py-6 text-center text-slate-400 font-medium">
+                              በዚህ ቻፕል እስካሁን የተመዘገበ ልጅ የለም።
+                            </td>
+                          </tr>
+                        ) : (
+                          chChildren.map((child, idx) => {
+                            const isMale = child.gender === 'ወ';
+                            const isFemale = child.gender === 'ሴ';
+                            const isCopied = copiedPhoneId === child.id;
+
+                            return (
+                              <tr key={`grp_ch_${child.id}`} className="hover:bg-blue-50/30 transition-colors">
+                                <td className="py-2 px-3 text-center font-bold text-slate-500 bg-slate-50/50">{idx + 1}</td>
+                                <td className="py-2 px-4 font-bold text-[12pt] text-slate-900">
+                                  <div>{activeNameMode === 'en' ? transliterateAmharicToEnglish(child.name) : child.name}</div>
+                                  {activeNameMode === 'both' && (
+                                    <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                      {transliterateAmharicToEnglish(child.name)}
+                                    </div>
+                                  )}
+                                  {child.memberCode && (
+                                    <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                      {child.memberCode}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                  <span className={`inline-block px-2 py-0.5 rounded font-bold text-[10px] ${isMale ? 'bg-blue-100 text-blue-800' : isFemale ? 'bg-rose-100 text-rose-800' : 'text-slate-400'}`}>
+                                    {isMale ? 'ወንድ' : isFemale ? 'ሴት' : '-'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-center font-bold text-slate-800">
+                                  {child.age !== undefined && child.age !== null && child.age !== '' ? `${child.age} ዓመት` : '-'}
+                                </td>
+                                <td className="py-2 px-3 text-slate-700">{canonicalizeEducationLevel(child.educationLevel) || '-'}</td>
+                                <td className="py-2 px-3">
+                                  {child.isEnrolled ? (
+                                    <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-bold text-[10px] border border-emerald-200">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      <span>ይማራል ({child.enrolledClass})</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-amber-900 bg-amber-50 px-2 py-0.5 rounded font-bold text-[10px] border border-amber-200">
+                                      <AlertCircle className="w-3 h-3 text-amber-600" />
+                                      <span>አይማርም</span>
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-slate-700">
+                                  {child.parentName ? (
+                                    <div>
+                                      <div>
+                                        {activeNameMode === 'en'
+                                          ? transliterateAmharicToEnglish(child.parentName)
+                                          : child.parentName}
+                                      </div>
+                                      {activeNameMode === 'both' && (
+                                        <div className="text-[10px] font-semibold text-indigo-700">
+                                          {transliterateAmharicToEnglish(child.parentName)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    '-'
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 font-mono text-[11px]">
+                                  {child.phone ? (
+                                    <div className="flex items-center gap-1">
+                                      <a href={`tel:${child.phone}`} className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:underline">
+                                        <PhoneCall className="w-3 h-3 text-emerald-600" />
+                                        <span>{child.phone}</span>
+                                      </a>
+                                      <button type="button" onClick={() => handleCopyPhone(child.id, child.phone!)} className="p-1 text-slate-400 hover:text-slate-600">
+                                        {isCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 italic">-</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-center print:hidden">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button type="button" onClick={() => openEditModal(child)} className="p-1 hover:bg-slate-100 text-slate-600 rounded" title="አስተካክል">
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button type="button" onClick={() => { if (window.confirm(`"${child.name}" ይሰረዝ?`)) onDeleteChild(child.id); }} className="p-1 hover:bg-rose-50 text-rose-500 rounded" title="ሰርዝ">
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden print:border-none print:shadow-none print:rounded-none">
+            <div className="overflow-x-auto print:overflow-visible">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-900 text-white uppercase text-[11px] tracking-wider print:bg-slate-800 print:text-white">
+                    <th className="py-3 px-3 text-center w-12 font-bold">ተ.ቁ</th>
+                    <th className="py-3 px-4 font-extrabold text-[13pt] text-white min-w-[200px]">የልጁ ሙሉ ስም</th>
+                    <th className="py-3 px-3 font-bold min-w-[130px]">ቻፕል (አጥቢያ)</th>
+                    <th className="py-3 px-3 text-center font-bold w-16">ጾታ</th>
+                    <th className="py-3 px-3 text-center font-bold w-16">ዕድሜ</th>
+                    <th className="py-3 px-3 font-bold min-w-[120px]">የትምህርት ደረጃ</th>
+                    <th className="py-3 px-3 font-bold min-w-[110px]">የስራ ዓይነት</th>
+                    <th className="py-3 px-3 font-bold min-w-[150px]">የሰንበት ት/ቤት የመማር ሁኔታ</th>
+                    <th className="py-3 px-3 font-bold min-w-[140px]">የወላጅ/አሳዳጊ ስም</th>
+                    <th className="py-3 px-3 font-bold min-w-[140px]">የወላጅ ስልክ ቁጥር</th>
+                    <th className="py-3 px-3 font-bold min-w-[120px]">መኖሪያ ቀበሌ</th>
+                    <th className="py-3 px-3 text-center font-bold w-24 print:hidden">እርምጃዎች</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filteredChildren.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} className="py-12 text-center text-slate-500">
+                        <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                        <p className="font-semibold text-sm">በተመረጠው መስፈርት የተገኘ ልጅ የለም!</p>
+                        <p className="text-xs text-slate-400 mt-1">የፍለጋ ቃሉን ወይም ማጣሪያውን ይቀይሩ ወይም አዲስ ልጅ ይመዝግቡ።</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredChildren.map((child, idx) => {
+                      const isMale = child.gender === 'ወ';
+                      const isFemale = child.gender === 'ሴ';
+                      const isCopied = copiedPhoneId === child.id;
+
+                      return (
+                        <tr
+                          key={child.id}
+                          className="hover:bg-blue-50/40 transition-colors print:break-inside-avoid"
+                        >
+                          {/* Index */}
+                          <td className="py-2.5 px-3 text-center font-bold text-slate-500 bg-slate-50/50 print:bg-transparent">
+                            {idx + 1}
+                          </td>
+
+                          {/* Child Name (13pt Bold) */}
+                          <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[200px] leading-normal">
+                            <div>{activeNameMode === 'en' ? transliterateAmharicToEnglish(child.name) : child.name}</div>
+                            {activeNameMode === 'both' && (
+                              <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                {transliterateAmharicToEnglish(child.name)}
+                              </div>
+                            )}
+                            {child.memberCode && (
+                              <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                {child.memberCode}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Chapel */}
+                          <td className="py-2.5 px-3">
+                            <span className="inline-flex items-center gap-1 font-bold text-[11px] text-blue-900 bg-blue-50/80 px-2.5 py-0.5 rounded-lg border border-blue-200/80 print:border-none print:bg-transparent print:p-0">
+                              <Church className="w-3 h-3 text-blue-700 print:hidden shrink-0" />
+                              <span>{child.chapel || 'ዋናው ማዕከል ቻፕል'}</span>
+                            </span>
+                          </td>
+
+                          {/* Gender */}
+                          <td className="py-2.5 px-3 text-center">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded font-bold text-[11px] ${
+                                isMale
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : isFemale
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'text-slate-400'
+                              } print:bg-transparent print:text-black`}
+                            >
+                              {isMale ? 'ወንድ' : isFemale ? 'ሴት' : '-'}
+                            </span>
+                          </td>
+
+                          {/* Age */}
+                          <td className="py-2.5 px-3 text-center font-bold text-slate-800 tabular-nums">
+                            {child.age !== undefined && child.age !== null && child.age !== '' ? `${child.age} ዓመት` : '-'}
+                          </td>
+
+                          {/* Education Level */}
+                          <td className="py-2.5 px-3">
+                            <span className="inline-flex items-center gap-1 font-semibold text-[11px] text-indigo-900 bg-indigo-50/90 px-2 py-0.5 rounded-lg border border-indigo-200/70 print:border-none print:bg-transparent print:p-0">
+                              <BookOpen className="w-3 h-3 text-indigo-600 print:hidden shrink-0" />
+                              <span>{canonicalizeEducationLevel(child.educationLevel) || '-'}</span>
+                            </span>
+                          </td>
+
+                          {/* Occupation */}
+                          <td className="py-2.5 px-3">
+                            <span className="inline-flex items-center gap-1 font-medium text-[11px] text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg print:border-none print:bg-transparent print:p-0">
+                              <Briefcase className="w-3 h-3 text-slate-500 print:hidden shrink-0" />
+                              <span>{canonicalizeOccupation(child.occupation) || '-'}</span>
+                            </span>
+                          </td>
+
+                          {/* Sunday School Enrollment Status */}
+                          <td className="py-2.5 px-3">
+                            {child.isEnrolled ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-bold text-[11px] print:border-none print:bg-transparent print:p-0">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 print:hidden shrink-0" />
+                                <span>ይማራል ({child.enrolledClass})</span>
+                              </span>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 font-bold text-[11px] print:border-none print:bg-transparent print:p-0">
+                                  <AlertCircle className="w-3 h-3 text-amber-600 print:hidden shrink-0" />
+                                  <span>አይማርም</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEnrollTargetChild(child);
+                                    setSelectedEnrollClass(classList[0] || 'ማቆያ ክፍል');
+                                  }}
+                                  className="text-[11px] text-blue-700 hover:text-blue-900 font-bold hover:underline print:hidden flex items-center gap-0.5"
+                                  title="ይህን ልጅ ወደ ሰንበት ት/ቤት መዝግብ"
+                                >
+                                  <span>መዝግብ</span>
+                                  <ChevronRight className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Parent / Guardian Name */}
+                          <td className="py-2.5 px-3 text-slate-700 font-medium">
+                            {child.parentName ? (
+                              <div>
+                                <div>
+                                  {activeNameMode === 'en'
+                                    ? transliterateAmharicToEnglish(child.parentName)
+                                    : child.parentName}
+                                </div>
+                                {activeNameMode === 'both' && (
+                                  <div className="text-[10px] font-semibold text-indigo-700">
+                                    {transliterateAmharicToEnglish(child.parentName)}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+
+                          {/* Parent Phone Number with Quick Call & Copy */}
+                          <td className="py-2.5 px-3 text-slate-800 font-mono text-[11px]">
+                            {child.phone ? (
+                              <div className="flex items-center gap-1.5">
+                                <a
+                                  href={`tel:${child.phone}`}
+                                  className="inline-flex items-center gap-1 font-bold text-emerald-800 hover:text-emerald-950 hover:underline bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 print:border-none print:bg-transparent print:p-0"
+                                  title="ደውል"
+                                >
+                                  <PhoneCall className="w-3 h-3 text-emerald-600 print:hidden shrink-0" />
+                                  <span>{child.phone}</span>
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyPhone(child.id, child.phone!)}
+                                  className="p-1 hover:bg-slate-200 text-slate-500 rounded print:hidden transition"
+                                  title="ስልክ ቅዳ"
+                                >
+                                  {isCopied ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                  )}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic text-[11px]">- ስልክ የለም -</span>
+                            )}
+                          </td>
+
+                          {/* Residence */}
+                          <td className="py-2.5 px-3 text-slate-600">
+                            {child.residence || child.fellowshipOrVillage || '-'}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-2.5 px-3 text-center print:hidden">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(child)}
+                                className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-blue-700 rounded-lg transition"
+                                title="አስተካክል"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`"${child.name}" ከመረጃ ቋቱ ይሰረዝ?`)) {
+                                    onDeleteChild(child.id);
+                                  }
+                                }}
+                                className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition"
+                                title="ሰርዝ"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) ) : (
+        /* Special View: Sunday School Students Missing From Church Children Registry */
+        <div className="bg-white rounded-2xl border border-purple-200 shadow-sm overflow-hidden">
+          <div className="p-4 bg-purple-50/70 border-b border-purple-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-extrabold text-purple-950 flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-purple-700" />
+                <span>በሰንበት ትምህርት ቤት የተመዘገቡ ነገር ግን በቤተክርስቲያኒቱ ቋት የሌሉ ተማሪዎች</span>
+              </h3>
+              <p className="text-xs text-purple-800/80 mt-0.5">
+                እነዚህ ተማሪዎች በክፍል ውጤት ወይም አተንዳንስ መዝገብ ውስጥ ይገኛሉ፤ ወደ ቤተክርስቲያኒቱ የልጆች ቋት በማስገባት መረጃቸውን ሙሉ ያድርጉ።
+              </p>
+            </div>
+            {missingFromChurchChildren.length > 0 && (
+              <button
+                type="button"
+                onClick={handleBatchImportMissing}
+                className="bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shrink-0 shadow-sm"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>ሁሉንም ({missingFromChurchChildren.length}) ወደ ቋቱ አስገባ</span>
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-purple-900 text-white uppercase text-[11px] tracking-wider">
+                  <th className="py-3 px-3 text-center w-12 font-bold">ተ.ቁ</th>
+                  <th className="py-3 px-4 font-extrabold text-[13pt] text-white min-w-[220px]">የተማሪው ሙሉ ስም</th>
+                  <th className="py-3 px-3 font-bold min-w-[130px]">የሰንበት ት/ቤት ክፍል</th>
+                  <th className="py-3 px-3 text-center font-bold w-16">ጾታ</th>
+                  <th className="py-3 px-3 text-center font-bold w-16">ዕድሜ</th>
+                  <th className="py-3 px-3 text-center font-bold w-36">ተግባር</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {filteredMissingFromChurchChildren.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-500">
+                      <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+                      <p className="font-bold text-sm text-slate-800">
+                        {searchTerm.trim() ? 'በተጻፈው ስም የተገኘ ተማሪ የለም!' : 'ሁሉም የሰንበት ት/ቤት ተማሪዎች በቋቱ ተካተዋል!'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {searchTerm.trim() ? 'የፍለጋ ቃሉን ይቀይሩ ወይም ያጽዱ።' : 'በሰንበት ት/ቤት ካሉት ተማሪዎች በቋቱ ያልተመዘገበ የለም።'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredMissingFromChurchChildren.map((item, idx) => (
+                    <tr key={`missing_${item.className}_${item.student.id}`} className="hover:bg-purple-50/30 transition">
+                      <td className="py-2.5 px-3 text-center font-bold text-slate-500 bg-slate-50">
+                        {idx + 1}
+                      </td>
+                      <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[220px]">
+                        <div>
+                          {activeNameMode === 'en'
+                            ? transliterateAmharicToEnglish(item.student.name)
+                            : item.student.name}
+                        </div>
+                        {activeNameMode === 'both' && (
+                          <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                            {transliterateAmharicToEnglish(item.student.name)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-blue-900">
+                        <span className="bg-blue-50 text-blue-800 px-2.5 py-0.5 rounded-lg border border-blue-200 font-bold text-[11px]">
+                          {item.className}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold">
+                        {item.student.gender || '-'}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold tabular-nums">
+                        {item.student.age !== undefined && item.student.age !== null && item.student.age !== '' ? `${item.student.age} ዓመት` : '-'}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleImportSingleMissing(item)}
+                          className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition flex items-center gap-1 mx-auto"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>ወደ ቋቱ አስገባ</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Child Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                {!editingChild && childAddMode === 'by_code' ? (
+                  <KeyRound className="w-5 h-5 text-cyan-700" />
+                ) : (
+                  <UserPlus className="w-5 h-5 text-blue-800" />
+                )}
+                <span>
+                  {editingChild
+                    ? 'የልጁን መረጃ ማስተካከያ'
+                    : childAddMode === 'by_code'
+                    ? 'በወላጅ/ቤተሰብ ኮድ ልጅ መጨመሪያ'
+                    : 'አዲስ ልጅ መመዝገቢያ'}
+                </span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {!editingChild && onAddChurchMember && (
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl mt-3 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setChildAddMode('new')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                    childAddMode === 'new'
+                      ? 'bg-blue-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🆕 አዲስ ልጅ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChildAddMode('by_code')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                    childAddMode === 'by_code'
+                      ? 'bg-cyan-700 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🔑 በቤተሰብ ኮድ (0513 → 0513/2)
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveChild} className="space-y-4 mt-4">
+              {!editingChild && childAddMode === 'by_code' && onAddChurchMember && (
+                <div className="bg-cyan-50/70 border border-cyan-200 rounded-xl p-3.5 space-y-2.5">
+                  <label className="block text-xs font-extrabold text-cyan-950">
+                    የወላጅ/ቤተሰብ ኮድ ወይም ስም ያስገቡ *
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {!officialLoggedInChapel && (
+                      <select
+                        value={childLookupChapelHint}
+                        onChange={(e) => {
+                          const ch = e.target.value;
+                          setChildLookupChapelHint(ch);
+                          if (childLookupCode.trim()) {
+                            const found = findAllMatchingMembersByCode(
+                              scopedChurchMembers,
+                              childLookupCode,
+                              ch || undefined
+                            );
+                            if (found.length === 1) applyChildFamilyMatch(found[0]);
+                          }
+                        }}
+                        className="w-full px-2.5 py-2 text-xs border border-cyan-300 rounded-xl bg-white font-bold"
+                      >
+                        <option value="">ሁሉም ቻፕሎች (ራስ-ሰር)</option>
+                        {DEFAULT_CHAPELS.map((ch) => (
+                          <option key={`chl_lkp_${ch}`} value={ch}>
+                            {ch}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <div className={`relative ${officialLoggedInChapel ? 'sm:col-span-2' : ''}`}>
+                      <Hash className="w-4 h-4 text-cyan-700 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="ምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513 ወይም 0513"
+                        value={childLookupCode}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setChildLookupCode(val);
+                          const matches = findAllMatchingMembersByCode(
+                            scopedChurchMembers,
+                            val,
+                            activeChildLookupScope
+                          );
+                          if (matches.length === 1) {
+                            applyChildFamilyMatch(matches[0]);
+                          }
+                        }}
+                        className="w-full pl-9 pr-8 py-2 text-xs border border-cyan-300 rounded-xl font-mono font-bold bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                      />
+                      {childLookupCode && (
+                        <button
+                          type="button"
+                          onClick={() => setChildLookupCode('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {matchedChildCodeAll.length > 1 && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 space-y-1.5">
+                      <p className="text-[11px] font-extrabold text-amber-950">
+                        ይህ ቁጥር ({childLookupCode.trim()}) በ{matchedChildCodeAll.length} ቻፕሎች ተገኝቷል — ቻፕሉን ይምረጡ፦
+                      </p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {matchedChildCodeAll.map((mc) => (
+                          <button
+                            key={`c_multi_${mc.id}`}
+                            type="button"
+                            onClick={() => {
+                              setChildLookupChapelHint(mapToOfficialChapel(mc.chapel || ''));
+                              setChildLookupCode(mc.memberCode || '');
+                              applyChildFamilyMatch(mc);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 bg-white hover:bg-cyan-50 border border-amber-200 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer"
+                          >
+                            <span className="font-bold text-slate-900">
+                              {mc.name} <span className="text-[10px] text-blue-800">({mc.chapel})</span>
+                            </span>
+                            <span className="font-mono text-[11px] font-bold text-indigo-900">{mc.memberCode}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {childLookupSuggestions.length > 0 && (
+                    <div className="bg-white border border-cyan-200 rounded-lg divide-y divide-slate-100 max-h-36 overflow-y-auto">
+                      {childLookupSuggestions.map((s) => (
+                        <button
+                          key={`csug_${s.id}`}
+                          type="button"
+                          onClick={() => {
+                            if (!officialLoggedInChapel) {
+                              setChildLookupChapelHint(mapToOfficialChapel(s.chapel || ''));
+                            }
+                            setChildLookupCode(s.memberCode || '');
+                            applyChildFamilyMatch(s);
+                          }}
+                          className="w-full text-left px-3 py-1.5 hover:bg-cyan-50 text-xs flex items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <span className="font-bold text-slate-900 truncate">
+                            {s.name} <span className="text-[10px] text-slate-500">({s.chapel})</span>
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-indigo-800 shrink-0">{s.memberCode}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {matchedChildFamilyHead ? (
+                    <div className="bg-white border border-emerald-300 rounded-xl p-3 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-black text-emerald-800 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          ቤተሰቡ ተገኝቷል! ({matchedChildFamilyHead.name})
+                        </span>
+                        <span className="font-mono text-[11px] font-extrabold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                          {matchedChildFamilyHead.memberCode}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px]">
+                        <span className="font-bold text-indigo-950">ለልጁ የሚሰጠው ቀጣይ ንዑስ ኮድ፦</span>
+                        <span className="font-mono font-black text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                          {childNextSubCodePreview}
+                        </span>
+                      </div>
+                    </div>
+                  ) : childLookupCode.trim() && matchedChildCodeAll.length === 0 ? (
+                    <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>ይህ ኮድ አልተገኘም! ትክክለኛውን ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሻዳይ 0513 ወይም 0513) ያስገቡ።</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-cyan-900">
+                      ለምሳሌ የወላጅ ኮድ 0513 (እና ሚስቱ 0513/1 ካላት) ለልጁ በራሱ 0513/2 ይሰጠዋል።
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Child Full Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  የልጁ ሙሉ ስም <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ምሳሌ፦ ካይሮስ ገላትያ ደስታ"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-900"
+                />
+                {formName.trim() && (
+                  <p className="mt-1 text-[11px] font-semibold text-indigo-800 bg-indigo-50/70 border border-indigo-200/70 rounded-lg px-2.5 py-1 flex items-center gap-1.5">
+                    <Languages className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span>
+                      በእንግሊዝኛ (ቀጥታ)፦ <strong>{transliterateAmharicToEnglish(formName)}</strong>
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              {/* Chapel Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  ቻፕል (አጥቢያ ማዕከል) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={officialLoggedInChapel || formChapel}
+                  disabled={
+                    Boolean(officialLoggedInChapel) ||
+                    (!editingChild && childAddMode === 'by_code' && Boolean(matchedChildFamilyHead))
+                  }
+                  onChange={(e) => {
+                    if (!officialLoggedInChapel) setFormChapel(e.target.value);
+                  }}
+                  className={`w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-900 ${
+                    officialLoggedInChapel ||
+                    (!editingChild && childAddMode === 'by_code' && matchedChildFamilyHead)
+                      ? 'bg-slate-100 cursor-not-allowed'
+                      : 'bg-white'
+                  }`}
+                >
+                  {(officialLoggedInChapel ? [officialLoggedInChapel] : chapelList).map((ch) => (
+                    <option key={`ch_opt_${ch}`} value={ch}>
+                      {ch}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Gender and Age */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ጾታ</label>
+                  <select
+                    value={formGender}
+                    onChange={(e) => setFormGender(e.target.value as 'ወ' | 'ሴ')}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white font-medium"
+                  >
+                    <option value="ወ">ወንድ (ወ)</option>
+                    <option value="ሴ">ሴት (ሴ)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ዕድሜ (ዓመት)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={25}
+                    required
+                    value={formAge}
+                    onChange={(e) => setFormAge(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 tabular-nums font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Education Level & Occupation */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">የትምህርት ደረጃ</label>
+                  <input
+                    type="text"
+                    placeholder="ምሳሌ፦ 1ኛ ክፍል ወይም KG"
+                    value={formEducationLevel}
+                    onChange={(e) => setFormEducationLevel(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">የስራ ዓይነት</label>
+                  <input
+                    type="text"
+                    placeholder="ምሳሌ፦ ተማሪ ወይም የቤት ውስጥ"
+                    value={formOccupation}
+                    onChange={(e) => setFormOccupation(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Parent Name & Phone */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">የወላጅ / አሳዳጊ ስም</label>
+                  <input
+                    type="text"
+                    placeholder="ምሳሌ፦ ዳዊት ታደሰ"
+                    value={formParent}
+                    onChange={(e) => setFormParent(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  {formParent.trim() && (
+                    <p className="mt-1 text-[10px] font-semibold text-indigo-700">
+                      English: {transliterateAmharicToEnglish(formParent)}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    የወላጅ ስልክ ቁጥር
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="09..."
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Residence & Fellowship/Village */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">መኖሪያ ቀበሌ / ሰፈር</label>
+                  <input
+                    type="text"
+                    placeholder="ምሳሌ፦ ቀበሌ 01"
+                    value={formResidence}
+                    onChange={(e) => setFormResidence(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ህብረት / መንደር</label>
+                  <input
+                    type="text"
+                    placeholder="ምሳሌ፦ ቤቴል ህብረት"
+                    value={formVillage}
+                    onChange={(e) => setFormVillage(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ተጨማሪ ማስታወሻ (አማራጭ)</label>
+                <input
+                  type="text"
+                  placeholder="ማስታወሻ..."
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
+                >
+                  ሰርዝ
+                </button>
+                <button
+                  type="submit"
+                  className="bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-xs"
+                >
+                  {editingChild ? 'አዘምን' : 'መዝግብ'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Enroll to Sunday School Modal */}
+      {enrollTargetChild && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <GraduationCap className="w-5 h-5 text-emerald-700" />
+                <span>ልጁን ወደ ሰንበት ት/ቤት መመዝገቢያ</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEnrollTargetChild(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3.5">
+              <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-100 text-xs text-emerald-950 space-y-1">
+                <p>
+                  የልጁ ስም፦ <strong className="font-extrabold text-[13pt] text-slate-900 block mt-0.5">{enrollTargetChild.name}</strong>
+                </p>
+                <p>
+                  ቻፕል፦ <strong className="text-blue-900 font-bold">{enrollTargetChild.chapel || 'ዋናው ማዕከል ቻፕል'}</strong>
+                </p>
+                <p>
+                  ጾታ፦ <strong>{enrollTargetChild.gender === 'ወ' ? 'ወንድ' : 'ሴት'}</strong> · ዕድሜ፦ <strong>{enrollTargetChild.age || '-'} ዓመት</strong>
+                </p>
+                {enrollTargetChild.phone && (
+                  <p>
+                    የወላጅ ስልክ፦ <strong className="font-mono text-emerald-900">{enrollTargetChild.phone}</strong>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  የሰንበት ትምህርት ቤት ክፍል ይምረጡ፦
+                </label>
+                <select
+                  value={selectedEnrollClass}
+                  onChange={(e) => setSelectedEnrollClass(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white font-bold text-slate-900"
+                >
+                  {classList.map((cls) => (
+                    <option key={`enroll_cls_${cls}`} value={cls}>
+                      {cls}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <p className="text-[11px] text-slate-500">
+                ልጁ በቀጥታ በ{currentYear} ዓ.ም በተመረጠው የሰንበት ትምህርት ቤት ክፍል ውስጥ ይካተታል።
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEnrollTargetChild(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600"
+                >
+                  ሰርዝ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmEnroll}
+                  className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>ወደ {selectedEnrollClass} መዝግብ</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Excel Import Modal: Smart Church Database 0-14 Filter */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3.5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold shrink-0">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    ከአጠቃላይ የቤተክርስቲያን ቋት የልጆች መረጃ መጫኛ (ዕድሜ 0-14 ብቻ)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    ከአጠቃላይ የቤተክርስቲያን አባላት ኤክሴል ፋይል ውስጥ ከ0-14 ዓመት ያሉ ልጆችን ብቻ በራሱ ለይቶ ጾታ፣ ዕድሜ፣ የትምህርት ደረጃ፣ የስራ ዓይነት፣ ቻፕል እና የወላጅ ስልክን ያካትታል።
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setImportChildrenPreview([]);
+                  setImportAdultsSkipped([]);
+                  setImportTotalRows(0);
+                  setImportFileName('');
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 mt-4 overflow-y-auto pr-1 flex-1">
+              {/* Instructions Banner and Sample Download */}
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 p-4 rounded-xl border border-emerald-200/80 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="font-extrabold text-emerald-950 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>ራስ-ሰር የ0-14 ዓመት ልጆች ማጣሪያና አምድ ፈላጊ</span>
+                  </p>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    ፋይሉ የአዋቂዎችንና የልጆችን መረጃ በአንድ ላይ ቢይዝም ስርዓቱ <strong>ከ0 እስከ 14 ዓመት</strong> ያሉትን ልጆች ብቻ ለይቶ ይመርጣል፤ ከ14 ዓመት በላይ የሆኑ አዋቂዎች በራሳቸው ይዘለላሉ።
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadSampleTemplate}
+                  className="bg-white hover:bg-slate-50 text-emerald-900 font-bold text-xs px-3.5 py-2 rounded-xl border border-emerald-300 transition shrink-0 flex items-center gap-1.5 shadow-2xs cursor-pointer hover:scale-[1.01]"
+                  title="የተሟላ የናሙና ኤክሴል ቅጽ ያውርዱ"
+                >
+                  <Download className="w-4 h-4 text-emerald-700" />
+                  <span>📥 የExcel ናሙና አውርድ</span>
+                </button>
+              </div>
+
+              {/* Upload Dropzone */}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-emerald-400 hover:border-emerald-600 bg-emerald-50/20 hover:bg-emerald-50/40 rounded-2xl p-6 text-center cursor-pointer transition group"
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  accept=".xlsx, .xls, .csv"
+                  className="hidden"
+                />
+                <FileUp className="w-10 h-10 text-emerald-700 mx-auto mb-2 group-hover:scale-105 transition-transform" />
+                <p className="text-xs font-bold text-slate-800">
+                  {importFileName ? `የተመረጠ ፋይል፦ ${importFileName}` : 'የቤተክርስቲያን አባላት Excel ወይም CSV ፋይል እዚህ ይጫኑ (Click to Browse)'}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  .xlsx, .xls ወይም .csv ፋይሎች (ጾታ፣ ዕድሜ/የትውልድ ዓመት፣ የትምህርት ደረጃ፣ የስራ ዓይነት፣ ቻፕል፣ የወላጅ ስልክ)
+                </p>
+              </div>
+
+              {/* Statistics & Results Strip after file is read */}
+              {importTotalRows > 0 && (
+                <div className="space-y-4">
+                  {/* Stats Pill Matrix */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 text-center">
+                      <span className="text-[11px] text-slate-500 font-semibold block">በፋይሉ የተገኙ ጠቅላላ ሰዎች</span>
+                      <strong className="text-xl font-extrabold text-slate-800 tabular-nums">{importTotalRows}</strong>
+                    </div>
+
+                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center">
+                      <span className="text-[11px] text-emerald-800 font-bold block flex items-center justify-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>የተመረጡ ልጆች (ከ0-14 ዓመት)</span>
+                      </span>
+                      <strong className="text-xl font-extrabold text-emerald-900 tabular-nums">{importChildrenPreview.length} ልጆች</strong>
+                    </div>
+
+                    <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-center">
+                      <span className="text-[11px] text-amber-800 font-bold block flex items-center justify-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                        <span>የተዘለሉ አዋቂዎች (ከ14 ዓመት በላይ)</span>
+                      </span>
+                      <strong className="text-xl font-extrabold text-amber-900 tabular-nums">{importAdultsSkipped.length} ሰዎች</strong>
+                    </div>
+                  </div>
+
+                  {/* Interactive Column Mapping & Age Parsing Settings Panel */}
+                  <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsColumnMappingOpen(!isColumnMappingOpen)}
+                      className="w-full flex items-center justify-between text-xs font-bold text-slate-800 hover:text-slate-900 transition"
+                    >
+                      <span className="flex items-center gap-2">
+                        <SlidersHorizontal className="w-4 h-4 text-emerald-700" />
+                        <span>⚙️ የኤክሴል አምዶች እና የዕድሜ ማስተካከያ (Column Mapping & Age Settings)</span>
+                      </span>
+                      <span className="text-emerald-800 font-extrabold underline text-[11px]">
+                        {isColumnMappingOpen ? 'መደበቂያ ▲' : 'ማስተካከያ ክፈት ▼'}
+                      </span>
+                    </button>
+
+                    {isColumnMappingOpen && (
+                      <div className="mt-3.5 pt-3 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                        {/* Name Column */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">የልጁ ስም አምድ፦</label>
+                          <select
+                            value={importColName}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setImportColName(v);
+                              handleReapplyMapping({ nameIdx: v });
+                            }}
+                            className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
+                          >
+                            {importHeaderCols.map((c) => (
+                              <option key={`c_name_${c.index}`} value={c.index}>
+                                {c.index + 1}. {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Father Name Column */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">የአባት ስም (የተለየ ከሆነ)፦</label>
+                          <select
+                            value={importColFather}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setImportColFather(v);
+                              handleReapplyMapping({ fatherIdx: v });
+                            }}
+                            className="w-full text-xs border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
+                          >
+                            <option value={-1}>-- ከልጁ ስም ጋር በአንድ ላይ ነው --</option>
+                            {importHeaderCols.map((c) => (
+                              <option key={`c_fath_${c.index}`} value={c.index}>
+                                {c.index + 1}. {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Gender Column */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">ጾታ አምድ፦</label>
+                          <select
+                            value={importColGender}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setImportColGender(v);
+                              handleReapplyMapping({ genderIdx: v });
+                            }}
+                            className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
+                          >
+                            {importHeaderCols.map((c) => (
+                              <option key={`c_gend_${c.index}`} value={c.index}>
+                                {c.index + 1}. {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Age / Birth Year Column */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">ዕድሜ / የትውልድ ዓመት አምድ፦</label>
+                          <select
+                            value={importColAge}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setImportColAge(v);
+                              handleReapplyMapping({ ageIdx: v });
+                            }}
+                            className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
+                          >
+                            {importHeaderCols.map((c) => (
+                              <option key={`c_age_${c.index}`} value={c.index}>
+                                {c.index + 1}. {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Chapel Column */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">ቻፕል (አጥቢያ) አምድ፦</label>
+                          <select
+                            value={importColChapel}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setImportColChapel(v);
+                              handleReapplyMapping({ chapelIdx: v });
+                            }}
+                            className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
+                          >
+                            <option value={-1}>-- በፋይሉ የለም (ነባሪ ቻፕል ተጠቀም) --</option>
+                            {importHeaderCols.map((c) => (
+                              <option key={`c_chap_${c.index}`} value={c.index}>
+                                {c.index + 1}. {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Default Chapel fallback */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">ነባሪ ቻፕል (በፋይሉ ካልተጠቀሰ)፦</label>
+                          <select
+                            value={officialLoggedInChapel || importDefaultChapel}
+                            disabled={Boolean(officialLoggedInChapel)}
+                            onChange={(e) => {
+                              if (officialLoggedInChapel) return;
+                              const v = e.target.value;
+                              setImportDefaultChapel(v);
+                              handleReapplyMapping(undefined, undefined, undefined, v);
+                            }}
+                            className={`w-full text-xs border border-slate-300 rounded-lg p-1.5 text-slate-800 ${
+                              officialLoggedInChapel ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                            }`}
+                          >
+                            {(officialLoggedInChapel ? [officialLoggedInChapel] : chapelList).map((ch) => (
+                              <option key={`def_ch_${ch}`} value={ch}>
+                                {ch}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Age Parse Mode */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">የዕድሜ ማስያ ዘዴ፦</label>
+                          <select
+                            value={importAgeMode}
+                            onChange={(e) => {
+                              const m = e.target.value as 'auto' | 'direct' | 'birthyear';
+                              setImportAgeMode(m);
+                              handleReapplyMapping(undefined, undefined, m);
+                            }}
+                            className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
+                          >
+                            <option value="auto">ራስ-ሰር (የቀጥታ ዕድሜ + የትውልድ ዓመት)</option>
+                            <option value="direct">የቀጥታ ዕድሜ ብቻ (0-14 ቁጥር)</option>
+                            <option value="birthyear">የትውልድ ዓመት ቀነስ (የአሁኑ - የትውልድ)</option>
+                          </select>
+                        </div>
+
+                        {/* Reference Year for birth calculation */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">ማስሊያ ዓመተ ምህረት፦</label>
+                          <input
+                            type="number"
+                            value={importRefYear}
+                            onChange={(e) => {
+                              const y = parseInt(e.target.value, 10) || 2018;
+                              setImportRefYear(y);
+                              handleReapplyMapping(undefined, y);
+                            }}
+                            className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tabs: Children to import VS Skipped Adults */}
+                  <div className="flex items-center gap-2 border-b border-slate-200 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setImportActiveTab('children')}
+                      className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 ${
+                        importActiveTab === 'children'
+                          ? 'border-emerald-600 text-emerald-900'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <span>👶 የሚገቡ የ0-14 ዓመት ልጆች</span>
+                      <span className="bg-emerald-100 text-emerald-800 px-2 py-0.2 rounded-full text-[10px]">
+                        {importChildrenPreview.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setImportActiveTab('adults')}
+                      className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 ${
+                        importActiveTab === 'adults'
+                          ? 'border-amber-600 text-amber-900'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <span>👤 የተዘለሉ አዋቂዎች (ከ14 ዓመት በላይ)</span>
+                      <span className="bg-amber-100 text-amber-800 px-2 py-0.2 rounded-full text-[10px]">
+                        {importAdultsSkipped.length}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Tab 1: Children to Import Preview Table */}
+                  {importActiveTab === 'children' && (
+                    <div className="space-y-3">
+                      {/* Multi-Chapel Filter & Selection Chips Strip */}
+                      {!officialLoggedInChapel && importChapelsSummary.length > 0 && (
+                        <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-slate-50 p-3.5 rounded-2xl border border-blue-200/80">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+                            <div className="flex items-center gap-2">
+                              <Church className="w-4 h-4 text-blue-900" />
+                              <span className="text-xs font-extrabold text-blue-950">
+                                በፋይሉ የተገኙ ቻፕሎች ({importChapelsSummary.length}) - ለማስገባት የሚፈልጉትን ይምረጡ፦
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setImportSelectedChapels(importChapelsSummary.map((ch) => ch.name))
+                                }
+                                className="text-[11px] font-bold text-blue-800 bg-white hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-300 transition"
+                              >
+                                ✓ ሁሉንም መዝግብ ({importChildrenPreview.length})
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {importChapelsSummary.map((ch) => {
+                              const isChecked =
+                                importSelectedChapels.length === 0 ||
+                                importSelectedChapels.some(
+                                  (sel) =>
+                                    normalizeChapel(sel) === normalizeChapel(ch.name) ||
+                                    sel.includes(ch.name) ||
+                                    ch.name.includes(sel)
+                                );
+
+                              return (
+                                <button
+                                  key={`import_ch_${ch.name}`}
+                                  type="button"
+                                  onClick={() => handleToggleImportChapel(ch.name)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                                    isChecked
+                                      ? 'bg-blue-900 text-white border-blue-900 shadow-xs'
+                                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-300'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {}} // handled by button
+                                    className="w-3.5 h-3.5 rounded text-blue-900 pointer-events-none"
+                                  />
+                                  <span>{ch.name}</span>
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                      isChecked ? 'bg-blue-800 text-blue-100' : 'bg-slate-100 text-slate-700'
+                                    }`}
+                                  >
+                                    {ch.count} ልጆች
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {displayedImportChildren.length === 0 ? (
+                        <div className="p-8 text-center bg-slate-50 rounded-xl text-slate-500 text-xs">
+                          የተመረጠ ቻፕል ልጅ አልተገኘም! እባክዎ ቻፕል ይምረጡ ወይም ፋይልዎን ያረጋግጡ።
+                        </div>
+                      ) : (
+                        <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-xl shadow-2xs">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead className="bg-slate-900 text-white font-bold sticky top-0 text-[11px]">
+                              <tr>
+                                <th className="py-2 px-2 text-center w-8">#</th>
+                                <th className="py-2 px-3 font-extrabold text-[13pt] text-white">የልጁ ስም</th>
+                                <th className="py-2 px-2 text-center">ጾታ</th>
+                                <th className="py-2 px-2 text-center">ዕድሜ</th>
+                                <th className="py-2 px-2.5">የትምህርት ደረጃ</th>
+                                <th className="py-2 px-2.5">የስራ ዓይነት</th>
+                                <th className="py-2 px-2.5">ቻፕል</th>
+                                <th className="py-2 px-2.5">የወላጅ ስም</th>
+                                <th className="py-2 px-2.5">የወላጅ ስልክ</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {displayedImportChildren.map((row, idx) => (
+                                <tr key={`child_prev_${idx}`} className="hover:bg-emerald-50/40">
+                                  <td className="py-2 px-2 text-center text-slate-400">{idx + 1}</td>
+                                  <td className="py-2 px-3 font-extrabold text-slate-900 text-[13pt]">{row.name}</td>
+                                  <td className="py-2 px-2 text-center font-bold">
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                        row.gender === 'ሴ' ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800'
+                                      }`}
+                                    >
+                                      {row.gender}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-2 text-center font-bold tabular-nums text-slate-800">
+                                    {row.age} ዓመት
+                                  </td>
+                                  <td className="py-2 px-2.5 text-indigo-900 font-semibold">{canonicalizeEducationLevel(row.educationLevel) || '-'}</td>
+                                  <td className="py-2 px-2.5 text-slate-700">{canonicalizeOccupation(row.occupation) || '-'}</td>
+                                  <td className="py-2 px-2.5 text-blue-900 font-bold">{row.chapel || '-'}</td>
+                                  <td className="py-2 px-2.5 text-slate-600">{row.parentName || '-'}</td>
+                                  <td className="py-2 px-2.5 font-mono text-[11px] font-bold text-emerald-900">
+                                    {row.phone || '-'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Import Mode Selector with Dynamic Descriptions */}
+                      {displayedImportChildren.length > 0 && (
+                        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                          <div>
+                            <span className="font-bold text-slate-900 block">የማስገቢያ ስልት ይምረጡ፦</span>
+                            <span className="text-[11px] text-slate-500">
+                              {importSelectedChapels.length === 0 || importSelectedChapels.length >= importChapelsSummary.length
+                                ? 'የሁሉንም ቻፕሎች መረጃ መጨመር ወይም የቀደመውን ሙሉ በሙሉ ማጽዳት ይችላሉ'
+                                : `የተመረጡትን (${importSelectedChapels.length}) ቻፕሎች መረጃ መጨመር ወይም የቀድሞውን የእነዚህ ቻፕሎች መረጃ ብቻ አጽድተው መተካት ይችላሉ`}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="importMode"
+                                value="append"
+                                checked={importMode === 'append'}
+                                onChange={() => setImportMode('append')}
+                                className="text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                              />
+                              <span className="font-semibold text-slate-800">አሁን ባለው ቋት ላይ ጨምር (Append)</span>
+                            </label>
+
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="importMode"
+                                value="replace"
+                                checked={importMode === 'replace'}
+                                onChange={() => setImportMode('replace')}
+                                className="text-rose-600 focus:ring-rose-500 cursor-pointer"
+                              />
+                              <span className="font-bold text-rose-800">
+                                {importSelectedChapels.length === 0 || importSelectedChapels.length >= importChapelsSummary.length
+                                  ? '🧹 ቀድሞ የገባውን ሙሉ መረጃ አጽድተህ ተካ (Clear All & Replace)'
+                                  : `🧹 የተመረጡትን (${importSelectedChapels.length}) የቀድሞ መረጃ ብቻ አጽድተህ ተካ`}
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tab 2: Skipped Adults Preview Table */}
+                  {importActiveTab === 'adults' && (
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-slate-500">
+                        እነዚህ አባላት ከ14 ዓመት በላይ በመሆናቸው በልጆች ቋት ውስጥ አልተካተቱም፦
+                      </p>
+                      {importAdultsSkipped.length === 0 ? (
+                        <div className="p-6 text-center bg-slate-50 rounded-xl text-slate-500 text-xs">
+                          ምንም የተዘለለ አዋቂ የለም (ሁሉም 0-14 ዓመት ናቸው)።
+                        </div>
+                      ) : (
+                        <div className="max-h-60 overflow-y-auto border border-amber-200 rounded-xl">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead className="bg-amber-100 text-amber-950 font-bold sticky top-0">
+                              <tr>
+                                <th className="py-2 px-2 text-center w-8">#</th>
+                                <th className="py-2 px-3">የአባሉ ስም</th>
+                                <th className="py-2 px-2 text-center">ጾታ</th>
+                                <th className="py-2 px-2 text-center">ዕድሜ</th>
+                                <th className="py-2 px-3">የተዘለለበት ምክንያት</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-amber-100">
+                              {importAdultsSkipped.slice(0, 100).map((row, idx) => (
+                                <tr key={`adult_${idx}`} className="hover:bg-amber-50/50">
+                                  <td className="py-1.5 px-2 text-center text-slate-400">{idx + 1}</td>
+                                  <td className="py-1.5 px-3 font-bold text-slate-800">{row.name}</td>
+                                  <td className="py-1.5 px-2 text-center">{row.gender}</td>
+                                  <td className="py-1.5 px-2 text-center font-bold tabular-nums">{row.age} ዓመት</td>
+                                  <td className="py-1.5 px-3 text-amber-800 font-medium">{row.reason}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Bottom Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 mt-3">
+              <span className="text-xs text-slate-500">
+                {displayedImportChildren.length > 0 && (
+                  <span>
+                    ለማስገባት የተዘጋጁ፦{' '}
+                    <strong className="text-emerald-900 font-extrabold">{displayedImportChildren.length} ልጆች</strong>
+                    {importSelectedChapels.length > 0 && importSelectedChapels.length < importChapelsSummary.length && (
+                      <span className="text-slate-500"> (ከጠቅላላው {importChildrenPreview.length} ውስጥ)</span>
+                    )}
+                  </span>
+                )}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    setImportChildrenPreview([]);
+                    setImportAdultsSkipped([]);
+                    setImportTotalRows(0);
+                    setImportSelectedChapels([]);
+                    setImportFileName('');
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl"
+                >
+                  ሰርዝ
+                </button>
+                <button
+                  type="button"
+                  disabled={displayedImportChildren.length === 0}
+                  onClick={handleConfirmImport}
+                  className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-slate-300 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-xs flex items-center gap-2 cursor-pointer hover:scale-[1.01] active:scale-95"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>
+                    {displayedImportChildren.length > 0
+                      ? `📥 የተጣሩትን (${displayedImportChildren.length}) ልጆች አስገባ`
+                      : 'የተመረጠ ልጅ የለም'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Church Children Data Modal (ቀድሞ የገባውን መረጃ ማጽጃ) */}
+      {isClearModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-rose-950 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base">የልጆች መረጃ ማጽጃ (Clear Registry Data)</h3>
+                  <p className="text-[11px] text-rose-200">ቀድሞ የገባውን መረጃ በሙሉ ወይም በቻፕል ለይተህ አጽዳ</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsClearModalOpen(false);
+                  setClearConfirmWord('');
+                  setClearSelectedChapels([]);
+                }}
+                className="text-rose-200 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4">
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 text-xs text-rose-900 space-y-1">
+                <p className="font-bold flex items-center gap-1.5 text-rose-950">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>ይህ እርምጃ የቀደሙ የልጆች መረጃዎችን ከቋቱ ያጠፋል!</span>
+                </p>
+                <p className="text-[11px] text-rose-800 leading-relaxed">
+                  አዲስ የExcel ፋይል ከማስገባትዎ በፊት ወይም የተሳሳቱ ምዝገባዎችን ለማስተካከል ቀድሞ የነበረውን መረጃ ማጽዳት ይችላሉ። ሆኖም በሰንበት ት/ቤት ክፍሎች የተመዘገቡ ተማሪዎች መረጃ ላይ ምንም ጉዳት አያደርስም።
+                </p>
+              </div>
+
+              {/* Scope Selection */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-800 block">የማጽዳት ወሰን ይምረጡ፦</label>
+                <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                  {/* Option 1: Clear All (Hidden for Chapel Leaders) */}
+                  {!officialLoggedInChapel && (
+                    <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-white transition border border-transparent hover:border-slate-200">
+                      <input
+                        type="radio"
+                        name="clearScopeRadio"
+                        checked={clearScope === 'all'}
+                        onChange={() => setClearScope('all')}
+                        className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      />
+                      <div className="text-xs">
+                        <span className="font-extrabold text-slate-900 block">
+                          የሁሉንም ቻፕሎች መረጃ ሙሉ በሙሉ አጽዳ (ጠቅላላ {effectiveChurchChildren.length} ልጆች)
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          በቋቱ ውስጥ ያሉትን ሁሉንም ልጆች መረጃ ሙሉ በሙሉ አጥፍቶ ባዶ ያደርገዋል።
+                        </span>
+                      </div>
+                    </label>
+                  )}
+
+                  {/* Option 2: Clear Specific Chapels */}
+                  <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-white transition border border-transparent hover:border-slate-200">
+                    <input
+                      type="radio"
+                      name="clearScopeRadio"
+                      checked={officialLoggedInChapel ? true : clearScope === 'selected'}
+                      onChange={() => setClearScope('selected')}
+                      className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                    <div className="text-xs flex-1">
+                      <span className="font-extrabold text-slate-900 block">
+                        {officialLoggedInChapel
+                          ? `የ${officialLoggedInChapel} መረጃ ብቻ አጽዳ`
+                          : 'የተመረጡትን ቻፕሎች መረጃ ብቻ አጽዳ'}
+                      </span>
+                      <span className="text-[11px] text-slate-500 block mb-2">
+                        {officialLoggedInChapel
+                          ? 'ሌሎች ቻፕሎች ሳይነኩ የራስዎ ቻፕል የልጆች መረጃ ብቻ ይጸዳል።'
+                          : 'ሌሎች ቻፕሎች ሳይነኩ የተመረጡት ቻፕሎች መረጃ ብቻ ያጸዳል።'}
+                      </span>
+
+                      {(officialLoggedInChapel || clearScope === 'selected') && (
+                        <div className="mt-2 space-y-2 bg-white p-3 rounded-xl border border-slate-200 max-h-48 overflow-y-auto">
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            {officialLoggedInChapel ? 'የሚጸዳው ቻፕል፦' : 'የሚጸዱትን ቻፕሎች ምልክት ያድርጉ፦'}
+                          </label>
+                          {(officialLoggedInChapel ? [officialLoggedInChapel] : chapelList).map((ch) => {
+                            const countInChapel = effectiveChurchChildren.filter((c) => {
+                              const chNorm = normalizeChapel(c.chapel || 'ዋናው ማዕከል ቻፕል');
+                              const targetNorm = normalizeChapel(ch);
+                              return chNorm === targetNorm || (c.chapel || '').includes(ch);
+                            }).length;
+
+                            const isChecked = officialLoggedInChapel ? true : clearSelectedChapels.includes(ch);
+
+                            return (
+                              <label
+                                key={`clear_ch_check_${ch}`}
+                                className="flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs"
+                              >
+                                <span className="flex items-center gap-2 font-bold text-slate-800">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={Boolean(officialLoggedInChapel)}
+                                    onChange={() => {
+                                      if (officialLoggedInChapel) return;
+                                      setClearSelectedChapels((prev) =>
+                                        prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]
+                                      );
+                                    }}
+                                    className="w-3.5 h-3.5 text-rose-600 rounded focus:ring-rose-500 cursor-pointer"
+                                  />
+                                  <span>{ch}</span>
+                                </span>
+                                <span className="text-[11px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                                  {countInChapel} ልጆች
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Status summary of what will be wiped */}
+              <div className="bg-slate-100 p-3 rounded-xl text-xs flex items-center justify-between">
+                <span className="text-slate-600 font-semibold">የሚጠፉ ልጆች ጠቅላላ ቁጥር፦</span>
+                <span className="text-sm font-black text-rose-700 tabular-nums">
+                  {officialLoggedInChapel
+                    ? `${effectiveChurchChildren.length} ልጆች (${officialLoggedInChapel})`
+                    : clearScope === 'all'
+                    ? `${effectiveChurchChildren.length} ልጆች (ሁሉም)`
+                    : `${
+                        effectiveChurchChildren.filter((c) => {
+                          const chNorm = normalizeChapel(c.chapel || 'ዋናው ማዕከል ቻፕል');
+                          return clearSelectedChapels.some(
+                            (sel) => normalizeChapel(sel) === chNorm || (c.chapel || '').includes(sel)
+                          );
+                        }).length
+                      } ልጆች`}
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsClearModalOpen(false);
+                  setClearConfirmWord('');
+                  setClearSelectedChapels(officialLoggedInChapel ? [officialLoggedInChapel] : []);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl transition"
+              >
+                ሰርዝ
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExecuteClear}
+                disabled={
+                  officialLoggedInChapel
+                    ? effectiveChurchChildren.length === 0
+                    : clearScope === 'all'
+                    ? effectiveChurchChildren.length === 0
+                    : clearSelectedChapels.length === 0
+                }
+                className="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer hover:scale-[1.01] active:scale-95"
+              >
+                <Trash2 className="w-4 h-4 text-white" />
+                <span>
+                  {officialLoggedInChapel
+                    ? `🗑️ የ${officialLoggedInChapel}ን መረጃ አጽዳ`
+                    : clearScope === 'all'
+                    ? '🗑️ የሁሉንም ቻፕሎች መረጃ አጽዳ'
+                    : `🗑️ የተመረጡትን (${clearSelectedChapels.length}) ቻፕሎች መረጃ አጽዳ`}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Name Cross-Reference Modal (Direct Name Matching Regardless of Age) */}
+      <NameCrossReferenceModal
+        isOpen={isNameCompareModalOpen}
+        onClose={() => setIsNameCompareModalOpen(false)}
+        title={
+          officialLoggedInChapel
+            ? `${officialLoggedInChapel} ልጆች እና የሰንበት ትምህርት ቤት የስም ማስተያያ ሰንጠረዥ`
+            : 'የቤተክርስቲያን ልጆች እና የሰንበት ትምህርት ቤት የስም ማስተያያ ሰንጠረዥ'
+        }
+        sourceLabel={officialLoggedInChapel ? `${officialLoggedInChapel} የልጆች ቋት (0-14)` : 'የልጆች ቋት (0-14)'}
+        churchItems={effectiveChurchChildren}
+        studentsByClass={studentsByClass}
+        classList={classList}
+        chapelList={chapelStats.chapels}
+        onEnrollChild={(item, targetClass) => {
+          onEnrollToSundaySchool(item as ChurchChild, targetClass);
+        }}
+      />
+
+      {currentUserRole === 'admin' && onBulkIncrementAges && (
+        <AnnualAgeIncrementModal
+          isOpen={isAgeModalOpen}
+          onClose={() => setIsAgeModalOpen(false)}
+          currentYear={currentYear}
+          ageReferenceYear={ageReferenceYear}
+          totalChildrenCount={churchChildren.length}
+          onApplyBulkIncrement={onBulkIncrementAges}
+        />
+      )}
+    </div>
+  );
+};
