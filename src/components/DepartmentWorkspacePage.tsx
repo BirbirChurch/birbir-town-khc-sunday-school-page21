@@ -74,6 +74,7 @@ import { SpiritualAllSectorsLeadersTab } from './SpiritualAllSectorsLeadersTab';
 import { HistoricalLeadersArchiveTab } from './HistoricalLeadersArchiveTab';
 import { EvangelismParticipationStatsPanel } from './EvangelismParticipationStatsPanel';
 import { MissionaryReportsPanel } from './MissionaryReportsPanel';
+import { syncChurchMemberToEvangelismRecords } from '../utils/memberMinistryProfile';
 
 const PlanBulkSenderPanel = lazyWithRetry(() =>
   import('./PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
@@ -1326,9 +1327,24 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           churchChildren={churchChildren}
           studentsByClass={studentsByClass}
           classList={classList}
+          departmentDataMap={departmentDataMap}
+          teachers={teachers}
+          choirMembers={choirMembers}
+          spiritualMembers={spiritualMembers}
           onBatchAddMembers={onBatchAddMembers}
           onAddMember={onAddMember}
           onUpdateMember={onUpdateMember}
+          onUpdateEvangelismMemberStatus={(member, nextStatus) =>
+            onUpdateDepartmentData('evangelism', (prev) => ({
+              ...prev,
+              members: syncChurchMemberToEvangelismRecords(
+                prev.members || [],
+                member,
+                nextStatus,
+                generateUniqueId
+              )
+            }))
+          }
           onDeleteMember={onDeleteMember}
           onClearChurchMembers={onClearChurchMembers}
           onExtractChildrenToChildrenTab={onExtractChildrenToChildrenTab}
@@ -1755,6 +1771,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         <AdminHRPanel
           currentYear={currentYear}
           records={ws.hrRecords || []}
+          churchMembers={churchMembers}
           onSaveRecords={(next) =>
             onUpdateDepartmentData(unitId, (prev) => ({ ...prev, hrRecords: next }))
           }

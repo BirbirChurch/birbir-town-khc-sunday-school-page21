@@ -7,12 +7,14 @@ import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher
 import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
 import {
   CHURCH_ORG_UNITS,
+  createDefaultAdminFinanceWorkspaceData,
   createDefaultEldersCouncilWorkspaceData,
   createDefaultEvangelismWorkspaceData,
   DEFAULT_ORG_UNIT_PINS
 } from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
 import { canonicalizeEducationLevel, canonicalizeOccupation } from './amharicCategoryCanonicalizer';
+import { syncHRPhonesFromChurchMembers } from './hrMemberMatcher';
 
 let _lastUniqueId = Math.max(Date.now(), 1792849000000);
 
@@ -361,7 +363,8 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
         : undefined,
       eldersDefaultSeeded: ws.eldersDefaultSeeded === true ? true : undefined,
       evangelismMissionariesDefaultSeeded:
-        ws.evangelismMissionariesDefaultSeeded === true ? true : undefined
+        ws.evangelismMissionariesDefaultSeeded === true ? true : undefined,
+      adminHrDefaultSeeded: ws.adminHrDefaultSeeded === true ? true : undefined
     };
   });
 
@@ -398,6 +401,43 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       evangelismMissionariesDefaultSeeded: true
     };
     modified = true;
+  }
+
+  const curAdmin = sanitizedDepartmentData.admin_finance;
+  if (
+    !curAdmin ||
+    (!curAdmin.adminHrDefaultSeeded && (curAdmin.hrRecords?.length || 0) === 0)
+  ) {
+    const seededAdmin = createDefaultAdminFinanceWorkspaceData();
+    sanitizedDepartmentData.admin_finance = {
+      ...(curAdmin || seededAdmin),
+      hrRecords: (seededAdmin.hrRecords || []).map((hr) => ({
+        ...hr,
+        id: ensureUniqueId(hr.id)
+      })),
+      adminHrDefaultSeeded: true
+    };
+    modified = true;
+  }
+
+  const adminWsForPhoneSync = sanitizedDepartmentData.admin_finance;
+  if (
+    adminWsForPhoneSync &&
+    Array.isArray(adminWsForPhoneSync.hrRecords) &&
+    adminWsForPhoneSync.hrRecords.length > 0 &&
+    sanitizedChurchMembers.length > 0
+  ) {
+    const phoneSyncResult = syncHRPhonesFromChurchMembers(
+      adminWsForPhoneSync.hrRecords,
+      sanitizedChurchMembers
+    );
+    if (phoneSyncResult.changed) {
+      sanitizedDepartmentData.admin_finance = {
+        ...adminWsForPhoneSync,
+        hrRecords: phoneSyncResult.updated
+      };
+      modified = true;
+    }
   }
 
   // 10c. Sanitize submissions array

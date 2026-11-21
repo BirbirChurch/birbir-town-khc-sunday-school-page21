@@ -1,5 +1,6 @@
 import {
   ChapelLeaderCategoryId,
+  ChurchHRRecord,
   DepartmentWorkspaceData,
   EvangelismMissionaryRecord,
   OrgUnitId
@@ -622,6 +623,343 @@ export const createDefaultEvangelismWorkspaceData = (): DepartmentWorkspaceData 
   ...createEmptyDepartmentWorkspaceData(),
   missionaryRecords: DEFAULT_EVANGELISM_MISSIONARIES.map((m) => ({ ...m })),
   evangelismMissionariesDefaultSeeded: true
+});
+
+export const HR_MINISTER_SECTOR_OPTIONS: string[] = [
+  'የመንፈሳዊ ዘርፍ ጉባኤ',
+  'የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)',
+  'የወንጌል አገልግሎት',
+  'የመጽሐፍ ቅዱስ ትምህርት ቤት',
+  'የወጣቶች አገልግሎት',
+  'የሴቶች አገልግሎት',
+  'የልጆች አገልግሎት',
+  'ቻፕሎች',
+  'የዲያቆናት አገልግሎት',
+  'ፍቅርና ርኅራሄ',
+  'የልማት ዘርፍ',
+  'ጽ/ቤት',
+  'አስተዳደርና ፋይናንስ',
+  'ሁለንተናዊ ማሕበረሰብ አገልግሎት',
+  'የወንዶች ህብረት',
+  'የሴቶች ህብረት',
+  'የርኆቦት ትምህርት ቤት',
+  'የጸሎትና ምልጃ አገልግሎት',
+  'የጋብቻና ቤተሰብ አገልግሎት'
+];
+
+export const HR_MINISTER_ROLE_OPTIONS: string[] = [
+  'መጋቢ',
+  'መምህር',
+  'ወንጌላዊ',
+  'ወንጌላዊት',
+  'የዘርፍ አስተባባሪ',
+  'የመጽሐፍ ቅዱስ አስተማሪ'
+];
+
+export const HR_ADMIN_ROLE_OPTIONS: string[] = [
+  'የሂሳብ ሰራተኛ',
+  'ጥበቃ',
+  'መዝቃ መሳሪያ ተጫዋች',
+  'መንስ ቤት ሰራተኛ',
+  'ንብ አሪብ'
+];
+
+export const HR_UNASSIGNED_ROLE_PLACEHOLDER = 'ኃላፍነት ይምረጡ';
+
+export const DEFAULT_FULL_TIME_MINISTERS: ChurchHRRecord[] = [
+  {
+    id: 930001,
+    category: 'full_time_minister',
+    name: 'መጋቢ ሳሙኤል ኦልቶ',
+    gender: 'ወ',
+    roleTitle: 'መጋቢ',
+    roleTitles: ['መጋቢ'],
+    department: 'የመንፈሳዊ ዘርፍ ጉባኤ / የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)',
+    departments: ['የመንፈሳዊ ዘርፍ ጉባኤ', 'የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930002,
+    category: 'full_time_minister',
+    name: 'መጋቢ ጉጃ ኡባ',
+    gender: 'ወ',
+    roleTitle: 'መጋቢ',
+    roleTitles: ['መጋቢ'],
+    department: 'የመንፈሳዊ ዘርፍ ጉባኤ / የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)',
+    departments: ['የመንፈሳዊ ዘርፍ ጉባኤ', 'የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930003,
+    category: 'full_time_minister',
+    name: 'መጋቢ ገላዬ አንጃ',
+    gender: 'ወ',
+    roleTitle: 'መጋቢ',
+    roleTitles: ['መጋቢ'],
+    department: 'የመንፈሳዊ ዘርፍ ጉባኤ / የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)',
+    departments: ['የመንፈሳዊ ዘርፍ ጉባኤ', 'የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930004,
+    category: 'full_time_minister',
+    name: 'መምህር ታዲዎስ ሚልክያስ',
+    gender: 'ወ',
+    roleTitle: 'መምህር',
+    roleTitles: ['መምህር'],
+    department: 'የመጽሐፍ ቅዱስ ትምህርት ቤት',
+    departments: ['የመጽሐፍ ቅዱስ ትምህርት ቤት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930005,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊት ታጋይ ጵጥሮስ',
+    gender: 'ሴ',
+    roleTitle: 'ወንጌላዊት',
+    roleTitles: ['ወንጌላዊት'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930006,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ ደማ መና',
+    gender: 'ወ',
+    roleTitle: 'ወንጌላዊ',
+    roleTitles: ['ወንጌላዊ'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930007,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ መላኩ ግርማ',
+    gender: 'ወ',
+    roleTitle: 'ወንጌላዊ',
+    roleTitles: ['ወንጌላዊ'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930008,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ ጋይጣ ጩንዱሬ',
+    gender: 'ወ',
+    roleTitle: 'ወንጌላዊ',
+    roleTitles: ['ወንጌላዊ'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930009,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ መስፍን ሻንካ',
+    gender: 'ወ',
+    roleTitle: 'ወንጌላዊ',
+    roleTitles: ['ወንጌላዊ'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930010,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ አሰፋ አሳለ',
+    gender: 'ወ',
+    roleTitle: 'ወንጌላዊ',
+    roleTitles: ['ወንጌላዊ'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930011,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ ማቴዎስ ማሳነ',
+    gender: 'ወ',
+    roleTitle: 'ወንጌላዊ',
+    roleTitles: ['ወንጌላዊ'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930012,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ ካሰች ብርሃኑ',
+    gender: 'ሴ',
+    roleTitle: 'ወንጌላዊት',
+    roleTitles: ['ወንጌላዊት'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930013,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ አካሉ አንጃ',
+    gender: 'ወ',
+    roleTitle: 'ወንጌላዊ',
+    roleTitles: ['ወንጌላዊ'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930014,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ አማረች ደጉ',
+    gender: 'ሴ',
+    roleTitle: 'ወንጌላዊት',
+    roleTitles: ['ወንጌላዊት'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  }
+];
+
+export const DEFAULT_ADMIN_STAFF: ChurchHRRecord[] = [
+  {
+    id: 930101,
+    category: 'admin_staff',
+    name: 'አቶ መኮንን ሞላ',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930102,
+    category: 'admin_staff',
+    name: 'ዳዊት ደሳለኝ',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930103,
+    category: 'admin_staff',
+    name: 'ኡሹላ ባሳ',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930104,
+    category: 'admin_staff',
+    name: 'ዳዊት ደሳለኝ ጥያንሶ',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930105,
+    category: 'admin_staff',
+    name: 'ሞደስ ሞጃ',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930106,
+    category: 'admin_staff',
+    name: 'ተገኝ ኦዳ',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930107,
+    category: 'admin_staff',
+    name: 'ሕዝቀኤል',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930108,
+    category: 'admin_staff',
+    name: 'ማርቆስ',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930109,
+    category: 'admin_staff',
+    name: 'ኢያሱ',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930110,
+    category: 'admin_staff',
+    name: 'ሳራ ደአ',
+    gender: 'ሴ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930111,
+    category: 'admin_staff',
+    name: 'መሰለች',
+    gender: 'ሴ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    department: 'አስተዳደርና ፋይናንስ',
+    departments: ['አስተዳደርና ፋይናንስ'],
+    status: 'በስራ ላይ'
+  }
+];
+
+export const DEFAULT_CHURCH_HR_RECORDS: ChurchHRRecord[] = [
+  ...DEFAULT_FULL_TIME_MINISTERS,
+  ...DEFAULT_ADMIN_STAFF
+];
+
+export const createDefaultAdminFinanceWorkspaceData = (): DepartmentWorkspaceData => ({
+  ...createEmptyDepartmentWorkspaceData(),
+  hrRecords: DEFAULT_CHURCH_HR_RECORDS.map((r) => ({
+    ...r,
+    roleTitles: r.roleTitles ? [...r.roleTitles] : undefined,
+    departments: r.departments ? [...r.departments] : undefined
+  })),
+  adminHrDefaultSeeded: true
 });
 
 export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData => ({

@@ -2733,6 +2733,9 @@ export default function App() {
                     chapelPlansMap={appData.departmentData?.chapels_dept?.chapelPlans || {}}
                     onUpdateChapelPlans={handleUpdateChapelPlans}
                     departmentDataMap={appData.departmentData || {}}
+                    teachers={appData.teachers || []}
+                    choirMembers={appData.choirMembers || []}
+                    spiritualMembers={appData.spiritualMembers || []}
                     childrenPlans={appData.plans || DEFAULT_ANNUAL_PLAN}
                     planDispatches={appData.planDispatches || []}
                     onAcceptDispatch={handleAcceptDispatchedPlan}

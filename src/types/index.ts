@@ -117,6 +117,8 @@ export interface ChurchChild {
 
 export type WomenHouseholdCategory = 'married' | 'female_head' | 'other';
 
+export type EvangelismMemberStatus = 'paying' | 'unpaid' | 'discontinued' | 'not_member';
+
 export interface ChurchMember {
   id: number;
   memberCode?: string; // የአባል መለያ ኮድ (ምሳሌ፦ ብከቃሕቤክኤልሮኢ 0001)
@@ -138,6 +140,9 @@ export interface ChurchMember {
   womenCategory?: WomenHouseholdCategory; // የሴቶች ምድብ (ባለትዳር / ራሳቸው አባወራ)
   isYouth?: boolean; // በወጣቶች መረጃ ቋት ውስጥ በቀጥታ የተመዘገበ/ች
   youthMinistryRole?: string; // በወጣቶች አገልግሎት ድርሻ
+  serviceRoles?: string[]; // በቤተክርስቲያኒቱ አገልግሎቶች ላይ የተሰማራበት ድርሻ (መሪ፣ መዘምራን፣ የመዝሙር መሪ፣ ዲያቆን...)
+  evangelismStatus?: EvangelismMemberStatus; // የወንጌል አገልግሎት አባልነትና የክፍያ ሁኔታ
+  spiritualCourses?: string[]; // በቤተክርስቲያኒቱ እየተማረ ያለው መንፈሳዊ ትምህርት (መቅህማ፣ BTCP፣ መጽሐፍ ቅዱስ ት/ቤት...)
   sheetName?: string; // የኤክሴል ሺት ስም
   registeredDate?: string;
 }
@@ -204,7 +209,9 @@ export interface ChurchHRRecord {
   name: string;
   gender: 'ወ' | 'ሴ' | string;
   roleTitle: string;
+  roleTitles?: string[];
   department?: string;
+  departments?: string[];
   phone?: string;
   hireDate?: string;
   monthlySalary?: number;
@@ -380,6 +387,7 @@ export interface DepartmentWorkspaceData {
   missionaryReports?: MissionaryQuarterlyReportRecord[];
   eldersDefaultSeeded?: boolean;
   evangelismMissionariesDefaultSeeded?: boolean;
+  adminHrDefaultSeeded?: boolean;
 }
 
 export type SubmissionType = 'plan' | 'report' | 'letter';

@@ -24,10 +24,23 @@ import {
   KeyRound,
   Copy,
   Hash,
-  Languages
+  Languages,
+  BookOpen,
+  Award,
+  Plus
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ChurchMember, ChurchChild, Role, Student } from '../types';
+import {
+  ChoirMember,
+  ChurchMember,
+  ChurchChild,
+  DepartmentWorkspaceData,
+  EvangelismMemberStatus,
+  Role,
+  SpiritualMember,
+  Student,
+  Teacher
+} from '../types';
 import {
   parseChildAge,
   mapToOfficialChapel,
@@ -70,6 +83,13 @@ import {
   SUGGESTED_EDUCATION_LEVELS,
   SUGGESTED_OCCUPATIONS
 } from '../utils/churchMemberBreakdownStats';
+import {
+  buildMemberMinistryProfileIndex,
+  computeChapelEvangelismBreakdown,
+  EVANGELISM_MASTER_STATUS_META,
+  SUGGESTED_SERVICE_ROLES,
+  SUGGESTED_SPIRITUAL_COURSES
+} from '../utils/memberMinistryProfile';
 
 interface ChurchMasterTabProps {
   currentYear: string;
@@ -79,9 +99,14 @@ interface ChurchMasterTabProps {
   churchChildren?: ChurchChild[];
   studentsByClass?: { [className: string]: Student[] };
   classList?: string[];
+  departmentDataMap?: { [unitId: string]: DepartmentWorkspaceData };
+  teachers?: Teacher[];
+  choirMembers?: ChoirMember[];
+  spiritualMembers?: SpiritualMember[];
   onBatchAddMembers: (members: ChurchMember[], mode?: 'append' | 'replace', baselineYear?: number) => void;
   onAddMember: (member: Omit<ChurchMember, 'id'>) => ChurchMember | void;
   onUpdateMember: (member: ChurchMember) => void;
+  onUpdateEvangelismMemberStatus?: (member: ChurchMember, nextStatus: EvangelismMemberStatus) => void;
   onDeleteMember: (id: number) => void;
   onClearChurchMembers: () => void;
   onExtractChildrenToChildrenTab: (children: Omit<ChurchChild, 'id'>[], mode?: 'append' | 'replace') => void;
@@ -101,9 +126,14 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   churchChildren = [],
   studentsByClass = {},
   classList = [],
+  departmentDataMap = {},
+  teachers = [],
+  choirMembers = [],
+  spiritualMembers = [],
   onBatchAddMembers,
   onAddMember,
   onUpdateMember,
+  onUpdateEvangelismMemberStatus,
   onDeleteMember,
   onClearChurchMembers,
   onExtractChildrenToChildrenTab,
@@ -145,6 +175,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const [selectedSpiritualFilter, setSelectedSpiritualFilter] = useState<SpiritualFilterValue>('all');
   const [selectedEducationKey, setSelectedEducationKey] = useState<string>('all');
   const [selectedOccupationKey, setSelectedOccupationKey] = useState<string>('all');
+  const [selectedServiceRoleFilter, setSelectedServiceRoleFilter] = useState<string>('all');
+  const [selectedEvangelismFilter, setSelectedEvangelismFilter] = useState<'all' | EvangelismMemberStatus>('all');
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState<string>('all');
   const [isNameCompareModalOpen, setIsNameCompareModalOpen] = useState<boolean>(false);
   const [isAgeModalOpen, setIsAgeModalOpen] = useState<boolean>(false);
   const [excelBaselineYear, setExcelBaselineYear] = useState<number>(2017);
@@ -167,6 +200,11 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const [formIsBaptized, setFormIsBaptized] = useState<'yes' | 'no' | 'unknown'>('unknown');
   const [formTakesLordsSupper, setFormTakesLordsSupper] = useState<'yes' | 'no' | 'unknown'>('unknown');
   const [formPaysTithe, setFormPaysTithe] = useState<'yes' | 'no' | 'unknown'>('unknown');
+  const [formEvangelismStatus, setFormEvangelismStatus] = useState<EvangelismMemberStatus>('not_member');
+  const [formServiceRoles, setFormServiceRoles] = useState<string[]>([]);
+  const [formCustomRoleInput, setFormCustomRoleInput] = useState<string>('');
+  const [formSpiritualCourses, setFormSpiritualCourses] = useState<string[]>([]);
+  const [formCustomCourseInput, setFormCustomCourseInput] = useState<string>('');
   const [formChapel, setFormChapel] = useState<string>(officialLoggedInChapel || DEFAULT_CHAPELS[0]);
   const [formParent, setFormParent] = useState<string>('');
   const [formPhone, setFormPhone] = useState<string>('');
@@ -280,7 +318,43 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     return buildSundaySchoolIndex(studentsByClass || {});
   }, [studentsByClass]);
 
-  // Members mapped with Sunday School enrollment status
+  // Unified Service Roles, Evangelism Membership Status & Spiritual Courses Index across the entire church
+  const memberMinistryProfileMap = useMemo(
+    () =>
+      buildMemberMinistryProfileIndex({
+        churchMembers: effectiveMembers,
+        departmentDataMap,
+        teachers,
+        choirMembers,
+        spiritualMembers,
+        studentsByClass
+      }),
+    [effectiveMembers, departmentDataMap, teachers, choirMembers, spiritualMembers, studentsByClass]
+  );
+
+  // Per-Chapel Evangelism Breakdown (Paying / Unpaid / Discontinued / Not a Member)
+  const chapelEvangelismBreakdown = useMemo(
+    () =>
+      computeChapelEvangelismBreakdown(
+        effectiveMembers,
+        memberMinistryProfileMap,
+        chapelStats.chapels
+      ),
+    [effectiveMembers, memberMinistryProfileMap, chapelStats.chapels]
+  );
+
+  // Distinct Spiritual Courses discovered across all members for easy filtering
+  const availableSpiritualCourseOptions = useMemo(() => {
+    const set = new Set<string>(SUGGESTED_SPIRITUAL_COURSES);
+    memberMinistryProfileMap.forEach((p) => {
+      p.spiritualCourses.forEach((c) => {
+        if (c.trim()) set.add(c.trim());
+      });
+    });
+    return Array.from(set);
+  }, [memberMinistryProfileMap]);
+
+  // Members mapped with Sunday School enrollment status + Ministry Profile
   const churchMembersWithStatus = useMemo(() => {
     return effectiveMembers.map((m) => {
       const match = matchChildNameToSundaySchool(m.name, sundaySchoolIndex);
@@ -292,6 +366,14 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       }
       if (numAge === -1) numAge = 35;
       const isChild = numAge >= 0 && numAge <= 14;
+      const profile = memberMinistryProfileMap.get(m.id) || {
+        serviceRoles: m.serviceRoles || [],
+        autoServiceRoles: [],
+        evangelismStatus: m.evangelismStatus || ('not_member' as EvangelismMemberStatus),
+        evangelismFromDept: false,
+        spiritualCourses: m.spiritualCourses || [],
+        autoSpiritualCourses: []
+      };
 
       return {
         ...m,
@@ -301,10 +383,11 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         enrolledClass: match ? match.className : null,
         matchedStudent: match ? match.student : null,
         matchLabel: match ? match.matchLabel : null,
-        studentAge: match?.student?.age ?? null
+        studentAge: match?.student?.age ?? null,
+        profile
       };
     });
-  }, [effectiveMembers, sundaySchoolIndex, currentYear]);
+  }, [effectiveMembers, sundaySchoolIndex, currentYear, memberMinistryProfileMap]);
 
   // Chapel-scoped members (used for Spiritual/Education/Occupation stats so clicking a category filters the directory without hiding other categories)
   const chapelScopedMembers = useMemo(() => {
@@ -323,7 +406,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   // Filtered members list
   const filteredMembers = useMemo(() => {
     return churchMembersWithStatus.filter((m) => {
-      // Search term (Amharic homophones, multi-word names, phones, chapels)
+      // Search term (Amharic homophones, multi-word names, phones, chapels, service roles, courses)
       if (searchTerm.trim()) {
         const matchedSearch = matchesAmharicSearch(
           searchTerm,
@@ -338,7 +421,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
           m.matchedStudent?.name,
           m.enrolledClass,
           m.educationLevel,
-          m.occupation
+          m.occupation,
+          m.profile.serviceRoles.join(' '),
+          m.profile.spiritualCourses.join(' '),
+          EVANGELISM_MASTER_STATUS_META[m.profile.evangelismStatus].am
         );
         if (!matchedSearch) return false;
       }
@@ -379,6 +465,54 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         if (selectedSpiritualFilter === 'tithe_unknown' && m.paysTithe !== undefined) return false;
       }
 
+      // Service Role filter
+      if (selectedServiceRoleFilter !== 'all') {
+        const rolesJoined = normalizeAmharicSearchText(m.profile.serviceRoles.join(' '));
+        if (selectedServiceRoleFilter === 'has_any') {
+          if (m.profile.serviceRoles.length === 0) return false;
+        } else if (selectedServiceRoleFilter === 'none') {
+          if (m.profile.serviceRoles.length > 0) return false;
+        } else if (selectedServiceRoleFilter === 'choir') {
+          if (!rolesJoined.includes(normalizeAmharicSearchText('መዘምራን'))) return false;
+        } else if (selectedServiceRoleFilter === 'worship_leader') {
+          if (!rolesJoined.includes(normalizeAmharicSearchText('የመዝሙር መሪ'))) return false;
+        } else if (selectedServiceRoleFilter === 'leader') {
+          if (
+            !rolesJoined.includes(normalizeAmharicSearchText('መሪ')) &&
+            !rolesJoined.includes(normalizeAmharicSearchText('ሽማግሌ')) &&
+            !rolesJoined.includes(normalizeAmharicSearchText('አስተባባሪ'))
+          ) {
+            return false;
+          }
+        } else if (selectedServiceRoleFilter === 'deacon') {
+          if (!rolesJoined.includes(normalizeAmharicSearchText('ዲያቆን'))) return false;
+        } else if (selectedServiceRoleFilter === 'teacher') {
+          if (!rolesJoined.includes(normalizeAmharicSearchText('መምህር'))) return false;
+        } else if (selectedServiceRoleFilter === 'missionary') {
+          if (!rolesJoined.includes(normalizeAmharicSearchText('ሚሽነሪ'))) return false;
+        }
+      }
+
+      // Evangelism Status filter
+      if (selectedEvangelismFilter !== 'all') {
+        if (m.profile.evangelismStatus !== selectedEvangelismFilter) return false;
+      }
+
+      // Spiritual Course filter
+      if (selectedCourseFilter !== 'all') {
+        if (selectedCourseFilter === 'has_any') {
+          if (m.profile.spiritualCourses.length === 0) return false;
+        } else if (selectedCourseFilter === 'none') {
+          if (m.profile.spiritualCourses.length > 0) return false;
+        } else {
+          const targetCourseNorm = normalizeAmharicSearchText(selectedCourseFilter);
+          const hasCourse = m.profile.spiritualCourses.some((c) =>
+            normalizeAmharicSearchText(c).includes(targetCourseNorm)
+          );
+          if (!hasCourse) return false;
+        }
+      }
+
       // Education Level & Occupation Category Filters
       if (selectedEducationKey !== 'all') {
         if (normalizeMemberCategoryValue(m.educationLevel, 'education').key !== selectedEducationKey) return false;
@@ -397,6 +531,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     selectedAgeCohort,
     sundaySchoolFilter,
     selectedSpiritualFilter,
+    selectedServiceRoleFilter,
+    selectedEvangelismFilter,
+    selectedCourseFilter,
     selectedEducationKey,
     selectedOccupationKey
   ]);
@@ -411,6 +548,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     selectedAgeCohort,
     sundaySchoolFilter,
     selectedSpiritualFilter,
+    selectedServiceRoleFilter,
+    selectedEvangelismFilter,
+    selectedCourseFilter,
     selectedEducationKey,
     selectedOccupationKey,
     pageSize
@@ -582,6 +722,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       'የዕድሜ ምድብ',
       'የትምህርት ደረጃ',
       'የስራ ዓይነት',
+      'የአገልግሎት ድርሻ',
+      'የወንጌል አገልግሎት ሁኔታ',
+      'በመማር ላይ ያለ መንፈሳዊ ትምህርት',
       'የተጠመቀ/ች',
       'የጌታ እራት',
       'አስራት',
@@ -619,6 +762,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         ageGroup,
         canonicalizeEducationLevel(m.educationLevel) || '-',
         canonicalizeOccupation(m.occupation) || '-',
+        m.profile.serviceRoles.length > 0 ? m.profile.serviceRoles.join('፣ ') : '-',
+        EVANGELISM_MASTER_STATUS_META[m.profile.evangelismStatus].am,
+        m.profile.spiritualCourses.length > 0 ? m.profile.spiritualCourses.join('፣ ') : '-',
         boolToAmharic(m.isBaptized),
         boolToAmharic(m.takesLordsSupper),
         boolToAmharic(m.paysTithe),
@@ -634,6 +780,49 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'አጠቃላይ የቤተክርስቲያን መረጃ');
+
+    // Chapel-level Evangelism Breakdown sheet
+    const chapelEvangRows: (string | number)[][] = [
+      ['በቻፕል ደረጃ የወንጌል አገልግሎት አባልነትና የክፍያ ሁኔታ'],
+      [],
+      [
+        'ቻፕል',
+        'ጠቅላላ አባላት',
+        'አባል — የሚከፍል (ወ)',
+        'አባል — የሚከፍል (ሴ)',
+        'አባል — የሚከፍል (ድምር)',
+        'አባል — የማይከፍል (ወ)',
+        'አባል — የማይከፍል (ሴ)',
+        'አባል — የማይከፍል (ድምር)',
+        'ያቋረጠ (ድምር)',
+        'አባል ያልሆነ (ድምር)'
+      ],
+      ...chapelEvangelismBreakdown.chapelRows.map((cr) => [
+        cr.chapel,
+        cr.totalMembers,
+        cr.payingMale,
+        cr.payingFemale,
+        cr.payingTotal,
+        cr.unpaidMale,
+        cr.unpaidFemale,
+        cr.unpaidTotal,
+        cr.discontinuedTotal,
+        cr.notMemberTotal
+      ]),
+      [
+        chapelEvangelismBreakdown.totals.chapel,
+        chapelEvangelismBreakdown.totals.totalMembers,
+        chapelEvangelismBreakdown.totals.payingMale,
+        chapelEvangelismBreakdown.totals.payingFemale,
+        chapelEvangelismBreakdown.totals.payingTotal,
+        chapelEvangelismBreakdown.totals.unpaidMale,
+        chapelEvangelismBreakdown.totals.unpaidFemale,
+        chapelEvangelismBreakdown.totals.unpaidTotal,
+        chapelEvangelismBreakdown.totals.discontinuedTotal,
+        chapelEvangelismBreakdown.totals.notMemberTotal
+      ]
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chapelEvangRows), 'በየቻፕሉ_ወንጌል_ሁኔታ');
 
     const detailed = computeChurchMemberDetailedBreakdown(filteredMembers);
     const totalLen = detailed.totalMembers.total;
@@ -851,12 +1040,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const triStateToBool = (v: 'yes' | 'no' | 'unknown'): boolean | undefined =>
     v === 'yes' ? true : v === 'no' ? false : undefined;
 
-  const handleToggleMemberSpiritualField = (
-    m: ChurchMember,
-    field: 'isBaptized' | 'takesLordsSupper' | 'paysTithe'
-  ) => {
-    const currentVal = m[field];
-    const nextVal = currentVal === true ? false : true;
+  const stripComputedMemberFields = (m: ChurchMember): ChurchMember => {
     const {
       numAge: _n,
       isChild: _c,
@@ -865,12 +1049,38 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       matchedStudent: _ms,
       matchLabel: _ml,
       studentAge: _sa,
+      profile: _pf,
       ...cleanMember
     } = m as ChurchMember & Record<string, any>;
+    return cleanMember as ChurchMember;
+  };
+
+  const handleToggleMemberSpiritualField = (
+    m: ChurchMember,
+    field: 'isBaptized' | 'takesLordsSupper' | 'paysTithe'
+  ) => {
+    const currentVal = m[field];
+    const nextVal = currentVal === true ? false : true;
+    const cleanMember = stripComputedMemberFields(m);
     onUpdateMember({
       ...cleanMember,
       [field]: nextVal
     });
+  };
+
+  const handleQuickChangeEvangelismStatus = (
+    m: ChurchMember,
+    nextStatus: EvangelismMemberStatus
+  ) => {
+    const cleanMember = stripComputedMemberFields(m);
+    const updated: ChurchMember = {
+      ...cleanMember,
+      evangelismStatus: nextStatus
+    };
+    onUpdateMember(updated);
+    if (onUpdateEvangelismMemberStatus) {
+      onUpdateEvangelismMemberStatus(updated, nextStatus);
+    }
   };
 
   const handleOpenAddModal = () => {
@@ -886,6 +1096,11 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormIsBaptized('unknown');
     setFormTakesLordsSupper('unknown');
     setFormPaysTithe('unknown');
+    setFormEvangelismStatus('not_member');
+    setFormServiceRoles([]);
+    setFormCustomRoleInput('');
+    setFormSpiritualCourses([]);
+    setFormCustomCourseInput('');
     setFormChapel(officialLoggedInChapel || DEFAULT_CHAPELS[0]);
     setFormParent('');
     setFormPhone('');
@@ -910,6 +1125,11 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormIsBaptized('unknown');
     setFormTakesLordsSupper('unknown');
     setFormPaysTithe('unknown');
+    setFormEvangelismStatus('not_member');
+    setFormServiceRoles([]);
+    setFormCustomRoleInput('');
+    setFormSpiritualCourses([]);
+    setFormCustomCourseInput('');
     setFormChapel(officialLoggedInChapel || DEFAULT_CHAPELS[0]);
     setFormParent('');
     setFormPhone('');
@@ -930,26 +1150,73 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   };
 
   const handleOpenEditModal = (m: ChurchMember) => {
-    setEditingMember(m);
+    const cleanMember = stripComputedMemberFields(m);
+    const existingProfile = memberMinistryProfileMap.get(cleanMember.id);
+    setEditingMember(cleanMember);
     setAddMode('new');
     setLookupCodeInput('');
     setLookupChapelHint('');
-    setFormName(m.name);
-    setFormGender(m.gender || 'ወ');
-    setFormAge(m.age !== undefined && m.age !== null && String(m.age).trim() !== '' ? String(m.age) : '30');
-    setFormEducationLevel(canonicalizeEducationLevel(m.educationLevel) || 'ዲግሪ');
-    setFormOccupation(canonicalizeOccupation(m.occupation) || 'የመንግሥት ሠራተኛ');
-    setFormIsBaptized(boolToTriState(m.isBaptized));
-    setFormTakesLordsSupper(boolToTriState(m.takesLordsSupper));
-    setFormPaysTithe(boolToTriState(m.paysTithe));
-    setFormChapel(officialLoggedInChapel || mapToOfficialChapel(m.chapel || ''));
-    setFormParent(m.parentName || '');
-    setFormPhone(m.phone || '');
-    setFormResidence(m.residence || '');
-    setFormRelation(m.relationToHead || '');
-    setFormWomenCategory(m.womenCategory || 'auto');
-    setFormFamilyCode(m.familyCode || '');
+    setFormName(cleanMember.name);
+    setFormGender(cleanMember.gender || 'ወ');
+    setFormAge(
+      cleanMember.age !== undefined && cleanMember.age !== null && String(cleanMember.age).trim() !== ''
+        ? String(cleanMember.age)
+        : '30'
+    );
+    setFormEducationLevel(canonicalizeEducationLevel(cleanMember.educationLevel) || 'ዲግሪ');
+    setFormOccupation(canonicalizeOccupation(cleanMember.occupation) || 'የመንግሥት ሠራተኛ');
+    setFormIsBaptized(boolToTriState(cleanMember.isBaptized));
+    setFormTakesLordsSupper(boolToTriState(cleanMember.takesLordsSupper));
+    setFormPaysTithe(boolToTriState(cleanMember.paysTithe));
+    setFormEvangelismStatus(
+      cleanMember.evangelismStatus || existingProfile?.evangelismStatus || 'not_member'
+    );
+    setFormServiceRoles([...(cleanMember.serviceRoles || [])]);
+    setFormCustomRoleInput('');
+    setFormSpiritualCourses([...(cleanMember.spiritualCourses || [])]);
+    setFormCustomCourseInput('');
+    setFormChapel(officialLoggedInChapel || mapToOfficialChapel(cleanMember.chapel || ''));
+    setFormParent(cleanMember.parentName || '');
+    setFormPhone(cleanMember.phone || '');
+    setFormResidence(cleanMember.residence || '');
+    setFormRelation(cleanMember.relationToHead || '');
+    setFormWomenCategory(cleanMember.womenCategory || 'auto');
+    setFormFamilyCode(cleanMember.familyCode || '');
     setIsAddModalOpen(true);
+  };
+
+  const handleToggleFormRole = (roleLabel: string) => {
+    const clean = roleLabel.trim();
+    if (!clean) return;
+    setFormServiceRoles((prev) =>
+      prev.includes(clean) ? prev.filter((r) => r !== clean) : [...prev, clean]
+    );
+  };
+
+  const handleAddCustomRole = () => {
+    const clean = formCustomRoleInput.trim();
+    if (!clean) return;
+    if (!formServiceRoles.includes(clean)) {
+      setFormServiceRoles((prev) => [...prev, clean]);
+    }
+    setFormCustomRoleInput('');
+  };
+
+  const handleToggleFormCourse = (courseLabel: string) => {
+    const clean = courseLabel.trim();
+    if (!clean) return;
+    setFormSpiritualCourses((prev) =>
+      prev.includes(clean) ? prev.filter((c) => c !== clean) : [...prev, clean]
+    );
+  };
+
+  const handleAddCustomCourse = () => {
+    const clean = formCustomCourseInput.trim();
+    if (!clean) return;
+    if (!formSpiritualCourses.includes(clean)) {
+      setFormSpiritualCourses((prev) => [...prev, clean]);
+    }
+    setFormCustomCourseInput('');
   };
 
   const handleSaveMember = (e: React.FormEvent) => {
@@ -1013,6 +1280,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         ? 'ራሷ የቤቱ አባወራ'
         : editingMember?.maritalStatus;
 
+    const cleanRoles = formServiceRoles.map((r) => r.trim()).filter(Boolean);
+    const cleanCourses = formSpiritualCourses.map((c) => c.trim()).filter(Boolean);
+
     const payload: Omit<ChurchMember, 'id'> = {
       name: formName.trim(),
       gender: formGender,
@@ -1022,6 +1292,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       isBaptized: triStateToBool(formIsBaptized),
       takesLordsSupper: triStateToBool(formTakesLordsSupper),
       paysTithe: triStateToBool(formPaysTithe),
+      evangelismStatus: formEvangelismStatus,
+      serviceRoles: cleanRoles.length > 0 ? cleanRoles : undefined,
+      spiritualCourses: cleanCourses.length > 0 ? cleanCourses : undefined,
       chapel: officialChapel,
       parentName: resolvedParent,
       phone: resolvedPhone,
@@ -1037,10 +1310,14 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     };
 
     if (editingMember) {
-      onUpdateMember({
+      const updatedMember: ChurchMember = {
         ...payload,
         id: editingMember.id
-      });
+      };
+      onUpdateMember(updatedMember);
+      if (onUpdateEvangelismMemberStatus) {
+        onUpdateEvangelismMemberStatus(updatedMember, formEvangelismStatus);
+      }
       if (editWillUnlinkToStandalone) {
         setExtractedSuccessMsg(
           `✓ "${payload.name}" ራሱን የቻለ (1 ሰው ቤተሰብ) ሆኖ ቀጥታ የራሱ ኮድ (${nextAutoCodePreview}) ተሰጥቶታል!`
@@ -1054,6 +1331,12 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       }
     } else {
       const created = onAddMember(payload);
+      if (onUpdateEvangelismMemberStatus && formEvangelismStatus !== 'not_member') {
+        onUpdateEvangelismMemberStatus(
+          { ...(payload as ChurchMember), id: created && 'id' in created ? created.id : Date.now() },
+          formEvangelismStatus
+        );
+      }
       const assignedCode =
         (created && 'memberCode' in created && created.memberCode) ||
         (resolvedFamilyCode
@@ -1456,6 +1739,120 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
         </div>
       </div>
 
+      {/* Chapel-level Evangelism Membership & Payment Breakdown (Paying / Unpaid / Discontinued / Not a Member) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+              <Award className="w-4 h-4 text-rose-700 shrink-0" />
+              <span>
+                {officialLoggedInChapel
+                  ? `የ${officialLoggedInChapel} — የወንጌል አገልግሎት አባልነትና የክፍያ ሁኔታ`
+                  : 'በ10ሩም ቻፕሎች ደረጃ የወንጌል አገልግሎት አባልነትና የክፍያ ሁኔታ ማጠቃለያ'}
+              </span>
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              አባል ሆነው የሚከፍል / የማይከፍል / ያቋረጠ / አባል ያልሆነ — በቻፕል ደረጃ ለመለየትና ለማጣራት የቁጥር ቁልፎቹን ይጫኑ
+            </p>
+          </div>
+          {selectedEvangelismFilter !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setSelectedEvangelismFilter('all')}
+              className="text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1 rounded-lg self-start cursor-pointer"
+            >
+              ✕ የወንጌል አገልግሎት ማጣሪያ አጽዳ
+            </button>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <th className="py-2 px-3 text-left">ቻፕል (አጥቢያ)</th>
+                <th className="py-2 px-3 text-right">ጠቅላላ</th>
+                <th className="py-2 px-3 text-center text-emerald-900 bg-emerald-50/70">አባል — የሚከፍል</th>
+                <th className="py-2 px-3 text-center text-blue-900 bg-blue-50/70">አባል — የማይከፍል</th>
+                <th className="py-2 px-3 text-center text-rose-900 bg-rose-50/70">ያቋረጠ</th>
+                <th className="py-2 px-3 text-center text-slate-700 bg-slate-50">አባል ያልሆነ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {chapelEvangelismBreakdown.chapelRows.map((cr) => {
+                const pickStatusForChapel = (status: EvangelismMemberStatus) => {
+                  if (!officialLoggedInChapel) {
+                    setSelectedChapels([cr.chapel]);
+                    setSelectedChapelFilter('all');
+                  }
+                  setSelectedEvangelismFilter(
+                    selectedEvangelismFilter === status &&
+                      (officialLoggedInChapel || selectedChapels.includes(cr.chapel))
+                      ? 'all'
+                      : status
+                  );
+                };
+
+                return (
+                  <tr key={`ev_ch_${cr.chapel}`} className="hover:bg-slate-50/70">
+                    <td className="py-2 px-3 font-extrabold text-slate-900">{cr.chapel}</td>
+                    <td className="py-2 px-3 text-right font-bold tabular-nums text-slate-800">
+                      {cr.totalMembers.toLocaleString('am-ET')}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => pickStatusForChapel('paying')}
+                        className="px-2 py-0.5 rounded-lg font-extrabold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 tabular-nums cursor-pointer"
+                      >
+                        {cr.payingTotal} ({cr.totalMembers > 0 ? Math.round((cr.payingTotal / cr.totalMembers) * 100) : 0}%)
+                      </button>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => pickStatusForChapel('unpaid')}
+                        className="px-2 py-0.5 rounded-lg font-extrabold text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 tabular-nums cursor-pointer"
+                      >
+                        {cr.unpaidTotal} ({cr.totalMembers > 0 ? Math.round((cr.unpaidTotal / cr.totalMembers) * 100) : 0}%)
+                      </button>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => pickStatusForChapel('discontinued')}
+                        className="px-2 py-0.5 rounded-lg font-extrabold text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 tabular-nums cursor-pointer"
+                      >
+                        {cr.discontinuedTotal} ({cr.totalMembers > 0 ? Math.round((cr.discontinuedTotal / cr.totalMembers) * 100) : 0}%)
+                      </button>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => pickStatusForChapel('not_member')}
+                        className="px-2 py-0.5 rounded-lg font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 tabular-nums cursor-pointer"
+                      >
+                        {cr.notMemberTotal} ({cr.totalMembers > 0 ? Math.round((cr.notMemberTotal / cr.totalMembers) * 100) : 0}%)
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900">
+                <td className="py-2 px-3">{chapelEvangelismBreakdown.totals.chapel}</td>
+                <td className="py-2 px-3 text-right tabular-nums">{chapelEvangelismBreakdown.totals.totalMembers.toLocaleString('am-ET')}</td>
+                <td className="py-2 px-3 text-center text-emerald-900 tabular-nums">{chapelEvangelismBreakdown.totals.payingTotal.toLocaleString('am-ET')}</td>
+                <td className="py-2 px-3 text-center text-blue-900 tabular-nums">{chapelEvangelismBreakdown.totals.unpaidTotal.toLocaleString('am-ET')}</td>
+                <td className="py-2 px-3 text-center text-rose-900 tabular-nums">{chapelEvangelismBreakdown.totals.discontinuedTotal.toLocaleString('am-ET')}</td>
+                <td className="py-2 px-3 text-center text-slate-800 tabular-nums">{chapelEvangelismBreakdown.totals.notMemberTotal.toLocaleString('am-ET')}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
       {/* Search & Filter Controls */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1463,10 +1860,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="በኮድ (ብከቃሕቤክ...)፣ በስም፣ ወላጅ፣ ስልክ ፈልግ..."
+              placeholder="በኮድ (ብከቃሕቤክ...)፣ በስም፣ ድርሻ፣ ትምህርት ፈልግ..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white"
+              className="w-full pl-9 pr-8 py-2 text-base sm:text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white"
             />
             {searchTerm && (
               <button
@@ -1490,7 +1887,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                 setSelectedChapelFilter(e.target.value);
                 setSelectedChapels([]);
               }}
-              className={`w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+              className={`w-full py-2 px-2.5 text-base sm:text-xs border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
                 officialLoggedInChapel ? 'bg-slate-100 cursor-not-allowed' : 'bg-white cursor-pointer'
               }`}
             >
@@ -1508,7 +1905,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             <select
               value={sundaySchoolFilter}
               onChange={(e) => setSundaySchoolFilter(e.target.value as 'all' | 'enrolled' | 'not_enrolled_children')}
-              className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
+              className="w-full py-2 px-2.5 text-base sm:text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
             >
               <option value="all">የሰንበት ት/ቤት ሁኔታ (ሁሉም)</option>
               <option value="enrolled">✓ ሰንበት ት/ቤት የገቡ ልጆች</option>
@@ -1521,7 +1918,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             <select
               value={selectedSpiritualFilter}
               onChange={(e) => setSelectedSpiritualFilter(e.target.value as SpiritualFilterValue)}
-              className="w-full py-2 px-2.5 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
+              className="w-full py-2 px-2.5 text-base sm:text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
             >
               <option value="all">ጥምቀት / ጌታ እራት / አስራት (ሁሉም)</option>
               <option value="baptized_yes">✓ የተጠመቁ</option>
@@ -1533,6 +1930,61 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               <option value="baptized_unknown">? ጥምቀት ያልተመዘገበ</option>
               <option value="supper_unknown">? የጌታ እራት ያልተመዘገበ</option>
               <option value="tithe_unknown">? አስራት ያልተመዘገበ</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Second Filter Row: Service Roles, Evangelism Status & Enrolled Spiritual Education */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="flex items-center gap-1.5">
+            <Award className="w-4 h-4 text-indigo-600 shrink-0" />
+            <select
+              value={selectedServiceRoleFilter}
+              onChange={(e) => setSelectedServiceRoleFilter(e.target.value)}
+              className="w-full py-2 px-2.5 text-base sm:text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
+            >
+              <option value="all">የአገልግሎት ድርሻ (ሁሉም)</option>
+              <option value="has_any">✓ የአገልግሎት ድርሻ ያላቸው</option>
+              <option value="leader">👑 መሪዎች / ሽማግሌዎች / አስተባባሪዎች</option>
+              <option value="choir">🎵 መዘምራን ህብረት</option>
+              <option value="worship_leader">🎤 የመዝሙር መሪዎች ህብረት</option>
+              <option value="deacon">🤝 ዲያቆናት</option>
+              <option value="teacher">📚 የሰንበት/መጽሐፍ ቅዱስ መምህራን</option>
+              <option value="missionary">🌍 ሚሽነሪዎች</option>
+              <option value="none">— የአገልግሎት ድርሻ ያልተገለጸላቸው</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-rose-600 shrink-0" />
+            <select
+              value={selectedEvangelismFilter}
+              onChange={(e) => setSelectedEvangelismFilter(e.target.value as 'all' | EvangelismMemberStatus)}
+              className="w-full py-2 px-2.5 text-base sm:text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
+            >
+              <option value="all">የወንጌል አገልግሎት ሁኔታ (ሁሉም)</option>
+              <option value="paying">✓ {EVANGELISM_MASTER_STATUS_META.paying.am}</option>
+              <option value="unpaid">• {EVANGELISM_MASTER_STATUS_META.unpaid.am}</option>
+              <option value="discontinued">✗ {EVANGELISM_MASTER_STATUS_META.discontinued.am}</option>
+              <option value="not_member">— {EVANGELISM_MASTER_STATUS_META.not_member.am}</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <BookOpen className="w-4 h-4 text-emerald-700 shrink-0" />
+            <select
+              value={selectedCourseFilter}
+              onChange={(e) => setSelectedCourseFilter(e.target.value)}
+              className="w-full py-2 px-2.5 text-base sm:text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
+            >
+              <option value="all">በመማር ላይ ያለ መንፈሳዊ ትምህርት (ሁሉም)</option>
+              <option value="has_any">✓ መንፈሳዊ ትምህርት እየተማሩ ያሉ</option>
+              {availableSpiritualCourseOptions.map((c) => (
+                <option key={`crs_opt_${c}`} value={c}>
+                  📖 {c}
+                </option>
+              ))}
+              <option value="none">— በመንፈሳዊ ትምህርት ያልተመዘገቡ</option>
             </select>
           </div>
         </div>
@@ -1575,7 +2027,16 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                 English
               </button>
             </div>
-            {(searchTerm || (!officialLoggedInChapel && (selectedChapelFilter !== 'all' || selectedChapels.length > 0)) || selectedAgeCohort !== 'all' || sundaySchoolFilter !== 'all' || selectedSpiritualFilter !== 'all' || selectedEducationKey !== 'all' || selectedOccupationKey !== 'all') && (
+            {(searchTerm ||
+              (!officialLoggedInChapel && (selectedChapelFilter !== 'all' || selectedChapels.length > 0)) ||
+              selectedAgeCohort !== 'all' ||
+              sundaySchoolFilter !== 'all' ||
+              selectedSpiritualFilter !== 'all' ||
+              selectedServiceRoleFilter !== 'all' ||
+              selectedEvangelismFilter !== 'all' ||
+              selectedCourseFilter !== 'all' ||
+              selectedEducationKey !== 'all' ||
+              selectedOccupationKey !== 'all') && (
               <button
                 type="button"
                 onClick={() => {
@@ -1587,6 +2048,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                   setSelectedAgeCohort('all');
                   setSundaySchoolFilter('all');
                   setSelectedSpiritualFilter('all');
+                  setSelectedServiceRoleFilter('all');
+                  setSelectedEvangelismFilter('all');
+                  setSelectedCourseFilter('all');
                   setSelectedEducationKey('all');
                   setSelectedOccupationKey('all');
                 }}
@@ -1597,7 +2061,13 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
             )}
           </div>
         </div>
-        {(selectedSpiritualFilter !== 'all' || selectedEducationKey !== 'all' || selectedOccupationKey !== 'all' || sundaySchoolFilter !== 'all') && (
+        {(selectedSpiritualFilter !== 'all' ||
+          selectedEducationKey !== 'all' ||
+          selectedOccupationKey !== 'all' ||
+          sundaySchoolFilter !== 'all' ||
+          selectedServiceRoleFilter !== 'all' ||
+          selectedEvangelismFilter !== 'all' ||
+          selectedCourseFilter !== 'all') && (
           <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-700">
             <span className="text-slate-500">ንቁ ማጣሪያዎች፦</span>
             {sundaySchoolFilter !== 'all' && (
@@ -1607,6 +2077,33 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                 className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 cursor-pointer"
               >
                 ሰንበት ት/ቤት ✕
+              </button>
+            )}
+            {selectedServiceRoleFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSelectedServiceRoleFilter('all')}
+                className="px-2 py-0.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-900 cursor-pointer"
+              >
+                የአገልግሎት ድርሻ ✕
+              </button>
+            )}
+            {selectedEvangelismFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSelectedEvangelismFilter('all')}
+                className="px-2 py-0.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-900 cursor-pointer"
+              >
+                ወንጌል፦ {EVANGELISM_MASTER_STATUS_META[selectedEvangelismFilter].shortAm} ✕
+              </button>
+            )}
+            {selectedCourseFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSelectedCourseFilter('all')}
+                className="px-2 py-0.5 rounded-lg bg-teal-100 hover:bg-teal-200 text-teal-900 cursor-pointer"
+              >
+                መንፈሳዊ ትምህርት ✕
               </button>
             )}
             {selectedSpiritualFilter !== 'all' && (
@@ -1677,6 +2174,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                         <th className="py-2.5 px-3 text-center w-14">ዕድሜ</th>
                         <th className="py-2.5 px-3 min-w-[110px]">የትምህርት ደረጃ</th>
                         <th className="py-2.5 px-3 min-w-[110px]">የስራ ዓይነት</th>
+                        <th className="py-2.5 px-3 min-w-[175px]">የአገልግሎት ድርሻ</th>
+                        <th className="py-2.5 px-3 min-w-[165px]">የወንጌል አገልግሎት ሁኔታ</th>
+                        <th className="py-2.5 px-3 min-w-[165px]">የሚማረው መንፈሳዊ ትምህርት</th>
                         <th className="py-2.5 px-3 min-w-[140px]">ጥምቀት / እራት / አስራት</th>
                         <th className="py-2.5 px-3 min-w-[130px]">የወላጅ/አሳዳጊ ስም</th>
                         <th className="py-2.5 px-3 min-w-[130px]">የወላጅ/አባል ስልክ</th>
@@ -1686,7 +2186,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                     <tbody className="divide-y divide-slate-100">
                       {chMembers.length === 0 ? (
                         <tr>
-                          <td colSpan={11} className="py-6 text-center text-slate-400 font-medium">
+                          <td colSpan={14} className="py-6 text-center text-slate-400 font-medium">
                             በዚህ ቻፕል እስካሁን የተመዘገበ አባል የለም።
                           </td>
                         </tr>
@@ -1695,6 +2195,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                           const parsed = parseChildAge(m.age, parseInt(currentYear, 10) || 2018, 'auto');
                           const numAge = parsed.age !== -1 ? parsed.age : parseInt(String(m.age || '0'), 10) || 0;
                           const isChild = numAge >= 0 && numAge <= 14;
+                          const evMeta = EVANGELISM_MASTER_STATUS_META[m.profile.evangelismStatus];
 
                           return (
                             <tr key={`grp_mem_${m.id}`} className="hover:bg-blue-50/30 transition-colors">
@@ -1751,6 +2252,53 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                               </td>
                               <td className="py-2 px-3 text-slate-700">{canonicalizeEducationLevel(m.educationLevel) || '-'}</td>
                               <td className="py-2 px-3 text-slate-700">{canonicalizeOccupation(m.occupation) || '-'}</td>
+                              <td className="py-2 px-3">
+                                {m.profile.serviceRoles.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {m.profile.serviceRoles.map((sr, rIdx) => (
+                                      <span
+                                        key={`gr_sr_${m.id}_${rIdx}`}
+                                        className="inline-block px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-900 border border-indigo-200 text-[10px] font-bold"
+                                      >
+                                        {sr}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">-</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3">
+                                <select
+                                  value={m.profile.evangelismStatus}
+                                  onChange={(e) =>
+                                    handleQuickChangeEvangelismStatus(m, e.target.value as EvangelismMemberStatus)
+                                  }
+                                  className={`px-2 py-1 rounded-lg border text-[10px] font-bold cursor-pointer max-w-[155px] ${evMeta.badgeClass}`}
+                                  aria-label={`የ${m.name} የወንጌል አገልግሎት ሁኔታ`}
+                                >
+                                  <option value="paying">{EVANGELISM_MASTER_STATUS_META.paying.am}</option>
+                                  <option value="unpaid">{EVANGELISM_MASTER_STATUS_META.unpaid.am}</option>
+                                  <option value="discontinued">{EVANGELISM_MASTER_STATUS_META.discontinued.am}</option>
+                                  <option value="not_member">{EVANGELISM_MASTER_STATUS_META.not_member.am}</option>
+                                </select>
+                              </td>
+                              <td className="py-2 px-3">
+                                {m.profile.spiritualCourses.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {m.profile.spiritualCourses.map((sc, cIdx) => (
+                                      <span
+                                        key={`gr_sc_${m.id}_${cIdx}`}
+                                        className="inline-block px-1.5 py-0.5 rounded bg-teal-50 text-teal-900 border border-teal-200 text-[10px] font-bold"
+                                      >
+                                        {sc}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">-</span>
+                                )}
+                              </td>
                               <td className="py-2 px-3 whitespace-nowrap">
                                 <div className="flex items-center gap-1 text-[10px] font-bold">
                                   <button
@@ -1870,6 +2418,9 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                   <th className="py-3 px-3 text-center font-bold w-16">ዕድሜ</th>
                   <th className="py-3 px-3 font-bold min-w-[120px]">የትምህርት ደረጃ</th>
                   <th className="py-3 px-3 font-bold min-w-[110px]">የስራ ዓይነት</th>
+                  <th className="py-3 px-3 font-bold min-w-[180px]">የአገልግሎት ድርሻ</th>
+                  <th className="py-3 px-3 font-bold min-w-[175px]">የወንጌል አገልግሎት ሁኔታ</th>
+                  <th className="py-3 px-3 font-bold min-w-[175px]">የሚማረው መንፈሳዊ ትምህርት</th>
                   <th className="py-3 px-3 font-bold min-w-[155px]">ጥምቀት / እራት / አስራት</th>
                   <th className="py-3 px-3 font-bold min-w-[150px]">የሰንበት ት/ቤት ሁኔታ</th>
                   <th className="py-3 px-3 font-bold min-w-[140px]">የወላጅ/የቤተሰብ መሪ ስም</th>
@@ -1880,7 +2431,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               <tbody className="divide-y divide-slate-200">
                 {paginatedMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="py-12 text-center text-slate-500">
+                    <td colSpan={16} className="py-12 text-center text-slate-500">
                       <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                       <p className="font-semibold text-sm">በአጠቃላይ መረጃ ቋቱ የተመዘገበ አባል የለም!</p>
                       <p className="text-xs text-slate-400 mt-1">የ10ሩንም ቻፕል ኤክሴል ፋይል በመጫን መረጃዎችን ያስገቡ።</p>
@@ -1949,6 +2500,53 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                         </td>
                         <td className="py-2.5 px-3 text-slate-700">{canonicalizeEducationLevel(m.educationLevel) || '-'}</td>
                         <td className="py-2.5 px-3 text-slate-700">{canonicalizeOccupation(m.occupation) || '-'}</td>
+                        <td className="py-2.5 px-3">
+                          {m.profile.serviceRoles.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {m.profile.serviceRoles.map((sr, rIdx) => (
+                                <span
+                                  key={`tb_sr_${m.id}_${rIdx}`}
+                                  className="inline-block px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-900 border border-indigo-200 text-[10px] font-bold"
+                                >
+                                  {sr}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-[11px]">-</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <select
+                            value={m.profile.evangelismStatus}
+                            onChange={(e) =>
+                              handleQuickChangeEvangelismStatus(m, e.target.value as EvangelismMemberStatus)
+                            }
+                            className={`px-2 py-1 rounded-lg border text-[11px] font-bold cursor-pointer max-w-[165px] ${EVANGELISM_MASTER_STATUS_META[m.profile.evangelismStatus].badgeClass}`}
+                            aria-label={`የ${m.name} የወንጌል አገልግሎት ሁኔታ`}
+                          >
+                            <option value="paying">{EVANGELISM_MASTER_STATUS_META.paying.am}</option>
+                            <option value="unpaid">{EVANGELISM_MASTER_STATUS_META.unpaid.am}</option>
+                            <option value="discontinued">{EVANGELISM_MASTER_STATUS_META.discontinued.am}</option>
+                            <option value="not_member">{EVANGELISM_MASTER_STATUS_META.not_member.am}</option>
+                          </select>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {m.profile.spiritualCourses.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {m.profile.spiritualCourses.map((sc, cIdx) => (
+                                <span
+                                  key={`tb_sc_${m.id}_${cIdx}`}
+                                  className="inline-block px-1.5 py-0.5 rounded bg-teal-50 text-teal-900 border border-teal-200 text-[10px] font-bold"
+                                >
+                                  {sc}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-[11px]">-</span>
+                          )}
+                        </td>
                         <td className="py-2.5 px-3 whitespace-nowrap">
                           <div className="flex items-center gap-1 text-[10px] font-bold">
                             <button
@@ -2637,6 +3235,189 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                     </select>
                   </div>
                 </div>
+              </div>
+
+              {/* Evangelism Ministry Status */}
+              <div className="bg-rose-50/50 border border-rose-200 rounded-xl p-3 space-y-2">
+                <label className="block text-xs font-extrabold text-rose-950">
+                  የወንጌል አገልግሎት አባልነትና የክፍያ ሁኔታ
+                </label>
+                <select
+                  value={formEvangelismStatus}
+                  onChange={(e) => setFormEvangelismStatus(e.target.value as EvangelismMemberStatus)}
+                  className="w-full px-3 py-2 text-base sm:text-xs border border-rose-200 rounded-xl bg-white font-bold text-slate-900"
+                >
+                  <option value="not_member">{EVANGELISM_MASTER_STATUS_META.not_member.am}</option>
+                  <option value="paying">{EVANGELISM_MASTER_STATUS_META.paying.am}</option>
+                  <option value="unpaid">{EVANGELISM_MASTER_STATUS_META.unpaid.am}</option>
+                  <option value="discontinued">{EVANGELISM_MASTER_STATUS_META.discontinued.am}</option>
+                </select>
+              </div>
+
+              {/* Service Roles (የአገልግሎት ድርሻ) */}
+              <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3 space-y-2">
+                <label className="block text-xs font-extrabold text-indigo-950">
+                  የአገልግሎት ድርሻ (መሪዎች / መዘምራን ህብረት / የመዝሙር መሪዎች ህብረት / ሌላም)
+                </label>
+                {editingMember && (memberMinistryProfileMap.get(editingMember.id)?.autoServiceRoles.length || 0) > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 pb-1.5 border-b border-indigo-200/60">
+                    <span className="text-[10px] font-bold text-indigo-800 mr-1">ከዘርፎች በራስ-ሰር የተገኘ፦</span>
+                    {memberMinistryProfileMap.get(editingMember.id)?.autoServiceRoles.map((ar, idx) => (
+                      <span
+                        key={`ar_${idx}`}
+                        className="px-2 py-0.5 rounded bg-white border border-indigo-200 text-[10px] font-bold text-indigo-900"
+                      >
+                        ✓ {ar}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {SUGGESTED_SERVICE_ROLES.map((roleOpt) => {
+                    const active = formServiceRoles.includes(roleOpt);
+                    return (
+                      <button
+                        key={`opt_sr_${roleOpt}`}
+                        type="button"
+                        onClick={() => handleToggleFormRole(roleOpt)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                          active
+                            ? 'bg-indigo-900 text-white border-indigo-900'
+                            : 'bg-white text-slate-700 border-indigo-200 hover:bg-indigo-100/70'
+                        }`}
+                      >
+                        {active ? '✓ ' : '+ '}
+                        {roleOpt}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={formCustomRoleInput}
+                    onChange={(e) => setFormCustomRoleInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomRole();
+                      }
+                    }}
+                    placeholder="ሌላ የአገልግሎት ድርሻ ይጻፉ..."
+                    className="flex-1 px-2.5 py-1.5 text-base sm:text-xs border border-indigo-200 rounded-lg bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomRole}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-900 text-white text-xs font-bold cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>ጨምር</span>
+                  </button>
+                </div>
+                {formServiceRoles.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {formServiceRoles.map((sr) => (
+                      <span
+                        key={`sel_sr_${sr}`}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-900 text-white text-[10px] font-bold"
+                      >
+                        <span>{sr}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFormRole(sr)}
+                          className="hover:text-amber-300 cursor-pointer"
+                          aria-label={`አስወግድ ${sr}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Enrolled Spiritual Education Courses */}
+              <div className="bg-teal-50/60 border border-teal-200 rounded-xl p-3 space-y-2">
+                <label className="block text-xs font-extrabold text-teal-950">
+                  በቤተክርስቲያኒቱ በመማር ላይ ያለ መንፈሳዊ ትምህርት
+                </label>
+                {editingMember && (memberMinistryProfileMap.get(editingMember.id)?.autoSpiritualCourses.length || 0) > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 pb-1.5 border-b border-teal-200/60">
+                    <span className="text-[10px] font-bold text-teal-800 mr-1">ከት/ቤቶች/ቡድኖች የተገኘ፦</span>
+                    {memberMinistryProfileMap.get(editingMember.id)?.autoSpiritualCourses.map((ac, idx) => (
+                      <span
+                        key={`ac_${idx}`}
+                        className="px-2 py-0.5 rounded bg-white border border-teal-200 text-[10px] font-bold text-teal-900"
+                      >
+                        ✓ {ac}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {SUGGESTED_SPIRITUAL_COURSES.map((courseOpt) => {
+                    const active = formSpiritualCourses.includes(courseOpt);
+                    return (
+                      <button
+                        key={`opt_sc_${courseOpt}`}
+                        type="button"
+                        onClick={() => handleToggleFormCourse(courseOpt)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                          active
+                            ? 'bg-teal-800 text-white border-teal-800'
+                            : 'bg-white text-slate-700 border-teal-200 hover:bg-teal-100/70'
+                        }`}
+                      >
+                        {active ? '✓ ' : '+ '}
+                        {courseOpt}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={formCustomCourseInput}
+                    onChange={(e) => setFormCustomCourseInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomCourse();
+                      }
+                    }}
+                    placeholder="ሌላ መንፈሳዊ ትምህርት ይጻፉ..."
+                    className="flex-1 px-2.5 py-1.5 text-base sm:text-xs border border-teal-200 rounded-lg bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomCourse}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-teal-800 text-white text-xs font-bold cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>ጨምር</span>
+                  </button>
+                </div>
+                {formSpiritualCourses.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {formSpiritualCourses.map((sc) => (
+                      <span
+                        key={`sel_sc_${sc}`}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-800 text-white text-[10px] font-bold"
+                      >
+                        <span>{sc}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFormCourse(sc)}
+                          className="hover:text-amber-300 cursor-pointer"
+                          aria-label={`አስወግድ ${sc}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">

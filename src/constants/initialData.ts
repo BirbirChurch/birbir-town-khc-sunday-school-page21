@@ -1,5 +1,6 @@
 import { AnnualPlanItem, AppData, ChurchChild } from '../types';
 import {
+  createDefaultAdminFinanceWorkspaceData,
   createDefaultEldersCouncilWorkspaceData,
   createDefaultEvangelismWorkspaceData,
   DEFAULT_ORG_UNIT_PINS
@@ -181,7 +182,8 @@ export const INITIAL_APP_DATA: AppData = {
   churchChildren: INITIAL_CHURCH_CHILDREN,
   departmentData: {
     elders_council: createDefaultEldersCouncilWorkspaceData(),
-    evangelism: createDefaultEvangelismWorkspaceData()
+    evangelism: createDefaultEvangelismWorkspaceData(),
+    admin_finance: createDefaultAdminFinanceWorkspaceData()
   },
   submissions: [],
   failedLoginAttempts: [],

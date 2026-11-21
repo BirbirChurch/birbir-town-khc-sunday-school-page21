@@ -3,6 +3,7 @@ import { LazyErrorBoundary, lazyWithRetry } from './LazyBoundary';
 import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target, Sparkles, HeartHandshake, UserCheck } from 'lucide-react';
 import {
   AnnualPlanItem,
+  ChoirMember,
   ChurchChild,
   ChurchMember,
   DepartmentWorkspaceData,
@@ -10,7 +11,9 @@ import {
   OrgUnitId,
   PlanDispatchItem,
   Role,
-  Student
+  SpiritualMember,
+  Student,
+  Teacher
 } from '../types';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { createEmptyDepartmentWorkspaceData } from '../constants/churchStructure';
@@ -20,6 +23,8 @@ import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpda
 import { NameScriptMode } from '../utils/amharicTransliterator';
 import { useLanguage } from '../context/LanguageContext';
 import { mapToOfficialChapel } from '../utils/amharicSearchAndChapel';
+import { generateUniqueId } from '../utils/idGenerator';
+import { syncChurchMemberToEvangelismRecords } from '../utils/memberMinistryProfile';
 import { ChurchMasterTab } from './ChurchMasterTab';
 import { ChurchChildrenTab } from './ChurchChildrenTab';
 import { ChurchStatisticsDashboardTab } from './ChurchStatisticsDashboardTab';
@@ -78,6 +83,9 @@ interface ChapelsHubPageProps {
   chapelPlansMap?: { [chapelName: string]: AnnualPlanItem[] };
   onUpdateChapelPlans?: (chapelName: string, plans: AnnualPlanItem[]) => void;
   departmentDataMap?: { [unitId: string]: DepartmentWorkspaceData };
+  teachers?: Teacher[];
+  choirMembers?: ChoirMember[];
+  spiritualMembers?: SpiritualMember[];
   childrenPlans?: AnnualPlanItem[];
   planDispatches?: PlanDispatchItem[];
   onAcceptDispatch?: (dispatchId: number, mode: 'append' | 'replace') => void;
@@ -124,6 +132,9 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   chapelPlansMap = {},
   onUpdateChapelPlans,
   departmentDataMap = {},
+  teachers = [],
+  choirMembers = [],
+  spiritualMembers = [],
   childrenPlans = [],
   planDispatches = [],
   onAcceptDispatch,
@@ -607,9 +618,24 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
           churchChildren={churchChildren}
           studentsByClass={studentsByClass}
           classList={classList}
+          departmentDataMap={departmentDataMap}
+          teachers={teachers}
+          choirMembers={choirMembers}
+          spiritualMembers={spiritualMembers}
           onBatchAddMembers={onBatchAddMembers}
           onAddMember={onAddMember}
           onUpdateMember={onUpdateMember}
+          onUpdateEvangelismMemberStatus={(member, nextStatus) =>
+            onUpdateDepartmentData?.('evangelism', (prev) => ({
+              ...prev,
+              members: syncChurchMemberToEvangelismRecords(
+                prev.members || [],
+                member,
+                nextStatus,
+                generateUniqueId
+              )
+            }))
+          }
           onDeleteMember={onDeleteMember}
           onClearChurchMembers={() => onClearChurchMembers(effectiveChapelScope || undefined)}
           onExtractChildrenToChildrenTab={onBatchAddChildren}

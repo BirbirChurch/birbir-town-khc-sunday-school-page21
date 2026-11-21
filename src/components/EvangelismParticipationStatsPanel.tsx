@@ -11,12 +11,25 @@ import {
   Printer,
   UserPlus,
   CheckCircle2,
-  Percent
+  Percent,
+  Church
 } from 'lucide-react';
-import { ChurchMember, DepartmentMemberRecord } from '../types';
+import {
+  ChurchMember,
+  DepartmentMemberRecord,
+  EvangelismMemberStatus
+} from '../types';
+import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { useLanguage } from '../context/LanguageContext';
 import { generateUniqueId } from '../utils/idGenerator';
 import { formatDualDateTimeText, getAdjustedNow } from '../utils/ethiopianDate';
+import { mapToOfficialChapel, normalizeAmharicSearchText } from '../utils/amharicSearchAndChapel';
+import {
+  computeChapelEvangelismBreakdown,
+  EVANGELISM_MASTER_STATUS_META,
+  mapDeptEvangelismStatusToMaster,
+  MemberMinistryProfile
+} from '../utils/memberMinistryProfile';
 
 export type EvangelismStatusKey =
   | 'paying'
@@ -112,11 +125,29 @@ export function computeEvangelismParticipationStats(
 } {
   let churchMale = 0;
   let churchFemale = 0;
-  churchMembers.forEach((cm) => {
-    if (isFemaleGender(cm.gender)) churchFemale += 1;
-    else churchMale += 1;
+  const masterEvangByNormName = new Map<string, EvangelismStatusKey>();
+
+  const evangDeptByNormName = new Map<
+    string,
+    { status: EvangelismStatusKey; female: boolean }
+  >();
+  evangMembers.forEach((m) => {
+    const key = normalizeAmharicSearchText(m.name);
+    if (!key) return;
+    evangDeptByNormName.set(key, {
+      status: classifyEvangelismMemberStatus(m.status),
+      female: isFemaleGender(m.gender)
+    });
   });
-  const churchTotal = churchMembers.length;
+
+  const toStatsKey = (ms: EvangelismMemberStatus): EvangelismStatusKey =>
+    ms === 'paying'
+      ? 'paying'
+      : ms === 'unpaid'
+      ? 'active_unpaid'
+      : ms === 'discontinued'
+      ? 'discontinued'
+      : 'not_participating';
 
   let payingMale = 0;
   let payingFemale = 0;
@@ -127,7 +158,48 @@ export function computeEvangelismParticipationStats(
   let explicitNotPartMale = 0;
   let explicitNotPartFemale = 0;
 
+  const seenEvangKeys = new Set<string>();
+
+  churchMembers.forEach((cm) => {
+    const fem = isFemaleGender(cm.gender);
+    if (fem) churchFemale += 1;
+    else churchMale += 1;
+
+    const norm = normalizeAmharicSearchText(cm.name);
+    const deptMatch = norm ? evangDeptByNormName.get(norm) : undefined;
+    if (norm && deptMatch) seenEvangKeys.add(norm);
+
+    let resolved: EvangelismStatusKey | null = null;
+    if (cm.evangelismStatus) {
+      resolved = toStatsKey(cm.evangelismStatus);
+    } else if (deptMatch) {
+      resolved = deptMatch.status;
+    }
+
+    if (resolved) {
+      if (norm) masterEvangByNormName.set(norm, resolved);
+      if (resolved === 'paying') {
+        if (fem) payingFemale += 1;
+        else payingMale += 1;
+      } else if (resolved === 'active_unpaid') {
+        if (fem) activeUnpaidFemale += 1;
+        else activeUnpaidMale += 1;
+      } else if (resolved === 'discontinued') {
+        if (fem) discFemale += 1;
+        else discMale += 1;
+      } else {
+        if (fem) explicitNotPartFemale += 1;
+        else explicitNotPartMale += 1;
+      }
+    }
+  });
+
+  // Also include Evangelism roster members not matched in ChurchMember
+  const churchTotal = churchMembers.length;
   evangMembers.forEach((m) => {
+    const norm = normalizeAmharicSearchText(m.name);
+    if (norm && seenEvangKeys.has(norm)) return;
+    if (norm) seenEvangKeys.add(norm);
     const fem = isFemaleGender(m.gender);
     const kind = classifyEvangelismMemberStatus(m.status);
     if (kind === 'paying') {
@@ -292,6 +364,30 @@ export const EvangelismParticipationStatsPanel: React.FC<
     [churchMembers, evangMembers]
   );
 
+  const chapelBreakdown = useMemo(() => {
+    const deptByNorm = new Map<string, EvangelismMemberStatus>();
+    evangMembers.forEach((em) => {
+      const k = normalizeAmharicSearchText(em.name);
+      if (k) deptByNorm.set(k, mapDeptEvangelismStatusToMaster(em.status));
+    });
+
+    const profileMap = new Map<number, MemberMinistryProfile>();
+    churchMembers.forEach((cm) => {
+      const k = normalizeAmharicSearchText(cm.name);
+      const resolved = cm.evangelismStatus || (k ? deptByNorm.get(k) : undefined) || 'not_member';
+      profileMap.set(cm.id, {
+        serviceRoles: cm.serviceRoles || [],
+        autoServiceRoles: [],
+        evangelismStatus: resolved,
+        evangelismFromDept: Boolean(k && deptByNorm.has(k) && !cm.evangelismStatus),
+        spiritualCourses: cm.spiritualCourses || [],
+        autoSpiritualCourses: []
+      });
+    });
+
+    return computeChapelEvangelismBreakdown(churchMembers, profileMap, DEFAULT_CHAPELS);
+  }, [churchMembers, evangMembers]);
+
   const missingChurchCount = useMemo(() => {
     const existingNames = new Set(evangMembers.map((m) => m.name.trim()));
     return churchMembers.filter((cm) => cm.name?.trim() && !existingNames.has(cm.name.trim())).length;
@@ -407,6 +503,51 @@ export const EvangelismParticipationStatsPanel: React.FC<
     const wsSheet = XLSX.utils.aoa_to_sheet(summaryRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, wsSheet, 'የወንጌል_ስታቲስቲክስ');
+
+    const chapelRowsAoA: (string | number)[][] = [
+      [`በ10ሩም ቻፕሎች ደረጃ የወንጌል አገልግሎት ተሳትፎ (${currentYear} ዓ/ም)`],
+      [],
+      [
+        'ቻፕል',
+        'ጠቅላላ አባላት',
+        'አባል — የሚከፍል (ወ)',
+        'አባል — የሚከፍል (ሴ)',
+        'አባል — የሚከፍል (ድምር)',
+        'አባል — የማይከፍል (ወ)',
+        'አባል — የማይከፍል (ሴ)',
+        'አባል — የማይከፍል (ድምር)',
+        'ያቋረጠ (ድምር)',
+        'አባል ያልሆነ (ድምር)',
+        'የወንጌል አባላት (%)'
+      ],
+      ...chapelBreakdown.chapelRows.map((cr) => [
+        cr.chapel,
+        cr.totalMembers,
+        cr.payingMale,
+        cr.payingFemale,
+        cr.payingTotal,
+        cr.unpaidMale,
+        cr.unpaidFemale,
+        cr.unpaidTotal,
+        cr.discontinuedTotal,
+        cr.notMemberTotal,
+        formatPct(cr.evangMemberTotal, cr.totalMembers)
+      ]),
+      [
+        chapelBreakdown.totals.chapel,
+        chapelBreakdown.totals.totalMembers,
+        chapelBreakdown.totals.payingMale,
+        chapelBreakdown.totals.payingFemale,
+        chapelBreakdown.totals.payingTotal,
+        chapelBreakdown.totals.unpaidMale,
+        chapelBreakdown.totals.unpaidFemale,
+        chapelBreakdown.totals.unpaidTotal,
+        chapelBreakdown.totals.discontinuedTotal,
+        chapelBreakdown.totals.notMemberTotal,
+        formatPct(chapelBreakdown.totals.evangMemberTotal, chapelBreakdown.totals.totalMembers)
+      ]
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chapelRowsAoA), 'በየቻፕሉ_ወንጌል_ተሳትፎ');
     XLSX.writeFile(wb, `የወንጌል_አገልግሎት_ተሳትፎና_መቶኛ_${currentYear}.xlsx`);
   };
 
@@ -553,6 +694,85 @@ export const EvangelismParticipationStatsPanel: React.FC<
                   </tr>
                 ))}
               </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* Per-Chapel Evangelism Breakdown */}
+      <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div>
+          <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+            <Church className="w-4 h-4 text-rose-700 shrink-0" />
+            <span>
+              {t(
+                'በ10ሩም ቻፕሎች ደረጃ የወንጌል አገልግሎት አባልነትና የክፍያ ሁኔታ',
+                'Evangelism Membership & Payment Breakdown by Chapel'
+              )}
+            </span>
+          </h4>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {t(
+              'አባል ሆኖ የሚከፍል / የማይከፍል / ያቋረጠ / አባል ያልሆነ በየቻፕሉ ተለይቶ የቀረበ',
+              'Paying / Not Paying / Discontinued / Non-Member breakdown across all 10 Chapels'
+            )}
+          </p>
+        </div>
+
+        <div className="border border-slate-200 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[740px] print:min-w-0 text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-900 text-white font-bold text-[11px]">
+                  <th className="py-2.5 px-3 text-left">{t('ቻፕል (አጥቢያ)', 'Chapel')}</th>
+                  <th className="py-2.5 px-3 text-right">{t('ጠቅላላ አባላት', 'Total')}</th>
+                  <th className="py-2.5 px-3 text-right bg-emerald-900/40">{EVANGELISM_MASTER_STATUS_META.paying.shortAm}</th>
+                  <th className="py-2.5 px-3 text-right bg-blue-900/40">{EVANGELISM_MASTER_STATUS_META.unpaid.shortAm}</th>
+                  <th className="py-2.5 px-3 text-right bg-rose-900/40">{EVANGELISM_MASTER_STATUS_META.discontinued.shortAm}</th>
+                  <th className="py-2.5 px-3 text-right bg-slate-800">{EVANGELISM_MASTER_STATUS_META.not_member.shortAm}</th>
+                  <th className="py-2.5 px-3 text-right">{t('የወንጌል አባላት (%)', 'Evang. %')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {chapelBreakdown.chapelRows.map((cr) => (
+                  <tr key={cr.chapel} className="hover:bg-slate-50/80">
+                    <td className="py-2 px-3 font-extrabold text-slate-900">{cr.chapel}</td>
+                    <td className="py-2 px-3 text-right font-bold tabular-nums">{cr.totalMembers.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">
+                      <span className="font-extrabold text-emerald-800">{cr.payingTotal.toLocaleString()}</span>
+                      <span className="ml-1 text-[10px] text-slate-500">({formatPct(cr.payingTotal, cr.totalMembers)})</span>
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums">
+                      <span className="font-extrabold text-blue-800">{cr.unpaidTotal.toLocaleString()}</span>
+                      <span className="ml-1 text-[10px] text-slate-500">({formatPct(cr.unpaidTotal, cr.totalMembers)})</span>
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums">
+                      <span className="font-extrabold text-rose-700">{cr.discontinuedTotal.toLocaleString()}</span>
+                      <span className="ml-1 text-[10px] text-slate-500">({formatPct(cr.discontinuedTotal, cr.totalMembers)})</span>
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums">
+                      <span className="font-bold text-slate-700">{cr.notMemberTotal.toLocaleString()}</span>
+                      <span className="ml-1 text-[10px] text-slate-400">({formatPct(cr.notMemberTotal, cr.totalMembers)})</span>
+                    </td>
+                    <td className="py-2 px-3 text-right font-black text-blue-900 tabular-nums">
+                      {formatPct(cr.evangMemberTotal, cr.totalMembers)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-950">
+                  <td className="py-2.5 px-3">{chapelBreakdown.totals.chapel}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums">{chapelBreakdown.totals.totalMembers.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-emerald-900 tabular-nums">{chapelBreakdown.totals.payingTotal.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-blue-900 tabular-nums">{chapelBreakdown.totals.unpaidTotal.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-rose-900 tabular-nums">{chapelBreakdown.totals.discontinuedTotal.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-800 tabular-nums">{chapelBreakdown.totals.notMemberTotal.toLocaleString()}</td>
+                  <td className="py-2.5 px-3 text-right text-blue-950 tabular-nums">
+                    {formatPct(chapelBreakdown.totals.evangMemberTotal, chapelBreakdown.totals.totalMembers)}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
