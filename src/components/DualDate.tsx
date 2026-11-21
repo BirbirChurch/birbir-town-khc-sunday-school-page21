@@ -171,7 +171,7 @@ export const DualLiveClock: React.FC<DualLiveClockProps> = ({
   const renderCalibratorPopover = () => {
     if (!showCalibrator) return null;
     return (
-      <div className="absolute right-0 top-full mt-2 z-50 w-64 bg-white text-slate-900 rounded-xl shadow-xl border border-slate-200 p-3 text-xs space-y-2.5">
+      <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-2 z-50 w-64 max-w-[calc(100vw-2rem)] bg-white text-slate-900 rounded-xl shadow-xl border border-slate-200 p-3 text-xs space-y-2.5">
         <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
           <span className="font-extrabold text-slate-900">
             {t('የሰዓት ማስተካከያ', 'Clock Adjustment')}

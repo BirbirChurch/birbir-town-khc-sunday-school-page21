@@ -1,5 +1,9 @@
 import { AnnualPlanItem, AppData, ChurchChild } from '../types';
-import { createDefaultEldersCouncilWorkspaceData, DEFAULT_ORG_UNIT_PINS } from './churchStructure';
+import {
+  createDefaultEldersCouncilWorkspaceData,
+  createDefaultEvangelismWorkspaceData,
+  DEFAULT_ORG_UNIT_PINS
+} from './churchStructure';
 
 export const CLASS_LIST: string[] = [
   "ማቆያ ክፍል",
@@ -176,7 +180,8 @@ export const INITIAL_APP_DATA: AppData = {
   chapels: DEFAULT_CHAPELS,
   churchChildren: INITIAL_CHURCH_CHILDREN,
   departmentData: {
-    elders_council: createDefaultEldersCouncilWorkspaceData()
+    elders_council: createDefaultEldersCouncilWorkspaceData(),
+    evangelism: createDefaultEvangelismWorkspaceData()
   },
   submissions: [],
   failedLoginAttempts: [],

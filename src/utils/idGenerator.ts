@@ -5,7 +5,12 @@
 
 import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission, PlanDispatchItem, FailedLoginAttemptRecord, BlockedBrowserRule } from '../types';
 import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
-import { CHURCH_ORG_UNITS, createDefaultEldersCouncilWorkspaceData, DEFAULT_ORG_UNIT_PINS } from '../constants/churchStructure';
+import {
+  CHURCH_ORG_UNITS,
+  createDefaultEldersCouncilWorkspaceData,
+  createDefaultEvangelismWorkspaceData,
+  DEFAULT_ORG_UNIT_PINS
+} from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
 import { canonicalizeEducationLevel, canonicalizeOccupation } from './amharicCategoryCanonicalizer';
 
@@ -348,7 +353,15 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
             return checkedId !== mr?.id ? { ...mr, id: checkedId } : mr;
           })
         : undefined,
-      eldersDefaultSeeded: ws.eldersDefaultSeeded === true ? true : undefined
+      missionaryReports: Array.isArray(ws.missionaryReports)
+        ? ws.missionaryReports.map((rep) => {
+            const checkedId = ensureUniqueId(rep?.id);
+            return checkedId !== rep?.id ? { ...rep, id: checkedId } : rep;
+          })
+        : undefined,
+      eldersDefaultSeeded: ws.eldersDefaultSeeded === true ? true : undefined,
+      evangelismMissionariesDefaultSeeded:
+        ws.evangelismMissionariesDefaultSeeded === true ? true : undefined
     };
   });
 
@@ -365,6 +378,24 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       members: seeded.members.map((m) => ({ ...m, id: ensureUniqueId(m.id) })),
       leaders: (seeded.leaders || []).map((ldr) => ({ ...ldr, id: ensureUniqueId(ldr.id) })),
       eldersDefaultSeeded: true
+    };
+    modified = true;
+  }
+
+  const curEvang = sanitizedDepartmentData.evangelism;
+  if (
+    !curEvang ||
+    (!curEvang.evangelismMissionariesDefaultSeeded &&
+      (curEvang.missionaryRecords?.length || 0) === 0)
+  ) {
+    const seededEvang = createDefaultEvangelismWorkspaceData();
+    sanitizedDepartmentData.evangelism = {
+      ...(curEvang || seededEvang),
+      missionaryRecords: (seededEvang.missionaryRecords || []).map((mr) => ({
+        ...mr,
+        id: ensureUniqueId(mr.id)
+      })),
+      evangelismMissionariesDefaultSeeded: true
     };
     modified = true;
   }

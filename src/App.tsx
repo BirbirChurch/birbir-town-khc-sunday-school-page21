@@ -2350,7 +2350,7 @@ export default function App() {
               </div>
             )}
 
-          <div className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 print:max-w-none print:w-full print:p-0 print:m-0">
+          <div className="flex-1 max-w-[1440px] w-full mx-auto px-2.5 sm:px-6 lg:px-8 py-3 sm:py-6 print:max-w-none print:w-full print:p-0 print:m-0">
             <div className={showSidebar ? 'flex flex-col lg:flex-row gap-6 items-start' : 'space-y-6'}>
               {/* Hierarchical Sidebar (Super Admin & Governing Councils) */}
               {showSidebar && (

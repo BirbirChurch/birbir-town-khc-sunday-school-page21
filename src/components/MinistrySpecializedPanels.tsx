@@ -16,7 +16,10 @@ import {
   Edit2,
   Trash2,
   X,
-  Wallet
+  Wallet,
+  Phone,
+  GraduationCap,
+  UserPlus
 } from 'lucide-react';
 import {
   BeneficiarySupportType,
@@ -24,6 +27,7 @@ import {
   EvangelismMissionaryRecord,
   MissionaryScope
 } from '../types';
+import { DEFAULT_EVANGELISM_MISSIONARIES } from '../constants/churchStructure';
 import { generateUniqueId } from '../utils/idGenerator';
 import { readCSVFile } from '../utils/csv';
 import { useLanguage } from '../context/LanguageContext';
@@ -395,7 +399,7 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
       {/* Filter & Actions Bar */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 print:hidden">
         <div className="flex flex-wrap items-center gap-2 flex-1">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <div className="relative flex-1 min-w-0 w-full sm:min-w-[200px] sm:max-w-xs">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -576,8 +580,8 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
 
       {/* Add/Edit Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 border border-slate-200 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-4 sm:p-6 border border-slate-200 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-extrabold text-slate-900">
                 {editingId
@@ -855,6 +859,39 @@ const MISSIONARY_SCOPES: {
   }
 ];
 
+export const MISSIONARY_REGION_OPTIONS: readonly string[] = [
+  'ቤንሻንጉል',
+  'አማራ',
+  'ኦሮሚያ',
+  'ጂንካ ዩኒቨርሲቲ',
+  'አርባምንጭ ዩኒቨርሲቲ',
+  'ደጋ ዶነ',
+  'ደቡብ ኢትዮጵያ',
+  'ማዕከላዊ ኢትዮጵያ',
+  'ሲዳማ',
+  'ደቡብ ምዕራብ ኢትዮጵያ',
+  'ትግራይ',
+  'አፋር',
+  'ሶማሌ',
+  'ጋምቤላ',
+  'ሐረሪ',
+  'አዲስ አበባ',
+  'ድሬዳዋ',
+  'ብርብርና አካባቢው',
+  'ውጭ ሀገር'
+];
+
+export const MISSIONARY_EDUCATION_OPTIONS: readonly string[] = [
+  'ያልተገለጸ',
+  '1ኛ–8ኛ ክፍል',
+  '9ኛ–12ኛ ክፍል',
+  'ሰርተፊኬት (የመጽሐፍ ቅዱስ / ቴክኒክ)',
+  'ዲፕሎማ (የመጽሐፍ ቅዱስ / ኮሌጅ)',
+  'የመጀመሪያ ዲግሪ (B.Th / B.A / B.Sc)',
+  'ሁለተኛ ዲግሪ (M.Th / M.Div / M.A / M.Sc)',
+  'ዶክትሬት (Ph.D)'
+];
+
 export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelProps> = ({
   currentYear,
   records,
@@ -862,18 +899,21 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
 }) => {
   const { t } = useLanguage();
   const [scopeFilter, setScopeFilter] = useState<'all' | MissionaryScope>('all');
+  const [regionFilter, setRegionFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [notice, setNotice] = useState('');
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [mScope, setMScope] = useState<MissionaryScope>('international');
+  const [mScope, setMScope] = useState<MissionaryScope>('regional');
   const [mName, setMName] = useState('');
   const [mGender, setMGender] = useState<'ወ' | 'ሴ'>('ወ');
   const [mPhone, setMPhone] = useState('');
+  const [mEducation, setMEducation] = useState('');
   const [mField, setMField] = useState('');
-  const [mOrg, setMOrg] = useState('');
+  const [mOrg, setMOrg] = useState('ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)');
   const [mDate, setMDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [mSupport, setMSupport] = useState('');
   const [mStatus, setMStatus] = useState('በአገልግሎት ላይ');
@@ -885,7 +925,23 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
   };
 
   const getScopeMeta = (sc: MissionaryScope) =>
-    MISSIONARY_SCOPES.find((s) => s.id === sc) || MISSIONARY_SCOPES[0];
+    MISSIONARY_SCOPES.find((s) => s.id === sc) || MISSIONARY_SCOPES[2];
+
+  const allRegionChoices = useMemo(() => {
+    const set = new Set<string>(MISSIONARY_REGION_OPTIONS);
+    records.forEach((r) => {
+      if (r.missionField?.trim()) set.add(r.missionField.trim());
+    });
+    return Array.from(set);
+  }, [records]);
+
+  const allEducationChoices = useMemo(() => {
+    const set = new Set<string>(MISSIONARY_EDUCATION_OPTIONS);
+    records.forEach((r) => {
+      if (r.educationLevel?.trim()) set.add(r.educationLevel.trim());
+    });
+    return Array.from(set);
+  }, [records]);
 
   const scopeCounts = useMemo(() => {
     const counts: Record<MissionaryScope, number> = {
@@ -906,24 +962,27 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
     const q = searchQuery.trim().toLowerCase();
     return records.filter((r) => {
       if (scopeFilter !== 'all' && r.scope !== scopeFilter) return false;
+      if (regionFilter !== 'all' && (r.missionField || '').trim() !== regionFilter) return false;
       if (!q) return true;
       return (
         r.name.toLowerCase().includes(q) ||
         r.missionField.toLowerCase().includes(q) ||
+        (r.educationLevel || '').toLowerCase().includes(q) ||
         (r.sendingOrganization || '').toLowerCase().includes(q) ||
         (r.phone || '').toLowerCase().includes(q)
       );
     });
-  }, [records, scopeFilter, searchQuery]);
+  }, [records, scopeFilter, regionFilter, searchQuery]);
 
-  const openAdd = (defaultScope: MissionaryScope = 'international') => {
+  const openAdd = (defaultScope: MissionaryScope = 'regional') => {
     setEditingId(null);
     setMScope(scopeFilter === 'all' ? defaultScope : scopeFilter);
     setMName('');
     setMGender('ወ');
     setMPhone('');
-    setMField('');
-    setMOrg('');
+    setMEducation('');
+    setMField(regionFilter !== 'all' ? regionFilter : 'አማራ');
+    setMOrg('ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)');
     setMDate(new Date().toISOString().split('T')[0]);
     setMSupport('');
     setMStatus('በአገልግሎት ላይ');
@@ -937,6 +996,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
     setMName(rec.name);
     setMGender(rec.gender === 'ሴ' ? 'ሴ' : 'ወ');
     setMPhone(rec.phone || '');
+    setMEducation(rec.educationLevel || '');
     setMField(rec.missionField || '');
     setMOrg(rec.sendingOrganization || '');
     setMDate(rec.deployedDate || '');
@@ -944,6 +1004,33 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
     setMStatus(rec.status || 'በአገልግሎት ላይ');
     setMNotes(rec.notes || '');
     setIsModalOpen(true);
+  };
+
+  const handleLoadDefaultMissionaries = () => {
+    const existingNames = new Set(records.map((r) => r.name.trim()));
+    const toAdd = DEFAULT_EVANGELISM_MISSIONARIES.filter(
+      (d) => !existingNames.has(d.name.trim())
+    ).map((d) => ({ ...d, id: generateUniqueId() }));
+    if (toAdd.length === 0) {
+      showNotice(t('ሁሉም 10 ሚሽነሪዎች ቀድሞውኑ ተመዝግበዋል።', 'All 10 default missionaries already exist.'));
+      return;
+    }
+    onSaveRecords([...records, ...toAdd]);
+    showNotice(
+      t(
+        `✓ ${toAdd.length} የወንጌል አገልግሎት ሚሽነሪዎች ተጭነዋል!`,
+        `Loaded ${toAdd.length} evangelism missionaries!`
+      )
+    );
+  };
+
+  const handleInlineFieldUpdate = (
+    id: number,
+    patch: Partial<EvangelismMissionaryRecord>,
+    feedback?: string
+  ) => {
+    onSaveRecords(records.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    if (feedback) showNotice(feedback);
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -955,6 +1042,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
       name: mName.trim(),
       gender: mGender,
       phone: mPhone.trim() || undefined,
+      educationLevel: mEducation.trim() && mEducation.trim() !== 'ያልተገለጸ' ? mEducation.trim() : undefined,
       missionField: mField.trim(),
       sendingOrganization: mOrg.trim() || undefined,
       deployedDate: mDate || undefined,
@@ -974,6 +1062,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
 
   const handleDelete = (id: number) => {
     onSaveRecords(records.filter((r) => r.id !== id));
+    setPendingDeleteId(null);
     showNotice(t('✓ የሚሽነሪ መዝገብ ተሰርዟል።', 'Missionary record removed.'));
   };
 
@@ -989,10 +1078,11 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
         'የሚሽነሪ ምድብ',
         'ሙሉ ስም',
         'ጾታ',
-        'የአገልግሎት ቦታ / ሀገር / ክልል',
+        'ስልክ ቁጥር',
+        'ያሉበት ክልል / የአገልግሎት ቦታ',
+        'የትምህርት ደረጃ',
         'ላኪ አካል / ድርጅት',
         'ወርሃዊ ድጋፍ (ብር)',
-        'ስልክ',
         'የተሰማሩበት ቀን',
         'ሁኔታ',
         'ማስታወሻ'
@@ -1002,10 +1092,11 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
         getScopeMeta(r.scope).am,
         r.name,
         r.gender,
+        r.phone || '-',
         r.missionField,
+        r.educationLevel || '-',
         r.sendingOrganization || '-',
         r.monthlySupportAmount ?? 0,
-        r.phone || '-',
         formatDualDateText(r.deployedDate, '-'),
         r.status,
         r.notes || '-'
@@ -1034,13 +1125,13 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
         const cols = rows[i];
         if (!cols || cols.length < 2) continue;
         const scopeRaw = (cols[1] || '').trim().toLowerCase();
-        let sc: MissionaryScope = 'local';
+        let sc: MissionaryScope = 'regional';
         if (scopeRaw.includes('አለም') || scopeRaw.includes('ዓለም') || scopeRaw.includes('inter')) {
           sc = 'international';
         } else if (scopeRaw.includes('አገር') || scopeRaw.includes('ሀገር') || scopeRaw.includes('nation')) {
           sc = 'national';
-        } else if (scopeRaw.includes('ክልል') || scopeRaw.includes('region')) {
-          sc = 'regional';
+        } else if (scopeRaw.includes('አከባቢ') || scopeRaw.includes('local')) {
+          sc = 'local';
         }
         const nameVal = (cols[2] || cols[1] || cols[0] || '').trim();
         if (!nameVal || nameVal === 'ሙሉ ስም') continue;
@@ -1055,10 +1146,11 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
           scope: sc,
           name: nameVal,
           gender: genderVal,
-          missionField: cols[4]?.trim() || '—',
-          sendingOrganization: cols[5]?.trim() || undefined,
-          monthlySupportAmount: cols[6] ? parseFloat(cols[6]) || undefined : undefined,
-          phone: cols[7]?.trim() || undefined,
+          phone: cols[4]?.trim() || undefined,
+          missionField: cols[5]?.trim() || '—',
+          educationLevel: cols[6]?.trim() && cols[6]?.trim() !== '-' ? cols[6].trim() : undefined,
+          sendingOrganization: cols[7]?.trim() && cols[7]?.trim() !== '-' ? cols[7].trim() : undefined,
+          monthlySupportAmount: cols[8] ? parseFloat(cols[8]) || undefined : undefined,
           status: 'በአገልግሎት ላይ'
         });
       }
@@ -1092,11 +1184,11 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
       </div>
 
       {/* 4 Missionary Tiers KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 print:hidden">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 print:hidden">
         <button
           type="button"
           onClick={() => setScopeFilter('all')}
-          className={`text-left rounded-2xl p-4 border transition cursor-pointer ${
+          className={`col-span-2 sm:col-span-1 text-left rounded-2xl p-3.5 sm:p-4 border transition cursor-pointer ${
             scopeFilter === 'all'
               ? 'bg-slate-900 text-white border-slate-900'
               : 'bg-white border-slate-200 hover:border-slate-400'
@@ -1117,11 +1209,11 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
               key={sc.id}
               type="button"
               onClick={() => setScopeFilter(sc.id)}
-              className={`text-left rounded-2xl p-4 border transition cursor-pointer ${
+              className={`text-left rounded-2xl p-3.5 sm:p-4 border transition cursor-pointer ${
                 active ? 'bg-blue-900 text-white border-blue-900' : sc.cardClass
               }`}
             >
-              <div className="flex items-center justify-between gap-1 text-xs font-bold">
+              <div className="flex items-center justify-between gap-1 text-[11px] sm:text-xs font-bold">
                 <span className="truncate">{t(sc.am, sc.en)}</span>
                 <Icon className="w-4 h-4 shrink-0 opacity-80" />
               </div>
@@ -1143,80 +1235,291 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
         </div>
       )}
 
-      {/* Search & Action Bar */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 print:hidden">
-        <div className="flex flex-wrap items-center gap-2 flex-1">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      {/* Search, Region Filter & Action Bar */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 space-y-3 print:hidden">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5">
+          <div className="lg:col-span-5 relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('ሚሽነሪ ስም፣ ሀገር/ክልል ወይም ድርጅት ፈልግ...', 'Search missionary or field...')}
+              placeholder={t('ሚሽነሪ ስም፣ ስልክ፣ ክልል ወይም ትምህርት ፈልግ...', 'Search name, phone, region, or education...')}
               className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
           </div>
 
-          <select
-            value={scopeFilter}
-            onChange={(e) => setScopeFilter(e.target.value as 'all' | MissionaryScope)}
-            className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white"
-          >
-            <option value="all">{t('ሁሉም ሚሽነሪ ምድቦች', 'All Missionary Scopes')}</option>
-            {MISSIONARY_SCOPES.map((sc) => (
-              <option key={sc.id} value={sc.id}>
-                {t(sc.am, sc.en)}
-              </option>
-            ))}
-          </select>
+          <div className="lg:col-span-3">
+            <select
+              value={regionFilter}
+              onChange={(e) => setRegionFilter(e.target.value)}
+              aria-label={t('በክልል / ቦታ አጣራ', 'Filter by Region')}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50 focus:bg-white"
+            >
+              <option value="all">{t('ሁሉም ክልሎች / ቦታዎች', 'All Regions / Fields')}</option>
+              {allRegionChoices.map((reg) => (
+                <option key={reg} value={reg}>
+                  {reg}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="lg:col-span-4">
+            <select
+              value={scopeFilter}
+              onChange={(e) => setScopeFilter(e.target.value as 'all' | MissionaryScope)}
+              aria-label={t('በምድብ አጣራ', 'Filter by Scope')}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50 focus:bg-white"
+            >
+              <option value="all">{t('ሁሉም ሚሽነሪ ምድቦች', 'All Missionary Scopes')}</option>
+              {MISSIONARY_SCOPES.map((sc) => (
+                <option key={sc.id} value={sc.id}>
+                  {t(sc.am, sc.en)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer">
-            <Upload className="w-3.5 h-3.5" />
-            <span>{t('Excel ጫን', 'Import')}</span>
-            <input type="file" accept=".csv,.xlsx,.xls" onChange={handleImportCSV} className="hidden" />
-          </label>
-          <button
-            type="button"
-            onClick={handleExportXlsx}
-            className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>{t('Excel አውርድ', 'Export')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>{t('አትም', 'Print')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => openAdd('international')}
-            className="px-4 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{t('አዲስ ሚሽነሪ መዝግብ', 'Add Missionary')}</span>
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+          <div className="text-[11px] font-semibold text-slate-500">
+            {t(
+              'ስልክ ቁጥር፣ ያሉበትን ክልል እና የትምህርት ደረጃ በቀጥታ ከታች መጻፍ ወይም መቀየር ይችላሉ።',
+              'Update phone number, region/location, and education level directly below or in the edit dialog.'
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            {records.length < DEFAULT_EVANGELISM_MISSIONARIES.length && (
+              <button
+                type="button"
+                onClick={handleLoadDefaultMissionaries}
+                className="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>{t('ነባሪ 10 ሚሽነሪዎችን ጫን', 'Load 10 Default Missionaries')}</span>
+              </button>
+            )}
+            <label className="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+              <Upload className="w-3.5 h-3.5" />
+              <span>{t('Excel ጫን', 'Import')}</span>
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                onChange={handleImportCSV}
+                className="hidden"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleExportXlsx}
+              className="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{t('Excel አውርድ', 'Export')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="flex-1 sm:flex-initial justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>{t('አትም', 'Print')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openAdd('regional')}
+              className="w-full sm:w-auto justify-center px-4 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t('አዲስ ሚሽነሪ መዝግብ', 'Add Missionary')}</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Missionaries Table */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      {/* Mobile / iPhone Friendly Cards (Visible on Phones & Small Tablets < 768px) */}
+      <div className="md:hidden space-y-3 print:hidden">
+        {filtered.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-xs text-slate-500">
+            <p className="font-bold">
+              {t('በተመረጠው ማጣሪያ የተገኘ ሚሽነሪ የለም።', 'No missionaries found for this filter.')}
+            </p>
+            {records.length === 0 && (
+              <button
+                type="button"
+                onClick={handleLoadDefaultMissionaries}
+                className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 text-white font-bold cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>{t('ነባሪ 10 ሚሽነሪዎችን ጫን', 'Load Default Missionaries')}</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          filtered.map((r, idx) => {
+            const meta = getScopeMeta(r.scope);
+            return (
+              <div
+                key={r.id}
+                className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-extrabold text-slate-400 tabular-nums">
+                        #{idx + 1}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-lg font-extrabold text-[11px] ${meta.badgeClass}`}>
+                        {t(meta.am, meta.en)}
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-extrabold text-slate-900 mt-1">{r.name}</h4>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(r)}
+                      className="p-2 rounded-xl bg-blue-50 text-blue-800 hover:bg-blue-100 cursor-pointer"
+                      aria-label={t('አስተካክል', 'Edit')}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    {pendingDeleteId === r.id ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(r.id)}
+                        className="px-2.5 py-1.5 rounded-xl bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
+                      >
+                        {t('ሰርዝ', 'Delete')}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setPendingDeleteId(r.id)}
+                        className="p-2 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                        aria-label={t('ሰርዝ', 'Delete')}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2.5 text-xs">
+                  <div>
+                    <label className="flex items-center gap-1 font-bold text-slate-600 mb-1">
+                      <Phone className="w-3.5 h-3.5 text-blue-800" />
+                      <span>{t('ስልክ ቁጥር', 'Phone Number')}</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        value={r.phone || ''}
+                        onChange={(e) =>
+                          handleInlineFieldUpdate(r.id, { phone: e.target.value })
+                        }
+                        placeholder="09..."
+                        className="flex-1 min-w-0 px-3 py-2 border border-slate-200 rounded-xl font-mono font-bold bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                      {r.phone?.trim() && (
+                        <a
+                          href={`tel:${r.phone.trim()}`}
+                          className="p-2.5 rounded-xl bg-emerald-600 text-white shrink-0"
+                          title={t('ደውል', 'Call')}
+                        >
+                          <Phone className="w-4 h-4" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-1 font-bold text-slate-600 mb-1">
+                      <MapPin className="w-3.5 h-3.5 text-rose-700" />
+                      <span>{t('ያሉበት ክልል / ቦታ (መቀየር ይቻላል)', 'Assigned Region / Field (Changeable)')}</span>
+                    </label>
+                    <select
+                      value={r.missionField}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          openEdit(r);
+                          return;
+                        }
+                        handleInlineFieldUpdate(
+                          r.id,
+                          { missionField: e.target.value },
+                          t(
+                            `✓ የ${r.name} ክልል ወደ "${e.target.value}" ተቀይሯል!`,
+                            `Moved ${r.name} to "${e.target.value}"!`
+                          )
+                        );
+                      }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold bg-slate-50 focus:bg-white"
+                    >
+                      {allRegionChoices.map((reg) => (
+                        <option key={reg} value={reg}>
+                          {reg}
+                        </option>
+                      ))}
+                      <option value="__custom__">{t('+ ሌላ አዲስ ክልል / ቦታ ጻፍ...', '+ Custom Region / Field...')}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-1 font-bold text-slate-600 mb-1">
+                      <GraduationCap className="w-3.5 h-3.5 text-indigo-700" />
+                      <span>{t('የትምህርት ደረጃ', 'Education Level')}</span>
+                    </label>
+                    <select
+                      value={r.educationLevel || 'ያልተገለጸ'}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          openEdit(r);
+                          return;
+                        }
+                        const val = e.target.value === 'ያልተገለጸ' ? undefined : e.target.value;
+                        handleInlineFieldUpdate(
+                          r.id,
+                          { educationLevel: val },
+                          t(
+                            `✓ የ${r.name} የትምህርት ደረጃ ተቀምጧል!`,
+                            `Saved education level for ${r.name}!`
+                          )
+                        );
+                      }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold bg-slate-50 focus:bg-white"
+                    >
+                      {allEducationChoices.map((edu) => (
+                        <option key={edu} value={edu}>
+                          {edu}
+                        </option>
+                      ))}
+                      <option value="__custom__">{t('+ ሌላ የትምህርት ደረጃ ጻፍ...', '+ Custom Education Level...')}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop & Print Missionaries Table */}
+      <div className="hidden md:block print:block bg-white border border-slate-200 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
                 <th className="py-3 px-3 text-left w-10">#</th>
-                <th className="py-3 px-3 text-left">{t('የሚሽነሪ ምድብ', 'Missionary Scope')}</th>
+                <th className="py-3 px-3 text-left">{t('የሚሽነሪ ምድብ', 'Scope')}</th>
                 <th className="py-3 px-3 text-left">{t('ሙሉ ስም', 'Full Name')}</th>
-                <th className="py-3 px-3 text-center">{t('ጾታ', 'Gender')}</th>
-                <th className="py-3 px-3 text-left">{t('የአገልግሎት ቦታ / ሀገር / ክልል', 'Mission Field')}</th>
-                <th className="py-3 px-3 text-left">{t('ላኪ አካል / ድርጅት', 'Sending Body')}</th>
-                <th className="py-3 px-3 text-right">{t('ወርሃዊ ድጋፍ (ብር)', 'Monthly Support')}</th>
+                <th className="py-3 px-3 text-left min-w-[155px]">{t('ስልክ ቁጥር', 'Phone Number')}</th>
+                <th className="py-3 px-3 text-left min-w-[180px]">{t('ያሉበት ክልል / ቦታ', 'Region / Field')}</th>
+                <th className="py-3 px-3 text-left min-w-[190px]">{t('የትምህርት ደረጃ', 'Education Level')}</th>
                 <th className="py-3 px-3 text-center">{t('ሁኔታ', 'Status')}</th>
                 <th className="py-3 px-3 text-right print:hidden">{t('እርምጃ', 'Actions')}</th>
               </tr>
@@ -1224,10 +1527,22 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
             <tbody className="divide-y divide-slate-100">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate-400">
-                    {t(
-                      'እስካሁን የተመዘገበ ሚሽነሪ የለም። አለም አቀፋዊ፣ አገር አቀፋዊ፣ ክልላዊ ወይም አከባቢያዊ ሚሽነሪ ይመዝግቡ።',
-                      'No missionaries recorded yet. Add International, National, Regional, or Local missionaries.'
+                  <td colSpan={8} className="py-10 text-center text-slate-400">
+                    <p>
+                      {t(
+                        'በተመረጠው ማጣሪያ የተመዘገበ ሚሽነሪ የለም።',
+                        'No missionaries match this filter.'
+                      )}
+                    </p>
+                    {records.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={handleLoadDefaultMissionaries}
+                        className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 text-white text-xs font-bold cursor-pointer"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>{t('ነባሪ 10 ሚሽነሪዎችን ጫን', 'Load Default 10 Missionaries')}</span>
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -1242,45 +1557,138 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                           {t(meta.am, meta.en)}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 font-bold text-slate-900">
+                      <td className="py-2.5 px-3 font-extrabold text-slate-900 whitespace-nowrap">
                         <div>{r.name}</div>
-                        {r.phone && <div className="text-[11px] font-mono text-slate-500">{r.phone}</div>}
-                      </td>
-                      <td className="py-2.5 px-3 text-center font-semibold text-slate-700">{r.gender}</td>
-                      <td className="py-2.5 px-3 font-semibold text-slate-800">
-                        <div>{r.missionField}</div>
                         {r.deployedDate && (
-                          <div className="text-[10px] text-slate-500 mt-0.5">
+                          <div className="text-[10px] font-normal text-slate-500 mt-0.5">
                             <DualDateBadge value={r.deployedDate} mode="inline" />
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-slate-600">{r.sendingOrganization || '—'}</td>
-                      <td className="py-2.5 px-3 text-right font-extrabold tabular-nums text-slate-900">
-                        {r.monthlySupportAmount !== undefined
-                          ? r.monthlySupportAmount.toLocaleString()
-                          : '—'}
+                      <td className="py-2 px-3">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="tel"
+                            inputMode="tel"
+                            value={r.phone || ''}
+                            onChange={(e) =>
+                              handleInlineFieldUpdate(r.id, { phone: e.target.value })
+                            }
+                            placeholder="09..."
+                            aria-label={t(`የ${r.name} ስልክ ቁጥር`, `Phone for ${r.name}`)}
+                            className="w-full min-w-[125px] px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono font-bold text-slate-800 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                          />
+                          {r.phone?.trim() && (
+                            <a
+                              href={`tel:${r.phone.trim()}`}
+                              className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 print:hidden shrink-0"
+                              title={t('ደውል', 'Call')}
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-2 px-3">
+                        <select
+                          value={r.missionField}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              openEdit(r);
+                              return;
+                            }
+                            handleInlineFieldUpdate(
+                              r.id,
+                              { missionField: e.target.value },
+                              t(
+                                `✓ የ${r.name} ክልል ወደ "${e.target.value}" ተቀይሯል!`,
+                                `Moved ${r.name} to "${e.target.value}"!`
+                              )
+                            );
+                          }}
+                          aria-label={t(`የ${r.name} ክልል`, `Region for ${r.name}`)}
+                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-bold text-slate-800 bg-slate-50 focus:bg-white cursor-pointer"
+                        >
+                          {allRegionChoices.map((reg) => (
+                            <option key={reg} value={reg}>
+                              {reg}
+                            </option>
+                          ))}
+                          <option value="__custom__">{t('+ ሌላ ቦታ ጻፍ...', '+ Custom Field...')}</option>
+                        </select>
+                      </td>
+                      <td className="py-2 px-3">
+                        <select
+                          value={r.educationLevel || 'ያልተገለጸ'}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              openEdit(r);
+                              return;
+                            }
+                            const val = e.target.value === 'ያልተገለጸ' ? undefined : e.target.value;
+                            handleInlineFieldUpdate(
+                              r.id,
+                              { educationLevel: val },
+                              t(
+                                `✓ የ${r.name} የትምህርት ደረጃ ተቀምጧል!`,
+                                `Updated education level for ${r.name}!`
+                              )
+                            );
+                          }}
+                          aria-label={t(`የ${r.name} የትምህርት ደረጃ`, `Education level for ${r.name}`)}
+                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-semibold text-slate-800 bg-slate-50 focus:bg-white cursor-pointer"
+                        >
+                          {allEducationChoices.map((edu) => (
+                            <option key={edu} value={edu}>
+                              {edu}
+                            </option>
+                          ))}
+                          <option value="__custom__">{t('+ ሌላ ደረጃ ጻፍ...', '+ Custom Education...')}</option>
+                        </select>
+                      </td>
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
                         <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[11px] font-bold">
                           {r.status}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-right whitespace-nowrap print:hidden">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(r)}
-                          className="p-1.5 text-slate-500 hover:text-blue-700 cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(r.id)}
-                          className="p-1.5 text-slate-500 hover:text-rose-700 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {pendingDeleteId === r.id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(r.id)}
+                              className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
+                            >
+                              {t('አዎ ሰርዝ', 'Delete')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteId(null)}
+                              className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold cursor-pointer"
+                            >
+                              {t('ተው', 'Cancel')}
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openEdit(r)}
+                              className="p-1.5 text-slate-500 hover:text-blue-700 cursor-pointer"
+                              title={t('ሙሉ መረጃ አስተካክል', 'Edit full record')}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteId(r.id)}
+                              className="p-1.5 text-slate-500 hover:text-rose-700 cursor-pointer"
+                              title={t('ሰርዝ', 'Delete')}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1293,8 +1701,8 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
 
       {/* Add/Edit Missionary Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 border border-slate-200 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-4 sm:p-6 border border-slate-200 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-extrabold text-slate-900">
                 {editingId ? t('የሚሽነሪ መረጃ አስተካክል', 'Edit Missionary') : t('አዲስ ሚሽነሪ መዝግብ', 'Add Missionary')}
@@ -1311,7 +1719,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
             <form onSubmit={handleSave} className="space-y-3 mt-4 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1.5">{t('የሚሽነሪ ደረጃ / ምድብ *', 'Missionary Scope *')}</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {MISSIONARY_SCOPES.map((sc) => (
                     <button
                       key={sc.id}
@@ -1340,7 +1748,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('ጾታ', 'Gender')}</label>
                   <select
@@ -1353,31 +1761,86 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">{t('ስልክ ቁጥር', 'Phone')}</label>
+                  <label className="block font-bold text-slate-700 mb-1">{t('ስልክ ቁጥር', 'Phone Number')}</label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="09..."
                     value={mPhone}
                     onChange={(e) => setMPhone(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono font-bold"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  {t('የአገልግሎት ቦታ (ሀገር / ክልል / ወረዳ / አከባቢ) *', 'Mission Field (Country / Region / Area) *')}
+                  {t('ያሉበት ክልል / የአገልግሎት ቦታ (ከዝርዝር ይምረጡ ወይም በእጅ ይጻፉ) *', 'Assigned Region / Mission Field *')}
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={mField}
-                  onChange={(e) => setMField(e.target.value)}
-                  placeholder={t('ምሳሌ፦ ኬንያ፣ ደቡብ ኢትዮጵያ፣ ጋሞ ዞን...', 'e.g. Kenya, South Ethiopia, Gamo Zone...')}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-semibold"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    value={allRegionChoices.includes(mField) ? mField : '__custom__'}
+                    onChange={(e) => {
+                      if (e.target.value !== '__custom__') setMField(e.target.value);
+                    }}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold bg-slate-50"
+                  >
+                    {allRegionChoices.map((reg) => (
+                      <option key={reg} value={reg}>
+                        {reg}
+                      </option>
+                    ))}
+                    <option value="__custom__">{t('ሌላ ቦታ / ክልል (በእጅ ጻፍ)', 'Other Custom Location')}</option>
+                  </select>
+                  <input
+                    type="text"
+                    required
+                    value={mField}
+                    onChange={(e) => setMField(e.target.value)}
+                    placeholder={t('ክልል / ዩኒቨርሲቲ / ቦታ ይጻፉ...', 'Enter region / university / area...')}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-semibold"
+                  />
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  {t('የትምህርት ደረጃ (ይምረጡ ወይም ይጻፉ)', 'Education Level')}
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    value={
+                      !mEducation
+                        ? 'ያልተገለጸ'
+                        : allEducationChoices.includes(mEducation)
+                        ? mEducation
+                        : '__custom__'
+                    }
+                    onChange={(e) => {
+                      if (e.target.value === 'ያልተገለጸ') setMEducation('');
+                      else if (e.target.value !== '__custom__') setMEducation(e.target.value);
+                    }}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold bg-slate-50"
+                  >
+                    {allEducationChoices.map((edu) => (
+                      <option key={edu} value={edu}>
+                        {edu}
+                      </option>
+                    ))}
+                    <option value="__custom__">{t('ሌላ የትምህርት ደረጃ ጻፍ', 'Custom Education Level')}</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={mEducation}
+                    onChange={(e) => setMEducation(e.target.value)}
+                    placeholder={t('ምሳሌ፦ ዲፕሎማ፣ ዲግሪ፣ 12ኛ ክፍል...', 'e.g. Diploma, Degree, Grade 12...')}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('ላኪ አካል / አጥቢያ / ድርጅት', 'Sending Church/Org')}</label>
                   <input
@@ -1401,7 +1864,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('የተሰማሩበት ቀን', 'Deployed Date')}</label>
                   <DualDateInput value={mDate} onChange={setMDate} />
@@ -1431,17 +1894,17 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer w-full sm:w-auto"
                 >
                   {t('ሰርዝ', 'Cancel')}
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-xl cursor-pointer"
+                  className="px-5 py-2 font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-xl cursor-pointer w-full sm:w-auto"
                 >
                   {t('አስቀምጥ', 'Save')}
                 </button>

@@ -1,4 +1,9 @@
-import { ChapelLeaderCategoryId, DepartmentWorkspaceData, OrgUnitId } from '../types';
+import {
+  ChapelLeaderCategoryId,
+  DepartmentWorkspaceData,
+  EvangelismMissionaryRecord,
+  OrgUnitId
+} from '../types';
 
 export type OrgUnitKind =
   | 'governance'
@@ -520,6 +525,105 @@ export const createDefaultEldersCouncilWorkspaceData = (): DepartmentWorkspaceDa
   eldersDefaultSeeded: true
 });
 
+export const DEFAULT_EVANGELISM_MISSIONARIES: EvangelismMissionaryRecord[] = [
+  {
+    id: 920001,
+    scope: 'regional',
+    name: 'ወንጌላዊ ደስታ ጉጋላ',
+    gender: 'ወ',
+    missionField: 'ቤንሻንጉል',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920002,
+    scope: 'regional',
+    name: 'ወንጌላዊ ውቤቱ መለሴ',
+    gender: 'ወ',
+    missionField: 'አማራ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920003,
+    scope: 'regional',
+    name: 'ወንጌላዊ አትንኩት አወቀ',
+    gender: 'ወ',
+    missionField: 'አማራ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920004,
+    scope: 'regional',
+    name: 'ወንጌላዊ ብርሃኑ ጳውሎስ',
+    gender: 'ወ',
+    missionField: 'አማራ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920005,
+    scope: 'regional',
+    name: 'ወንጌላዊ ልኬ ጌዙ',
+    gender: 'ወ',
+    missionField: 'ጂንካ ዩኒቨርሲቲ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920006,
+    scope: 'regional',
+    name: 'ወንጌላዊ ደምሴ ሎሪሶ',
+    gender: 'ወ',
+    missionField: 'አርባምንጭ ዩኒቨርሲቲ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920007,
+    scope: 'regional',
+    name: 'ወንጌላዊ አሸናፊ ማዶሌ',
+    gender: 'ወ',
+    missionField: 'ኦሮሚያ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920008,
+    scope: 'local',
+    name: 'ወንጌላዊ ሉቃስ ሳይኞ',
+    gender: 'ወ',
+    missionField: 'ደጋ ዶነ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920009,
+    scope: 'regional',
+    name: 'ወንጌላዊ ዘመኑ ባዘዘው',
+    gender: 'ወ',
+    missionField: 'አማራ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  },
+  {
+    id: 920010,
+    scope: 'regional',
+    name: 'ወንጌላዊ አምሳሉ',
+    gender: 'ወ',
+    missionField: 'አማራ',
+    sendingOrganization: 'ብርብር ቃለ ሕይወት ቤተ ክርስቲያን (የወንጌል አገልግሎት)',
+    status: 'በአገልግሎት ላይ'
+  }
+];
+
+export const createDefaultEvangelismWorkspaceData = (): DepartmentWorkspaceData => ({
+  ...createEmptyDepartmentWorkspaceData(),
+  missionaryRecords: DEFAULT_EVANGELISM_MISSIONARIES.map((m) => ({ ...m })),
+  evangelismMissionariesDefaultSeeded: true
+});
+
 export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData => ({
   members: [],
   activities: [],
@@ -538,7 +642,8 @@ export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData =>
   youthDiscipleshipMembers: [],
   youthCoordinatorNotes: '',
   beneficiaryRecords: [],
-  missionaryRecords: []
+  missionaryRecords: [],
+  missionaryReports: []
 });
 
 export const getOrgUnitById = (id: OrgUnitId | string | null | undefined): OrgUnitDefinition | undefined => {

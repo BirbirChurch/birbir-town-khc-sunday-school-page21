@@ -72,6 +72,8 @@ import type { AutoApplyDispatchMode } from './PlanDispatchPanel';
 import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
 import { SpiritualAllSectorsLeadersTab } from './SpiritualAllSectorsLeadersTab';
 import { HistoricalLeadersArchiveTab } from './HistoricalLeadersArchiveTab';
+import { EvangelismParticipationStatsPanel } from './EvangelismParticipationStatsPanel';
+import { MissionaryReportsPanel } from './MissionaryReportsPanel';
 
 const PlanBulkSenderPanel = lazyWithRetry(() =>
   import('./PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
@@ -157,7 +159,9 @@ type SubTabId =
   | 'hr'
   | 'assets'
   | 'beneficiaries'
+  | 'evangelism_stats'
   | 'missionaries'
+  | 'missionary_reports'
   | 'plans'
   | 'plan_dispatch'
   | 'consolidated_plans'
@@ -231,7 +235,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   const defaultTab: SubTabId = useMemo(() => {
     if (!unit) return 'members';
     if (unitId === 'love_compassion') return 'beneficiaries';
-    if (unitId === 'evangelism') return 'missionaries';
+    if (unitId === 'evangelism') return 'evangelism_stats';
     if (unit.hasChurchRegistry && unit.kind === 'council_registry') return 'church_registry';
     if (unit.kind === 'governance' || unit.kind === 'special_hub') return 'overview';
     if (unit.kind === 'finance') return 'finances';
@@ -676,7 +680,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       const misRows = [
         [`የወንጌል አገልግሎት — ሚሽነሪዎች (${currentYear} ዓ/ም)`],
         [],
-        ['ተ.ቁ', 'የሚሽነሪ ምድብ', 'ሙሉ ስም', 'ጾታ', 'የአገልግሎት ቦታ', 'ላኪ አካል', 'ወርሃዊ ድጋፍ (ብር)', 'ስልክ', 'ሁኔታ'],
+        ['ተ.ቁ', 'የሚሽነሪ ምድብ', 'ሙሉ ስም', 'ጾታ', 'ስልክ ቁጥር', 'ያሉበት ክልል / የአገልግሎት ቦታ', 'የትምህርት ደረጃ', 'ላኪ አካል', 'ወርሃዊ ድጋፍ (ብር)', 'ሁኔታ'],
         ...(ws.missionaryRecords || []).map((mr, i) => [
           i + 1,
           mr.scope === 'international'
@@ -688,10 +692,11 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             : 'አከባቢያዊ ሚሽነሪ',
           mr.name,
           mr.gender,
+          mr.phone || '-',
           mr.missionField,
+          mr.educationLevel || '-',
           mr.sendingOrganization || '-',
           mr.monthlySupportAmount ?? 0,
-          mr.phone || '-',
           mr.status
         ])
       ];
@@ -905,12 +910,32 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     ...(unitId === 'evangelism'
       ? [
           {
+            id: 'evangelism_stats' as SubTabId,
+            label: t('የአባላት ተሳትፎና መቶኛ (%)', 'Participation & % Stats'),
+            icon: BarChart3
+          },
+          {
             id: 'missionaries' as SubTabId,
             label: t(
               `ሚሽነሪዎች (አለም/አገር/ክልል/አከባቢ · ${(ws.missionaryRecords || []).length})`,
               `Missionaries (${(ws.missionaryRecords || []).length})`
             ),
             icon: Globe
+          }
+        ]
+      : []),
+    ...(unitId === 'evangelism' ||
+    unitId === 'spiritual_council' ||
+    unitId === 'admin_finance' ||
+    unitId === 'office'
+      ? [
+          {
+            id: 'missionary_reports' as SubTabId,
+            label: t(
+              `የሚሽነሪዎች ሪፖርት (${(departmentDataMap.evangelism?.missionaryReports || []).length})`,
+              `Missionaries Report (${(departmentDataMap.evangelism?.missionaryReports || []).length})`
+            ),
+            icon: ClipboardList
           }
         ]
       : []),
@@ -1343,15 +1368,15 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       {activeSubTab === 'members' && (
         <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-56">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={memberSearch}
                   onChange={(e) => setMemberSearch(e.target.value)}
                   placeholder="ስም፣ ስልክ ወይም ድርሻ ፈልግ..."
-                  className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-56"
+                  className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-full"
                 />
               </div>
               {unit.roleOptions.length > 0 && (
@@ -1500,14 +1525,14 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       {activeSubTab === 'activities' && (
         <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="relative">
+            <div className="relative w-full sm:w-64">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={activitySearch}
                 onChange={(e) => setActivitySearch(e.target.value)}
                 placeholder="ተግባር፣ ምድብ ወይም ማብራሪያ ፈልግ..."
-                className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-64"
+                className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-full"
               />
             </div>
             <button
@@ -1762,6 +1787,22 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         </LazyErrorBoundary>
       )}
 
+      {/* Sub-view: Evangelism Participation & Percentage Statistics */}
+      {activeSubTab === 'evangelism_stats' && unitId === 'evangelism' && (
+        <EvangelismParticipationStatsPanel
+          currentYear={currentYear}
+          churchMembers={churchMembers}
+          evangMembers={ws.members}
+          onSaveMembers={(nextMembers) =>
+            onUpdateDepartmentData('evangelism', (prev) => ({
+              ...prev,
+              members: nextMembers
+            }))
+          }
+          onOpenAddMember={openAddMember}
+        />
+      )}
+
       {/* Sub-view: Evangelism Missionaries (International, National, Regional, Local) */}
       {activeSubTab === 'missionaries' && unitId === 'evangelism' && (
         <LazyErrorBoundary compact>
@@ -1770,12 +1811,45 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             currentYear={currentYear}
             records={ws.missionaryRecords || []}
             onSaveRecords={(next) =>
-              onUpdateDepartmentData(unitId, (prev) => ({ ...prev, missionaryRecords: next }))
+              onUpdateDepartmentData(unitId, (prev) => ({
+                ...prev,
+                missionaryRecords: next,
+                evangelismMissionariesDefaultSeeded: true
+              }))
             }
           />
         </Suspense>
         </LazyErrorBoundary>
       )}
+
+      {/* Sub-view: Missionaries Quarterly / Half-Year / Annual Report (Editable in Evangelism, Live View in Spiritual Council & Admin) */}
+      {activeSubTab === 'missionary_reports' &&
+        (unitId === 'evangelism' ||
+          unitId === 'spiritual_council' ||
+          unitId === 'admin_finance' ||
+          unitId === 'office') && (
+          <MissionaryReportsPanel
+            currentYear={currentYear}
+            missionaries={departmentDataMap.evangelism?.missionaryRecords || []}
+            reports={departmentDataMap.evangelism?.missionaryReports || []}
+            readOnly={unitId !== 'evangelism'}
+            viewerContextLabel={getUnitLabel(unitId, unit.name)}
+            onSaveReports={
+              unitId === 'evangelism'
+                ? (nextReports) =>
+                    onUpdateDepartmentData('evangelism', (prev) => ({
+                      ...prev,
+                      missionaryReports: nextReports
+                    }))
+                : undefined
+            }
+            onOpenEvangelismUnit={
+              unitId !== 'evangelism' && canNavigateToUnit('evangelism')
+                ? () => onSelectUnit('evangelism')
+                : undefined
+            }
+          />
+        )}
 
       {/* Sub-view: Spiritual Council Consolidated Chapels & Ministries Plans/Execution Matrix */}
       {activeSubTab === 'consolidated_plans' && unitId === 'spiritual_council' && (
@@ -1939,7 +2013,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       {/* Member Modal */}
       {isMemberModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-extrabold text-slate-900">
                 {editingMemberId ? `${unit.memberNoun} አስተካክል` : `አዲስ ${unit.memberNoun} ጨምር`}
@@ -1971,7 +2045,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">ጾታ</label>
                   <select
@@ -2012,7 +2086,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                   ))}
                 </datalist>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">ትምህርት / ደረጃ</label>
                   <input
@@ -2039,10 +2113,21 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                   onChange={(e) => setMStatus(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
                 >
-                  <option value="ንቁ">ንቁ</option>
-                  <option value="በእረፍት">በእረፍት</option>
-                  <option value="ተመራቂ">ተመራቂ</option>
-                  <option value="ተጠናቋል">ተጠናቋል</option>
+                  {unitId === 'evangelism' ? (
+                    <>
+                      <option value="እየከፈለ ያለ">አባል — እየከፈለ ያለ</option>
+                      <option value="ንቁ">አባል — በአገልግሎት ላይ (ንቁ)</option>
+                      <option value="ሙሉ በሙሉ ያቋረጠ">አገልግሎቱን ሙሉ በሙሉ ያቋረጠ</option>
+                      <option value="ሙሉ በሙሉ ያልተሳተፈ">በአገልግሎቱ ሙሉ በሙሉ ያልተሳተፈ</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="ንቁ">ንቁ</option>
+                      <option value="በእረፍት">በእረፍት</option>
+                      <option value="ተመራቂ">ተመራቂ</option>
+                      <option value="ተጠናቋል">ተጠናቋል</option>
+                    </>
+                  )}
                 </select>
               </div>
               <div>
@@ -2077,7 +2162,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       {/* Activity Modal */}
       {isActivityModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-extrabold text-slate-900">
                 {editingActivityId ? 'የአገልግሎት ተግባር አስተካክል' : 'አዲስ የአገልግሎት ተግባር መዝግብ'}
@@ -2189,7 +2274,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       {/* Finance Modal */}
       {isFinanceModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 border border-slate-200 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-extrabold text-slate-900">
                 {editingFinanceId ? 'የሂሳብ መዝገብ አስተካክል' : 'አዲስ ገቢ / ወጪ መዝግብ'}

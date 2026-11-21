@@ -273,12 +273,41 @@ export interface EvangelismMissionaryRecord {
   name: string;
   gender: 'ወ' | 'ሴ' | string;
   phone?: string;
+  educationLevel?: string;
   missionField: string;
   sendingOrganization?: string;
   deployedDate?: string;
   monthlySupportAmount?: number;
   status: string;
   notes?: string;
+}
+
+export interface GenderCountPair {
+  male: number;
+  female: number;
+}
+
+export interface EvangelismActivityMetrics {
+  witnessed: GenderCountPair; // ወንጌል የተመሰከረላቸው
+  saved: GenderCountPair; // የዳኑ ሰዎች
+  repented: GenderCountPair; // በንስሐ የተመለሱ
+  baptized: GenderCountPair; // የተጠመቁ ሰዎች
+  discipleship: GenderCountPair; // የደቀመዝሙርነት ትምህርት የተማሩ ሰዎች
+}
+
+export interface MissionaryQuarterlyReportRecord {
+  id: number;
+  year: string; // 2019, 2020, ...
+  missionaryId?: number;
+  missionaryName: string;
+  scope?: MissionaryScope;
+  missionField?: string;
+  q1: EvangelismActivityMetrics;
+  q2: EvangelismActivityMetrics;
+  q3: EvangelismActivityMetrics;
+  q4: EvangelismActivityMetrics;
+  notes?: string;
+  updatedAt?: string;
 }
 
 export interface UnitLeaderRecord {
@@ -348,7 +377,9 @@ export interface DepartmentWorkspaceData {
   youthCoordinatorNotes?: string;
   beneficiaryRecords?: CompassionBeneficiaryRecord[];
   missionaryRecords?: EvangelismMissionaryRecord[];
+  missionaryReports?: MissionaryQuarterlyReportRecord[];
   eldersDefaultSeeded?: boolean;
+  evangelismMissionariesDefaultSeeded?: boolean;
 }
 
 export type SubmissionType = 'plan' | 'report' | 'letter';

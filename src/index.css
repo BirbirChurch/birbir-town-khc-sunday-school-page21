@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -12,6 +18,7 @@
     overflow-x: clip;
     min-height: 100vh;
     min-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom);
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -22,18 +29,39 @@
   textarea {
     touch-action: manipulation;
   }
+
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  textarea {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
-.overflow-x-auto {
+.overflow-x-auto,
+.overflow-y-auto {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
 }
 
-@media screen and (max-width: 767px) {
+/* Prevent Safari auto-zoom on focus across all iPhones & touch iPads */
+@media screen and (max-width: 767px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   input:not([type='checkbox']):not([type='radio']):not([type='file']),
   select,
   textarea {
     font-size: 16px;
+  }
+
+  .fixed.inset-0 > div {
+    max-height: 90dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
