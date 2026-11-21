@@ -4,17 +4,32 @@
  */
 
 import { AppData, Student, AbsenteeRecord, ChoirMember, SpiritualMember, Teacher, AnnualPlanItem, ChurchChild, DepartmentWorkspaceData, MinistrySubmission, PlanDispatchItem, FailedLoginAttemptRecord, BlockedBrowserRule } from '../types';
-import { CLASS_LIST, DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
+import {
+  CLASS_LIST,
+  DEFAULT_ANNUAL_PLAN,
+  DEFAULT_CHAPELS,
+  DEFAULT_CHAPEL_PINS,
+  DEFAULT_CHOIR_GROUPS,
+  DEFAULT_SPIRITUAL_GROUPS
+} from '../constants/initialData';
 import {
   CHURCH_ORG_UNITS,
   createDefaultAdminFinanceWorkspaceData,
+  createDefaultChildrenMinistryWorkspaceData,
   createDefaultEldersCouncilWorkspaceData,
   createDefaultEvangelismWorkspaceData,
-  DEFAULT_ORG_UNIT_PINS
+  createDefaultWomenMinistryWorkspaceData,
+  DEFAULT_FULL_TIME_MINISTERS,
+  DEFAULT_ORG_UNIT_PINS,
+  DEFAULT_WOMEN_MINISTRY_PLANS
 } from '../constants/churchStructure';
 import { assignSequentialCodesAndSortMembers, membersNeedCodeOrOrderSync } from './memberCodeGenerator';
 import { canonicalizeEducationLevel, canonicalizeOccupation } from './amharicCategoryCanonicalizer';
-import { syncHRPhonesFromChurchMembers } from './hrMemberMatcher';
+import {
+  stripEthiopianHonorificTitles,
+  syncHRPhonesFromChurchMembers
+} from './hrMemberMatcher';
+import { normalizeAmharicSearchText } from './amharicSearchAndChapel';
 
 let _lastUniqueId = Math.max(Date.now(), 1792849000000);
 
@@ -361,10 +376,23 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
             return checkedId !== rep?.id ? { ...rep, id: checkedId } : rep;
           })
         : undefined,
+      childrenInternalBylaws:
+        typeof ws.childrenInternalBylaws === 'string' ? ws.childrenInternalBylaws : undefined,
+      childrenAcademicAwards: Array.isArray(ws.childrenAcademicAwards)
+        ? ws.childrenAcademicAwards.map((aw) => {
+            const checkedId = ensureUniqueId(aw?.id);
+            return checkedId !== aw?.id ? { ...aw, id: checkedId } : aw;
+          })
+        : undefined,
+      childrenCharterSeeded: ws.childrenCharterSeeded === true ? true : undefined,
+      womenInternalBylaws:
+        typeof ws.womenInternalBylaws === 'string' ? ws.womenInternalBylaws : undefined,
+      womenCharterSeeded: ws.womenCharterSeeded === true ? true : undefined,
       eldersDefaultSeeded: ws.eldersDefaultSeeded === true ? true : undefined,
       evangelismMissionariesDefaultSeeded:
         ws.evangelismMissionariesDefaultSeeded === true ? true : undefined,
-      adminHrDefaultSeeded: ws.adminHrDefaultSeeded === true ? true : undefined
+      adminHrDefaultSeeded: ws.adminHrDefaultSeeded === true ? true : undefined,
+      adminHrMinistersV2Seeded: ws.adminHrMinistersV2Seeded === true ? true : undefined
     };
   });
 
@@ -415,7 +443,29 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
         ...hr,
         id: ensureUniqueId(hr.id)
       })),
-      adminHrDefaultSeeded: true
+      adminHrDefaultSeeded: true,
+      adminHrMinistersV2Seeded: true
+    };
+    modified = true;
+  } else if (!curAdmin.adminHrMinistersV2Seeded) {
+    const existingHr = Array.isArray(curAdmin.hrRecords) ? curAdmin.hrRecords : [];
+    const existingKeys = new Set(
+      existingHr.map((hr) => stripEthiopianHonorificTitles(hr.name) || normalizeAmharicSearchText(hr.name))
+    );
+    const missingMinisters = DEFAULT_FULL_TIME_MINISTERS.filter((defMin) => {
+      const key =
+        stripEthiopianHonorificTitles(defMin.name) || normalizeAmharicSearchText(defMin.name);
+      return key && !existingKeys.has(key);
+    }).map((defMin) => ({
+      ...defMin,
+      id: ensureUniqueId(defMin.id),
+      roleTitles: defMin.roleTitles ? [...defMin.roleTitles] : undefined,
+      departments: defMin.departments ? [...defMin.departments] : undefined
+    }));
+    sanitizedDepartmentData.admin_finance = {
+      ...curAdmin,
+      hrRecords: [...existingHr, ...missingMinisters],
+      adminHrMinistersV2Seeded: true
     };
     modified = true;
   }
@@ -438,6 +488,74 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       };
       modified = true;
     }
+  }
+
+  // Ensure missing Children Ministry service groups, spiritual groups, internal bylaws, and missing charter plans
+  const existingChoirGroups = Array.isArray(data.choirGroups) ? data.choirGroups : [];
+  const mergedChoirGroups = Array.from(new Set([...existingChoirGroups, ...DEFAULT_CHOIR_GROUPS]));
+  if (mergedChoirGroups.length !== existingChoirGroups.length) {
+    modified = true;
+  }
+
+  const existingSpiritualGroups = Array.isArray(data.spiritualGroups) ? data.spiritualGroups : [];
+  const mergedSpiritualGroups = Array.from(
+    new Set([...existingSpiritualGroups, ...DEFAULT_SPIRITUAL_GROUPS])
+  );
+  if (mergedSpiritualGroups.length !== existingSpiritualGroups.length) {
+    modified = true;
+  }
+
+  let finalSanitizedPlans = sanitizedPlans;
+  const curChildren = sanitizedDepartmentData.children_ministry;
+  if (!curChildren || !curChildren.childrenCharterSeeded) {
+    const seededChildren = createDefaultChildrenMinistryWorkspaceData();
+    sanitizedDepartmentData.children_ministry = {
+      ...(curChildren || seededChildren),
+      childrenInternalBylaws:
+        curChildren?.childrenInternalBylaws && curChildren.childrenInternalBylaws.trim() !== ''
+          ? curChildren.childrenInternalBylaws
+          : seededChildren.childrenInternalBylaws,
+      childrenAcademicAwards: curChildren?.childrenAcademicAwards || [],
+      childrenCharterSeeded: true
+    };
+    const existingTaskKeys = new Set(
+      finalSanitizedPlans.map((p) => normalizeAmharicSearchText(p.task))
+    );
+    const missingDefaultPlans = DEFAULT_ANNUAL_PLAN.filter(
+      (dp) => !existingTaskKeys.has(normalizeAmharicSearchText(dp.task))
+    ).map((dp) => ({
+      ...dp,
+      id: ensureUniqueId(dp.id)
+    }));
+    if (missingDefaultPlans.length > 0) {
+      finalSanitizedPlans = [...finalSanitizedPlans, ...missingDefaultPlans];
+    }
+    modified = true;
+  }
+
+  const curWomen = sanitizedDepartmentData.women_ministry;
+  if (!curWomen || !curWomen.womenCharterSeeded) {
+    const seededWomen = createDefaultWomenMinistryWorkspaceData();
+    const existingWomenPlans = Array.isArray(curWomen?.plans) ? curWomen!.plans : [];
+    const existingWomenTaskKeys = new Set(
+      existingWomenPlans.map((p) => normalizeAmharicSearchText(p.task))
+    );
+    const missingWomenPlans = DEFAULT_WOMEN_MINISTRY_PLANS.filter(
+      (dp) => !existingWomenTaskKeys.has(normalizeAmharicSearchText(dp.task))
+    ).map((dp) => ({
+      ...dp,
+      id: ensureUniqueId(dp.id)
+    }));
+    sanitizedDepartmentData.women_ministry = {
+      ...(curWomen || seededWomen),
+      plans: [...existingWomenPlans, ...missingWomenPlans],
+      womenInternalBylaws:
+        curWomen?.womenInternalBylaws && curWomen.womenInternalBylaws.trim() !== ''
+          ? curWomen.womenInternalBylaws
+          : seededWomen.womenInternalBylaws,
+      womenCharterSeeded: true
+    };
+    modified = true;
   }
 
   // 10c. Sanitize submissions array
@@ -552,10 +670,12 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
     classSubjects: sanitizedClassSubjects,
     students: sanitizedStudents,
     attendance: sanitizedAttendance,
+    choirGroups: mergedChoirGroups,
     choirMembers: sanitizedChoir,
+    spiritualGroups: mergedSpiritualGroups,
     spiritualMembers: sanitizedSpiritual,
     teachers: ensuredTeachers,
-    plans: sanitizedPlans,
+    plans: finalSanitizedPlans,
     chapels: DEFAULT_CHAPELS,
     churchChildren: sanitizedChurchChildren,
     churchMembers: sanitizedChurchMembers,

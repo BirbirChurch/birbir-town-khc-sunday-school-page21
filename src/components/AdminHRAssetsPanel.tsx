@@ -15,7 +15,9 @@ import {
   Phone,
   RefreshCw,
   CheckCircle2,
-  Layers
+  Layers,
+  UserCheck,
+  Calculator
 } from 'lucide-react';
 import {
   AssetType,
@@ -30,6 +32,7 @@ import { formatDualDateText } from '../utils/ethiopianDate';
 import { DualDateBadge, DualDateInput } from './DualDate';
 import {
   HR_ADMIN_ROLE_OPTIONS,
+  HR_CHAPEL_ROLE_OPTIONS,
   HR_MINISTER_ROLE_OPTIONS,
   HR_MINISTER_SECTOR_OPTIONS,
   HR_UNASSIGNED_ROLE_PLACEHOLDER
@@ -41,25 +44,36 @@ import {
   getHRRoleTitles,
   syncHRPhonesFromChurchMembers
 } from '../utils/hrMemberMatcher';
+import {
+  computeServiceDuration,
+  HR_MARITAL_STATUS_OPTIONS,
+  resolveHighestEducationLabel
+} from '../utils/hrProfileAndPayroll';
+import { MinisterProfileModal } from './MinisterProfileModal';
 
 interface AdminHRPanelProps {
   currentYear: string;
   records: ChurchHRRecord[];
   churchMembers?: ChurchMember[];
+  chapelList?: string[];
   onSaveRecords: (updated: ChurchHRRecord[]) => void;
+  onOpenPayroll?: () => void;
 }
 
 export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
   currentYear,
   records,
   churchMembers = [],
-  onSaveRecords
+  chapelList,
+  onSaveRecords,
+  onOpenPayroll
 }) => {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [categoryFilter, setCategoryFilter] = useState<'all' | HRCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [profileModalRecordId, setProfileModalRecordId] = useState<number | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -72,7 +86,14 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
   const [hCustomDept, setHCustomDept] = useState('');
   const [hPhone, setHPhone] = useState('');
   const [hHireDate, setHHireDate] = useState('');
+  const [hStartingSalary, setHStartingSalary] = useState('');
   const [hSalary, setHSalary] = useState('');
+  const [hPensionStartDate, setHPensionStartDate] = useState('');
+  const [hBankName, setHBankName] = useState('');
+  const [hBankAccount, setHBankAccount] = useState('');
+  const [hServiceYears, setHServiceYears] = useState('');
+  const [hMaritalStatus, setHMaritalStatus] = useState('ያላገባ/ች');
+  const [hSpouseName, setHSpouseName] = useState('');
   const [hEducation, setHEducation] = useState('');
   const [hStatus, setHStatus] = useState('በስራ ላይ');
   const [hNotes, setHNotes] = useState('');
@@ -235,7 +256,14 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     setHCustomDept('');
     setHPhone('');
     setHHireDate(new Date().toISOString().split('T')[0]);
+    setHStartingSalary('');
     setHSalary('');
+    setHPensionStartDate('');
+    setHBankName('');
+    setHBankAccount('');
+    setHServiceYears('');
+    setHMaritalStatus('ያላገባ/ች');
+    setHSpouseName('');
     setHEducation('');
     setHStatus('በስራ ላይ');
     setHNotes('');
@@ -254,7 +282,14 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     const resolved = resolvedPhoneById.get(rec.id)?.phone || rec.phone || '';
     setHPhone(resolved);
     setHHireDate(rec.hireDate || '');
+    setHStartingSalary(rec.startingSalary !== undefined ? String(rec.startingSalary) : '');
     setHSalary(rec.monthlySalary !== undefined ? String(rec.monthlySalary) : '');
+    setHPensionStartDate(rec.pensionStartDate || '');
+    setHBankName(rec.bankName || '');
+    setHBankAccount(rec.bankAccountNumber || '');
+    setHServiceYears(rec.serviceYears || '');
+    setHMaritalStatus(rec.maritalStatus || 'ያላገባ/ች');
+    setHSpouseName(rec.spouseName || '');
     setHEducation(rec.educationLevel || '');
     setHStatus(rec.status || 'በስራ ላይ');
     setHNotes(rec.notes || '');
@@ -310,7 +345,9 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
       finalPhone = findMatchingChurchMemberForHR(hName.trim(), churchMembers).phone || '';
     }
 
+    const existingRec = editingId ? records.find((r) => r.id === editingId) : undefined;
     const item: ChurchHRRecord = {
+      ...(existingRec || {}),
       id: editingId ?? generateUniqueId(),
       category: hCategory,
       name: hName.trim(),
@@ -321,7 +358,14 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
       departments: combinedDepts,
       phone: finalPhone || undefined,
       hireDate: hHireDate.trim() || undefined,
+      startingSalary: hStartingSalary.trim() ? Number(hStartingSalary) || 0 : undefined,
       monthlySalary: hSalary.trim() ? Number(hSalary) || 0 : undefined,
+      pensionStartDate: hPensionStartDate.trim() || undefined,
+      bankName: hBankName.trim() || undefined,
+      bankAccountNumber: hBankAccount.trim() || undefined,
+      serviceYears: hServiceYears.trim() || undefined,
+      maritalStatus: hMaritalStatus.trim() || undefined,
+      spouseName: hSpouseName.trim() || undefined,
       educationLevel: hEducation.trim() || undefined,
       status: hStatus,
       notes: hNotes.trim() || undefined
@@ -344,7 +388,27 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     const toRows = (list: ChurchHRRecord[], title: string) => [
       [title],
       [],
-      ['ተ.ቁ', 'ምድብ', 'ሙሉ ስም', 'ጾታ', 'የስራ/አገልግሎት ኃላፍነት', 'ዘርፍ / ክፍል', 'ትምህርት', 'ስልክ', 'የቅጥር ቀን', 'ወርሃዊ ደመወዝ (ብር)', 'ሁኔታ'],
+      [
+        'ተ.ቁ',
+        'ምድብ',
+        'ሙሉ ስም',
+        'ጾታ',
+        'የስራ/አገልግሎት ኃላፍነት',
+        'ዘርፍ / ክፍል',
+        'የትምህርት ደረጃ',
+        'የትምህርት ማስረጃዎች ብዛት',
+        'ስልክ',
+        'የቅጥር ዘመን',
+        'የአገልግሎት ዘመን',
+        'የመጀመሪያ ደሞዝ',
+        'የአሁን ወርሃዊ ደመወዝ (ብር)',
+        'ጡሬታ የተጀመረበት ጊዜ',
+        'የባንክ አካውንት ቁጥር',
+        'የጋብቻ ሁኔታ',
+        'የትዳር ጓደኛ',
+        'የልጆች ብዛት',
+        'ሁኔታ'
+      ],
       ...list.map((r, i) => {
         const roles = getHRRoleTitles(r, HR_UNASSIGNED_ROLE_PLACEHOLDER);
         const depts = getHRDepartments(r);
@@ -356,10 +420,18 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
           r.gender,
           roles.length > 0 ? roles.join(' / ') : '-',
           depts.length > 0 ? depts.join(' / ') : '-',
-          r.educationLevel || '-',
+          resolveHighestEducationLabel(r) || '-',
+          r.educationCredentials?.length || 0,
           resolvedPhone,
           formatDualDateText(r.hireDate, '-'),
+          computeServiceDuration(r.hireDate, r.serviceYears, lang) || '-',
+          r.startingSalary ?? '-',
           r.monthlySalary ?? '-',
+          formatDualDateText(r.pensionStartDate, '-'),
+          r.bankAccountNumber || '-',
+          r.maritalStatus || '-',
+          r.spouseName || '-',
+          r.children?.length || 0,
           r.status
         ];
       })
@@ -376,6 +448,16 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     );
     XLSX.writeFile(wb, `የቤተክርስቲያን_የሰው_ኃይል_${currentYear}.xlsx`);
   };
+
+  const chapelRoleOptions = useMemo(
+    () => (chapelList && chapelList.length > 0 ? chapelList : HR_CHAPEL_ROLE_OPTIONS),
+    [chapelList]
+  );
+
+  const sectorOptionsWithChapels = useMemo(
+    () => Array.from(new Set([...HR_MINISTER_SECTOR_OPTIONS, ...chapelRoleOptions])),
+    [chapelRoleOptions]
+  );
 
   const roleChoicesForCategory =
     hCategory === 'full_time_minister' ? HR_MINISTER_ROLE_OPTIONS : HR_ADMIN_ROLE_OPTIONS;
@@ -397,6 +479,16 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 print:hidden">
+            {onOpenPayroll && (
+              <button
+                type="button"
+                onClick={onOpenPayroll}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 cursor-pointer"
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                <span>{t('የደመወዝ ፔሮል ክፈት →', 'Open Payroll →')}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleSyncPhonesFromMaster}
@@ -568,9 +660,13 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                   const depts = getHRDepartments(r);
                   const phoneInfo = resolvedPhoneById.get(r.id);
                   const roleDropdownChoices =
-                    r.category === 'full_time_minister' ? HR_MINISTER_ROLE_OPTIONS : HR_ADMIN_ROLE_OPTIONS;
+                    r.category === 'full_time_minister'
+                      ? [...HR_MINISTER_ROLE_OPTIONS, ...chapelRoleOptions]
+                      : HR_ADMIN_ROLE_OPTIONS;
                   const availableRoles = roleDropdownChoices.filter((opt) => !roles.includes(opt));
-                  const availableDepts = HR_MINISTER_SECTOR_OPTIONS.filter((opt) => !depts.includes(opt));
+                  const availableStandardRoles = HR_MINISTER_ROLE_OPTIONS.filter((opt) => !roles.includes(opt));
+                  const availableChapelRoles = chapelRoleOptions.filter((opt) => !roles.includes(opt));
+                  const availableDepts = sectorOptionsWithChapels.filter((opt) => !depts.includes(opt));
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/70 align-top">
@@ -589,12 +685,31 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                         </span>
                       </td>
                       <td className="py-2.5 px-3 font-extrabold text-slate-900">
-                        <div>{r.name}</div>
-                        {r.hireDate && (
-                          <div className="text-[10px] font-normal text-slate-500 mt-0.5">
-                            <DualDateBadge value={r.hireDate} mode="inline" />
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setProfileModalRecordId(r.id)}
+                          className="text-left hover:text-teal-800 hover:underline cursor-pointer font-extrabold"
+                        >
+                          {r.name}
+                        </button>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-normal text-slate-500 mt-0.5">
+                          {r.hireDate && <DualDateBadge value={r.hireDate} mode="inline" />}
+                          {computeServiceDuration(r.hireDate, r.serviceYears, lang) && (
+                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+                              {computeServiceDuration(r.hireDate, r.serviceYears, lang)}
+                            </span>
+                          )}
+                          {(r.educationCredentials?.length || 0) > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-bold">
+                              {t('ማስረጃ', 'Creds')}: {r.educationCredentials?.length}
+                            </span>
+                          )}
+                          {(r.children?.length || 0) > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 font-bold">
+                              {t('ልጆች', 'Kids')}: {r.children?.length}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2.5 px-2 text-slate-700 font-semibold">{r.gender}</td>
                       <td className="py-2.5 px-3 min-w-[180px]">
@@ -636,11 +751,34 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                                 ? `+ ${t('የስራ ኃላፍነት ይምረጡ...', 'Select role...')}`
                                 : `+ ${t('ተጨማሪ ኃላፍነት...', 'Add role...')}`}
                             </option>
-                            {availableRoles.map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
+                            {r.category === 'full_time_minister' ? (
+                              <>
+                                {availableStandardRoles.length > 0 && (
+                                  <optgroup label={t('የአገልግሎት መደብ', 'Ministerial Roles')}>
+                                    {availableStandardRoles.map((opt) => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                {availableChapelRoles.length > 0 && (
+                                  <optgroup label={t('10ሩ ቻፕሎች (የቻፕል ኃላፍነት)', '10 Chapels')}>
+                                    {availableChapelRoles.map((opt) => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                              </>
+                            ) : (
+                              availableRoles.map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))
+                            )}
                           </select>
                         )}
                       </td>
@@ -726,7 +864,16 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                             </button>
                           </div>
                         ) : (
-                          <div className="inline-flex items-center gap-1.5">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setProfileModalRecordId(r.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200 rounded-lg cursor-pointer"
+                              title={t('ሙሉ ፕሮፋይል ክፈት', 'Open Full Profile')}
+                            >
+                              <UserCheck className="w-3 h-3" />
+                              <span>{t('ፕሮፋይል', 'Profile')}</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => openEdit(r)}
@@ -776,9 +923,13 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
               const depts = getHRDepartments(r);
               const phoneInfo = resolvedPhoneById.get(r.id);
               const roleDropdownChoices =
-                r.category === 'full_time_minister' ? HR_MINISTER_ROLE_OPTIONS : HR_ADMIN_ROLE_OPTIONS;
+                r.category === 'full_time_minister'
+                  ? [...HR_MINISTER_ROLE_OPTIONS, ...chapelRoleOptions]
+                  : HR_ADMIN_ROLE_OPTIONS;
               const availableRoles = roleDropdownChoices.filter((opt) => !roles.includes(opt));
-              const availableDepts = HR_MINISTER_SECTOR_OPTIONS.filter((opt) => !depts.includes(opt));
+              const availableStandardRoles = HR_MINISTER_ROLE_OPTIONS.filter((opt) => !roles.includes(opt));
+              const availableChapelRoles = chapelRoleOptions.filter((opt) => !roles.includes(opt));
+              const availableDepts = sectorOptionsWithChapels.filter((opt) => !depts.includes(opt));
 
               return (
                 <div key={r.id} className="p-4 space-y-3">
@@ -799,9 +950,24 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                         </span>
                         <span className="text-xs font-semibold text-slate-500">{r.gender}</span>
                       </div>
-                      <h4 className="text-base font-extrabold text-slate-900 mt-1 break-words">{r.name}</h4>
+                      <button
+                        type="button"
+                        onClick={() => setProfileModalRecordId(r.id)}
+                        className="text-base font-extrabold text-slate-900 hover:text-teal-800 mt-1 break-words text-left cursor-pointer"
+                      >
+                        {r.name}
+                      </button>
                     </div>
                     <div className="flex items-center gap-1 shrink-0 print:hidden">
+                      <button
+                        type="button"
+                        onClick={() => setProfileModalRecordId(r.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-bold text-teal-900 bg-teal-50 border border-teal-200 rounded-xl cursor-pointer"
+                        aria-label={t('ፕሮፋይል', 'Profile')}
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>{t('ፕሮፋይል', 'Profile')}</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEdit(r)}
@@ -880,11 +1046,34 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                             ? `+ ${t('የስራ ኃላፍነት ይምረጡ...', 'Select role...')}`
                             : `+ ${t('ተጨማሪ ኃላፍነት ጨምር...', 'Add role...')}`}
                         </option>
-                        {availableRoles.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
+                        {r.category === 'full_time_minister' ? (
+                          <>
+                            {availableStandardRoles.length > 0 && (
+                              <optgroup label={t('የአገልግሎት መደብ', 'Ministerial Roles')}>
+                                {availableStandardRoles.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {availableChapelRoles.length > 0 && (
+                              <optgroup label={t('10ሩ ቻፕሎች (የቻፕል ኃላፍነት)', '10 Chapels')}>
+                                {availableChapelRoles.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </>
+                        ) : (
+                          availableRoles.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))
+                        )}
                       </select>
                     )}
                   </div>
@@ -1031,10 +1220,44 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                     );
                   })}
                 </div>
-                {hRoles.some((r) => !roleChoicesForCategory.includes(r)) && (
+                {hCategory === 'full_time_minister' && (
+                  <div className="pt-1.5 border-t border-slate-200/80 space-y-1.5">
+                    <div className="text-[11px] font-bold text-slate-600">
+                      {t('10ሩ ቻፕሎች (የቻፕል ኃላፍነት ምርጫ)', '10 Chapels (Responsibility Selection)')}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {chapelRoleOptions.map((chap) => {
+                        const selected = hRoles.includes(chap);
+                        return (
+                          <button
+                            key={chap}
+                            type="button"
+                            onClick={() => toggleRoleInModal(chap)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                              selected
+                                ? 'bg-amber-700 text-white border-amber-700'
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-amber-300'
+                            }`}
+                          >
+                            {selected ? `✓ ${chap}` : `+ ${chap}`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {hRoles.some(
+                  (r) =>
+                    !roleChoicesForCategory.includes(r) &&
+                    !(hCategory === 'full_time_minister' && chapelRoleOptions.includes(r))
+                ) && (
                   <div className="flex flex-wrap gap-1.5">
                     {hRoles
-                      .filter((r) => !roleChoicesForCategory.includes(r))
+                      .filter(
+                        (r) =>
+                          !roleChoicesForCategory.includes(r) &&
+                          !(hCategory === 'full_time_minister' && chapelRoleOptions.includes(r))
+                      )
                       .map((r) => (
                         <span
                           key={r}
@@ -1075,8 +1298,8 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                   </label>
                   <span className="text-[11px] font-bold text-teal-800 tabular-nums">{hDepts.length}</span>
                 </div>
-                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-0.5">
-                  {HR_MINISTER_SECTOR_OPTIONS.map((sec) => {
+                <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-0.5">
+                  {sectorOptionsWithChapels.map((sec) => {
                     const selected = hDepts.includes(sec);
                     return (
                       <button
@@ -1094,10 +1317,10 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                     );
                   })}
                 </div>
-                {hDepts.some((d) => !HR_MINISTER_SECTOR_OPTIONS.includes(d)) && (
+                {hDepts.some((d) => !sectorOptionsWithChapels.includes(d)) && (
                   <div className="flex flex-wrap gap-1.5">
                     {hDepts
-                      .filter((d) => !HR_MINISTER_SECTOR_OPTIONS.includes(d))
+                      .filter((d) => !sectorOptionsWithChapels.includes(d))
                       .map((d) => (
                         <span
                           key={d}
@@ -1150,22 +1373,57 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                   </div>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">{t('ወርሃዊ ደመወዝ (ብር)', 'Monthly Salary')}</label>
+                  <label className="block font-bold text-slate-700 mb-1">{t('የመጀመሪያ ደሞዝ (ብር)', 'Starting Salary')}</label>
                   <input
                     type="number"
                     min={0}
+                    step="any"
+                    value={hStartingSalary}
+                    onChange={(e) => setHStartingSalary(e.target.value)}
+                    className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl tabular-nums"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">{t('የአሁን ወርሃዊ ደመወዝ (ብር)', 'Current Monthly Salary')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
                     value={hSalary}
                     onChange={(e) => setHSalary(e.target.value)}
                     className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl tabular-nums"
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block font-bold text-slate-700 mb-1">{t('የቅጥር ቀን', 'Hire Date')}</label>
+                  <label className="block font-bold text-slate-700 mb-1">{t('የቅጥር ቀን / ዘመን', 'Hire Date')}</label>
                   <DualDateInput value={hHireDate} onChange={setHHireDate} />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">{t('የአገልግሎት ዘመን', 'Service Years')}</label>
+                  <input
+                    type="text"
+                    value={hServiceYears}
+                    onChange={(e) => setHServiceYears(e.target.value)}
+                    placeholder={t('ባዶ ከሆነ ከቅጥር ቀን ይሰላል', 'Auto from hire date if blank')}
+                    className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">{t('የባንክ አካውንት ቁጥር', 'Bank Account Number')}</label>
+                  <input
+                    type="text"
+                    value={hBankAccount}
+                    onChange={(e) => setHBankAccount(e.target.value)}
+                    className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">{t('ጡሬታ የተጀመረበት ጊዜ', 'Pension Start Date')}</label>
+                  <DualDateInput value={hPensionStartDate} onChange={setHPensionStartDate} />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('ትምህርት ደረጃ', 'Education Level')}</label>
                   <input
@@ -1174,6 +1432,20 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                     onChange={(e) => setHEducation(e.target.value)}
                     className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl"
                   />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">{t('የጋብቻ ሁኔታ', 'Marital Status')}</label>
+                  <select
+                    value={hMaritalStatus}
+                    onChange={(e) => setHMaritalStatus(e.target.value)}
+                    className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl font-bold"
+                  >
+                    {HR_MARITAL_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">{t('ሁኔታ', 'Status')}</label>
@@ -1189,35 +1461,81 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">{t('ማስታወሻ', 'Notes')}</label>
-                <input
-                  type="text"
-                  value={hNotes}
-                  onChange={(e) => setHNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">{t('የትዳር ጓደኛ (ሚስት/ባል) ስም', 'Spouse Name')}</label>
+                  <input
+                    type="text"
+                    value={hSpouseName}
+                    onChange={(e) => setHSpouseName(e.target.value)}
+                    className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">{t('ማስታወሻ', 'Notes')}</label>
+                  <input
+                    type="text"
+                    value={hNotes}
+                    onChange={(e) => setHNotes(e.target.value)}
+                    className="w-full px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-xl"
+                  />
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-                >
-                  {t('ሰርዝ', 'Cancel')}
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 font-bold text-white bg-teal-800 hover:bg-teal-700 rounded-xl cursor-pointer"
-                >
-                  {t('አስቀምጥ', 'Save')}
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100">
+                {editingId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetId = editingId;
+                      setIsModalOpen(false);
+                      setProfileModalRecordId(targetId);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200 cursor-pointer"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>{t('ሙሉ ፕሮፋይል (ማስረጃዎች፣ ልጆች፣ ታሪክ) ክፈት', 'Open Full Profile (Docs, Kids, History)')}</span>
+                  </button>
+                ) : (
+                  <span />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  >
+                    {t('ሰርዝ', 'Cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 font-bold text-white bg-teal-800 hover:bg-teal-700 rounded-xl cursor-pointer"
+                  >
+                    {t('አስቀምጥ', 'Save')}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {profileModalRecordId !== null && (() => {
+        const target = records.find((r) => r.id === profileModalRecordId);
+        if (!target) return null;
+        const resolvedPhone = resolvedPhoneById.get(target.id)?.phone || target.phone;
+        return (
+          <MinisterProfileModal
+            record={target}
+            resolvedPhone={resolvedPhone}
+            churchMembers={churchMembers}
+            onClose={() => setProfileModalRecordId(null)}
+            onSaveRecord={(updated) => {
+              onSaveRecords(records.map((r) => (r.id === updated.id ? updated : r)));
+            }}
+          />
+        );
+      })()}
     </div>
   );
 };

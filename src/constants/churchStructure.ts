@@ -1,4 +1,5 @@
 import {
+  AnnualPlanItem,
   ChapelLeaderCategoryId,
   ChurchHRRecord,
   DepartmentWorkspaceData,
@@ -32,7 +33,7 @@ export interface OrgUnitDefinition {
   roleOptions: string[];
   activityCategories: string[];
   financeCategories: string[];
-  churchMemberSyncFilter?: 'women' | 'youth' | 'men';
+  churchMemberSyncFilter?: 'women' | 'women_ministry' | 'youth' | 'men';
 }
 
 export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
@@ -179,19 +180,50 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'women_ministry',
     code: '1.2.3',
     name: 'የሴቶች አገልግሎት',
-    shortDesc: 'የባል ሚስት የሆኑ (ባለትዳር) ሴቶች መንፈሳዊ ህብረት፣ የጸሎት ቡድኖች፣ የመጽሐፍ ቅዱስ ጥናትና የቤተሰብ ማበረታቻ',
+    shortDesc:
+      'ዕድሜያቸው ከ29 ዓመት በላይ የሆኑ ሴት አባላት (እና መታቀፍ የሚፈልጉ ከ29 በታች ባለትዳር ሴቶች) ጠቅላላ ጉባኤ፣ 3–7 አባላት ሥራ አስፈጻሚ ኮሚቴ፣ የሙሉ ጊዜ አስተባባሪ፣ የደቀ መዝሙርነትና ክህሎት አገልግሎት',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3203',
     kind: 'ministry',
     hasChurchRegistry: false,
     supportsFinance: true,
-    memberNoun: 'የሴቶች አገልግሎት አባል (የባል ሚስት)',
+    memberNoun: 'የሴቶች አገልግሎት አባል',
     roleColumnLabel: 'ቡድን / ኃላፊነት',
-    roleOptions: ['የሴቶች መሪ', 'ምክትል መሪ', 'ጸሐፊ', 'የጸሎት ቡድን', 'የመዝሙር ቡድን', 'አባል'],
-    activityCategories: ['የሴቶች ሳምንታዊ ህብረት', 'የጸሎት ቀን', 'ኮንፈረንስ/ስልጠና', 'ጉብኝት'],
-    financeCategories: ['የሴቶች አገልግሎት መዋጮ', 'የኮንፈረንስ ወጪ', 'የድጋፍ ስጦታ'],
-    churchMemberSyncFilter: 'women'
+    roleOptions: [
+      'ሰብሳቢ (የ3 ዓመት ምርጫ ዙር)',
+      'የሙሉ ጊዜ የሴቶች አገልግሎት አስተባባሪ',
+      'ምክትል ሰብሳቢ',
+      'ጸሐፊ',
+      'ገንዘብ ያዥ',
+      'የሥራ አስፈጻሚ ኮሚቴ አባል',
+      'የደቀ መዝሙርነትና መጽሐፍ ቅዱስ ጥናት መሪ',
+      'የክህሎት ልማት አስተባባሪ',
+      'የጸሎት ቡድን',
+      'የመዝሙር ቡድን',
+      'መደበኛ አባል (ከ29 ዓመት በላይ)',
+      'ባለትዳር አባል (ከ29 ዓመት በታች - በፈቃድ)'
+    ],
+    activityCategories: [
+      'የሴቶች አገልግሎት ጠቅላላ ጉባኤ',
+      'የሥራ አስፈጻሚ ኮሚቴ ስብሰባ',
+      'የሴቶች የደቀ መዝሙርነትና መጽሐፍ ቅዱስ ትምህርት',
+      'የልዩ ልዩ ክህሎት ስልጠና እና ማበረታቻ',
+      'የመሪዎች ምርጫና የአገልግሎት ማደራጀት',
+      'የጸሎት ቀን እና ሳምንታዊ ህብረት',
+      'ለመንፈሳዊ ዘርፍ እና ለቀጣይ እርከን ሪፖርት',
+      'የቤተሰብ ጉብኝት እና ማበረታቻ',
+      'ከመንፈሳዊ ዘርፍና ከሰብሳቢው የተሰጠ ተግባር'
+    ],
+    financeCategories: [
+      'የአጥቢያ በጀት ድጎማ',
+      'የሴቶች አገልግሎት መዋጮ',
+      'የደቀ መዝሙርነት ትምህርት ቁሳቁስ ወጪ',
+      'የክህሎት ስልጠና ፕሮግራም ወጪ',
+      'የኮንፈረንስ እና የጠቅላላ ጉባኤ ወጪ',
+      'የድጋፍ ስጦታ'
+    ],
+    churchMemberSyncFilter: 'women_ministry'
   },
   {
     id: 'youth_ministry',
@@ -228,18 +260,54 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'children_ministry',
     code: '1.2.5',
     name: 'የልጆች አገልግሎት',
-    shortDesc: 'የቤተክርስቲያን የልጆች መረጃ ቋት (0-14)፣ የትምህርት ዘመን፣ የሰንበት ትምህርት ቤት ክፍሎች እና የመምህራን መግቢያ',
+    shortDesc:
+      'ከተወለዱ እስከ 14 ዓመት የልጆች ጠቅላላ ጉባኤ፣ 3–7 አባላት ኮሚቴ፣ የሙሉ ጊዜ አስተባባሪ፣ የጸሎት/መዝሙር/ምስክርነት/ድራማ ቡድኖች፣ ሰንበት ት/ቤት፣ በጀት እና ዓመታዊ መርኃ ግብር',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '5678',
     kind: 'children_sunday_school',
     hasChurchRegistry: false,
-    supportsFinance: false,
+    supportsFinance: true,
     memberNoun: 'ልጅ / ተማሪ',
-    roleColumnLabel: 'ክፍል',
-    roleOptions: [],
-    activityCategories: [],
-    financeCategories: []
+    roleColumnLabel: 'የኃላፊነት / የክፍል ድርሻ',
+    roleOptions: [
+      'ሰብሳቢ (የ3 ዓመት ምርጫ ዙር)',
+      'የሙሉ ጊዜ የልጆች አገልግሎት አስተባባሪ',
+      'ምክትል ሰብሳቢ',
+      'ጸሐፊ',
+      'ገንዘብ ያዥ',
+      'የልጆች አገልግሎት ኮሚቴ አባል',
+      'የጸሎት ቡድን መሪ',
+      'የመዝሙር ቡድን መሪ',
+      'የምስክርነትና ወንጌል ቡድን መሪ',
+      'የድራማ ቡድን መሪ'
+    ],
+    activityCategories: [
+      'በዕድሜ እኩዮቻቸው የወንጌል ምስክርነት',
+      'የመነቃቂያ፣ የማስተማሪያ እና የመዝናኛ ፕሮግራም',
+      'የመለገስ እና የርኁራኄ አገልግሎት',
+      'ዓመታዊ የምስጋና እና የአንድነት ቀን',
+      'የመሪዎች፣ የመምህራን እና የአስተባባሪዎች ስልጠና',
+      'ለወላጆች፣ ለመሪዎች እና ለምዕመናን ስለ ልጅነት ግንዛቤ',
+      'በመንፈሳዊና በቀለም ትምህርት የላቁ ልጆች ሽልማት',
+      'በመንፈሳዊ ትምህርት ቤቶች/ኮሌጆች ስርዓተ ትምህርት ማበረታቻ',
+      'የገቢ ማሰባሰቢያ ፕሮግራም',
+      'የአገልጋዮች የመንፈስ አንድነት መርኃ ግብር',
+      'የደቀ መዝሙርነት ትምህርት እና ክትትል',
+      'የልዩ ልዩ ክህሎት ማዳበሪያ ፕሮግራም',
+      'ከመንፈሳዊ ዘርፍና ከሰብሳቢው የተሰጠ ተግባር'
+    ],
+    financeCategories: [
+      'የገቢ ማሰባሰቢያ ፕሮግራም ገቢ',
+      'የአጥቢያ በጀት ድጎማ',
+      'የልጆችና የወላጆች መዋጮ / ስጦታ',
+      'የመነቃቂያና የመዝናኛ ፕሮግራም ወጪ',
+      'የመሪዎች፣ መምህራንና አስተባባሪዎች ስልጠና ወጪ',
+      'የርኁራኄ እና የመለገስ አገልግሎት ወጪ',
+      'የመንፈሳዊና የቀለም ትምህርት ሽልማት ወጪ',
+      'ዓመታዊ የምስጋና እና የአንድነት ቀን ወጪ',
+      'የደቀ መዝሙርነትና ዕድሜ-ተኮር ትምህርት ቁሳቁስ'
+    ]
   },
   {
     id: 'chapels_dept',
@@ -625,6 +693,19 @@ export const createDefaultEvangelismWorkspaceData = (): DepartmentWorkspaceData 
   evangelismMissionariesDefaultSeeded: true
 });
 
+export const HR_CHAPEL_ROLE_OPTIONS: string[] = [
+  'ኤልሮኢ ቻፕል',
+  'ሻሎም ቻፕል',
+  'ቤቴል ቻፕል',
+  'ያህዌ ቻፕል',
+  'ኤዴን ቻፕል',
+  'አቤንኤዘር ቻፕል',
+  'ርኆቦት ቻፕል',
+  'ኤልሻዳይ ቻፕል',
+  'ሩሐማ ቻፕል',
+  'አዶናይ ቻፕል'
+];
+
 export const HR_MINISTER_SECTOR_OPTIONS: string[] = [
   'የመንፈሳዊ ዘርፍ ጉባኤ',
   'የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)',
@@ -634,6 +715,7 @@ export const HR_MINISTER_SECTOR_OPTIONS: string[] = [
   'የሴቶች አገልግሎት',
   'የልጆች አገልግሎት',
   'ቻፕሎች',
+  ...HR_CHAPEL_ROLE_OPTIONS,
   'የዲያቆናት አገልግሎት',
   'ፍቅርና ርኅራሄ',
   'የልማት ዘርፍ',
@@ -820,6 +902,38 @@ export const DEFAULT_FULL_TIME_MINISTERS: ChurchHRRecord[] = [
     department: 'የወንጌል አገልግሎት',
     departments: ['የወንጌል አገልግሎት'],
     status: 'በስራ ላይ'
+  },
+  {
+    id: 930015,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊ ገላትያ ደስታ',
+    gender: 'ሴ',
+    roleTitle: 'ወንጌላዊ',
+    roleTitles: ['ወንጌላዊ'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930016,
+    category: 'full_time_minister',
+    name: 'አስራት አማኑኤል',
+    gender: 'ወ',
+    roleTitle: HR_UNASSIGNED_ROLE_PLACEHOLDER,
+    roleTitles: [],
+    departments: [],
+    status: 'በስራ ላይ'
+  },
+  {
+    id: 930017,
+    category: 'full_time_minister',
+    name: 'ወንጌላዊት ልቤወርቅ ጨንቻ',
+    gender: 'ሴ',
+    roleTitle: 'ወንጌላዊት',
+    roleTitles: ['ወንጌላዊት'],
+    department: 'የወንጌል አገልግሎት',
+    departments: ['የወንጌል አገልግሎት'],
+    status: 'በስራ ላይ'
   }
 ];
 
@@ -959,7 +1073,192 @@ export const createDefaultAdminFinanceWorkspaceData = (): DepartmentWorkspaceDat
     roleTitles: r.roleTitles ? [...r.roleTitles] : undefined,
     departments: r.departments ? [...r.departments] : undefined
   })),
-  adminHrDefaultSeeded: true
+  adminHrDefaultSeeded: true,
+  adminHrMinistersV2Seeded: true
+});
+
+export const DEFAULT_CHILDREN_INTERNAL_BYLAWS_TEXT =
+  'የአጥቢያዪቱ የልጆች አገልግሎት ከቤተ ክርስቲያኒቱ መተዳደሪያ ደንብ ጋር የማይጋጭ ውስጣዊ አሠራር ደንብ፦ የልጆች ጠቅላላ ጉባኤ ከተወለዱ እስከ 14 ዓመት ዕድሜ ያላቸውን ልጆች ያቅፋል፤ የልጆች አገልግሎት ኮሚቴ እንደ አስፈላጊነቱ ከ3 እስከ 7 አባላት ይኖሩታል፤ የሙሉ ጊዜ የልጆች አገልግሎት አስተባባሪ ተጠሪነቱ ለአጥቢያ መንፈሳዊ ዘርፍ ኃላፊ እና ለሰብሳቢው ይሆናል። የሰብሳቢው አንድ የምርጫ ዙር ሦስት ዓመት ሲሆን ለሁለተኛ ዙር ከተመረጠ እና አንድ የምርጫ ዙር ከማንኛውም መዋቅር መሪነት በማረፍ በድጋሚ ሊመረጥ ይችላል።';
+
+export interface ChildrenMinistryCharterSection {
+  structure: string[];
+  accountabilityAndTerms: string[];
+  mandates: string[];
+}
+
+export const CHILDREN_MINISTRY_CHARTER: ChildrenMinistryCharterSection = {
+  structure: [
+    'የልጆች ጠቅላላ ጉባኤ ዕድሜያቸው ከተወለዱ እስከ 14 ዓመት የሆኑ የቤተ ክርስቲያኒቱ አባላት ይኖሩታል',
+    'የልጆች አገልግሎት ኮሚቴ እንደ አስፈላጊነቱ ከ3 እስከ 7 አባላት ይኖረዋል',
+    'አገልግሎቱ የሙሉ ጊዜ የልጆች አገልግሎት አስተባባሪ ይኖረዋል',
+    'አገልግሎቱ ከቤተ ክርስቲያኒቱ መተዳደሪያ ደንብ ጋር የማይጋጭ ውስጣዊ ደንብ ያወጣል'
+  ],
+  accountabilityAndTerms: [
+    'የአጥቢያዪቱ የልጆች አገልግሎት ተጠሪነቱ ለአጥቢያዪቱ መንፈሳዊ ዘርፍ ኃላፊ ነው',
+    'የልጆች አገልግሎት አስተባባሪ ተጠሪነቱ ለአጥቢያ መንፈሳዊ ዘርፍ ኃላፊ እና ለሰብሳቢ ሆኖ ኃላፊነቶች እና ተግባራት በልጆች አገልግሎት ውስጣዊ ደንብ ተዘርዝሮ ይገኛል',
+    'የሰብሳቢው አንድ የምርጫ ዙር ሦስት ዓመት ሲሆን፤ ለሁለተኛ ዙር ከተመረጠ እና አንድ የምርጫ ዙር ከማንኛውም መዋቅር መሪነት በማረፍ በድጋሚ ሊመረጥ ይችላል'
+  ],
+  mandates: [
+    'የአገልግሎቱን የሥራ እቅድ፤ በጀት እና መርኃ ግብር ማዘጋጀት፤ በአጥቢያዪቱ መንፈሳዊ ዘርፍ ኃላፊ በኩል ለሽማግሌዎች ጉባኤ ቀርቦ ሲጸድቅ ተግባራዊ መሆኑን መከታተል',
+    'አገልግሎቱን በማደራጀት፤ በማዋቀር እና በማስተባበር፤ መሪዎችን ማስመረጥ',
+    'በአጥቢያ የሚገኙ ልጆች በወንጌል አገልግሎት በተለይም ለዕድሜ እኩዮቻቸው እንዲመሰክሩ ማነሳሳት',
+    'ለልጆች የመነቃቂያ፤ የማስተማሪያ እና የመዝናኛ ፕሮግራሞችን ማዘጋጀት',
+    'የጸሎት፤ የመዝሙር፤ የምስክርነት እና የድራማ ቡድኖችን ማቋቋም፤ ማስተባበር',
+    'የልጆችን ዕድሜ ያገናዘበ መንፈሳዊ ትምህርቶችን ከመንፈሳዊ ዘርፍ ጋር በመተባበር እንዲዘጋጅ ማድረግ፤ በሥራ ላይ እንዲውል ማድረግ',
+    'ለአጥቢያዪቱ መሪዎች፤ ለሰንበት ትምህርት አስተማሪዎች እና ለልጆች አገልግሎት አስተባባሪዎች ስልጠና እንዲሰጥ ማመቻቸት',
+    'በአጥቢያዪቱ የሚገኙ ልጆች የመለገስ እና የርኁራኄ አገልግሎቶችን እንዲለማመዱ የሚያግዙ ፕሮግራሞችን ማዘጋጀት',
+    'በአጥቢያዪቱ ለሚገኙ ልጆች ዓመታዊ የምስጋና እና የአንድነት ቀን ፕሮግራሞችን ማቅረብ፤ ተግባራዊ እንዲሆን ማድረግ',
+    'የቤተ ክርስቲያን ልጆች የሚገለገሉበትን ዕቅድ ማውጣት፤ አፈጻጸሙንም መከታተል',
+    'የልጅነት ዓመታትና ስለ ልጅነት ለወላጆች፤ ለቤተ ክርስቲያን መሪዎች እና ለምዕመናን ተገቢውን ግንዛቤ እንዲያገኙ ማድረግ',
+    'በየዓመቱ ዕቅድ በመያዝ በመንፈሳዊ ትምህርትና በቀለም ትምህርት ልቀው የተገኙ ልጆችን በመሸለም ማበረታታት',
+    'በመንፈሳዊ ትምህርት ቤቶችና ኮሌጆች ስለ ልጅነት የሚገልጽ በሥርዓተ ትምህርት ውስጥ እንዲካተት መሞገት፤ ማበረታታት',
+    'አገልግሎቱን ሊያግዙ የሚችሉ የገቢ ማሰባሰቢያ ፕሮግራሞችን ማቅረብ፤ ማስተባበር፤ ተግባራዊ እንዲሆን ማድረግ',
+    'በአጥቢያዪቱ የሚገኙ የልጆች አገልጋዮች በመንፈስ አንድነት ለአንድ ዓላማ እንዲሰሩ ማስተባበር',
+    'ከመንፈሳዊ ዘርፍ ኃላፊ ጋር በመመካከር ልጆችን የደቀ መዝሙርነት ሕይወት አቅም ለማጠናከር መጽሐፍ ቅዱሳዊ ትምህርቶችን ማዘጋጀት፤ መስጠት፤ ሂደቱንም መከታተል',
+    'ልጆች ልዩ ልዩ ክህሎት የሚያገኙበት መንገድ ማፈላለግ',
+    'ከመንፈሳዊ ዘርፍና ከሰብሳቢው የሚሰጡትን ተጨማሪ ተግባራት ማከናወን'
+  ]
+};
+
+export const createDefaultChildrenMinistryWorkspaceData = (): DepartmentWorkspaceData => ({
+  ...createEmptyDepartmentWorkspaceData(),
+  childrenInternalBylaws: DEFAULT_CHILDREN_INTERNAL_BYLAWS_TEXT,
+  childrenAcademicAwards: [],
+  childrenCharterSeeded: true
+});
+
+export const DEFAULT_WOMEN_INTERNAL_BYLAWS_TEXT =
+  'የአጥቢያዪቱ የሴቶች አገልግሎት ከቤተ ክርስቲያኒቱ መተዳደሪያ ደንብ ጋር የማይጋጭ ውስጣዊ አሠራር ደንብ፦ የሴቶች አገልግሎት ጠቅላላ ጉባኤ ዕድሜያቸው ከ29 ዓመት በላይ የሆኑ የቤተ ክርስቲያኒቱ አባላትን ያቅፋል፤ ሆኖም ዕድሜያቸው ከ29 ዓመት በታች የሆኑ ባለ ትዳር ሴቶች በአገልግሎቱ መታቀፍ ከፈለጉ አይከለከሉም። የሥራ አስፈጻሚ ኮሚቴ እንደ አስፈላጊነቱ ከ3 እስከ 7 አባላት ይኖሩታል። የሙሉ ጊዜ የሴቶች አገልግሎት አስተባባሪ ተጠሪነቱ ለአጥቢያ መንፈሳዊ ዘርፍ ኃላፊ እና ለሰብሳቢ ሆኖ ኃላፊነቶችና ተግባራት በዚህ ውስጣዊ ደንብ መሠረት ይከናወናሉ። የሰብሳቢው አንድ የምርጫ ዙር ሦስት ዓመት ሲሆን፤ ለሁለተኛ ዙር ከተመረጡ እና አንድ የምርጫ ዙር ከተወረወሩ በኋላ በድጋሚ ሊመረጡ ይችላሉ።';
+
+export interface WomenMinistryCharterSection {
+  structure: string[];
+  accountabilityAndTerms: string[];
+  mandates: string[];
+}
+
+export const WOMEN_MINISTRY_CHARTER: WomenMinistryCharterSection = {
+  structure: [
+    'የሴቶች አገልግሎት ጠቅላላ ጉባኤ ዕድሜያቸው ከ29 ዓመት በላይ የሆኑ የቤተ ክርስቲያኒቱ አባላት ይኖሩታል',
+    'ሆኖም ዕድሜያቸው ከ29 ዓመት በታች የሆኑ ባለ ትዳር ሴቶች በአገልግሎቱ መታቀፍ ከፈለጉ አይከለከሉም',
+    'የሥራ አስፈጻሚ ኮሚቴ እንደ አስፈላጊነቱ ከ3 እስከ 7 አባላት ይኖረዋል',
+    'አገልግሎቱ የሙሉ ጊዜ የሴቶች አገልግሎት አስተባባሪ ይኖረዋል',
+    'አገልግሎቱ ከቤተ ክርስቲያኒቱ መተዳደሪያ ደንብ ጋር የማይጋጭ ውስጣዊ ደንብ ያወጣል'
+  ],
+  accountabilityAndTerms: [
+    'የአጥቢያዪቱ የሴቶች አገልግሎት ተጠሪነቱ ለአጥቢያዪቱ መንፈሳዊ ዘርፍ ኃላፊ ነው',
+    'የሴቶች አገልግሎት አስተባባሪ ተጠሪነቱ ለአጥቢያ መንፈሳዊ ዘርፍ ኃላፊ እና ለሰብሳቢ ሆኖ ኃላፊነቶች እና ተግባራት በሴቶች አገልግሎት ውስጣዊ ደንብ ተዘርዝሮ ይገኛል',
+    'የሰብሳቢው አንድ የምርጫ ዙር ሦስት ዓመት ሲሆን፤ ለሁለተኛ ዙር ከተመረጡ እና አንድ የምርጫ ዙር ከተወረወሩ በኋላ በድጋሚ ሊመረጡ ይችላሉ',
+    'በአጥቢያዪቱ የመሪዎች ጉባኤ ላይ በሰብሳቢው አማካይነት በውሳኔ ሰጪነት ይሳተፋል'
+  ],
+  mandates: [
+    'የአገልግሎቱን የሥራ እቅድ፤ በጀት እና መርኃ ግብር ማዘጋጀት፤ በአጥቢያዪቱ መንፈሳዊ ዘርፍ ኃላፊ በኩል ለሽማግሌዎች ጉባኤ ቀርቦ ሲጸድቅ ተግባራዊ መሆኑን መከታተል',
+    'አገልግሎቱን በማደራጀት፤ በማዋቀር እና በማስተባበር፤ መሪዎችን ማስመረጥ',
+    'ከአጥቢያ መንፈሳዊ ዘርፍ ኃላፊ ጋር በመመካከር የሴቶችን የደቀ መዝሙርነት ሕይወት አቅም ለማጠናከር መጽሐፍ ቅዱሳዊ ትምህርቶችን ማዘጋጀት፤ መስጠት፤ ሂደቱንም መከታተል',
+    'በአጥቢያዪቱ የተከናወኑ ሥራዎችን በመሰብሰብ እና በማጠናቀር ለመንፈሳዊ ዘርፍ ኃላፊ እና በቀጣይ ለሚገኝ የሴቶች አገልግሎት እርከን ሪፖርት ማድረግ',
+    'ሴቶች ልዩ ልዩ ክህሎት የሚያገኙበትን መንገድ ማፈላለግ',
+    'በአጥቢያዪቱ የመሪዎች ጉባኤ ላይ በሰብሳቢው አማካይነት በውሳኔ ሰጪነት መሳተፍ',
+    'ከመንፈሳዊ ዘርፍና ከሰብሳቢው የሚሰጡትን ተጨማሪ ተግባራት ማከናወን'
+  ]
+};
+
+export const DEFAULT_WOMEN_MINISTRY_PLANS: AnnualPlanItem[] = [
+  {
+    id: 940001,
+    task: 'የሴቶች አገልግሎት የሥራ እቅድ፣ በጀት እና መርኃ ግብር ማዘጋጀትና ሲጸድቅ ተግባራዊነቱን መከታተል',
+    unit: 'በዙር',
+    yearPlan: 4,
+    q1Plan: 1,
+    q2Plan: 1,
+    q3Plan: 1,
+    q4Plan: 1,
+    q1Done: 0,
+    q2Done: 0,
+    q3Done: 0,
+    q4Done: 0,
+    role: 'የሥራ አስፈጻሚ ኮሚቴና አስተባባሪ'
+  },
+  {
+    id: 940002,
+    task: 'የሴቶች አገልግሎትን በማደራጀት፣ በማዋቀርና በማስተባበር መሪዎችን ማስመረጥ',
+    unit: 'በዙር',
+    yearPlan: 2,
+    q1Plan: 1,
+    q2Plan: 0,
+    q3Plan: 1,
+    q4Plan: 0,
+    q1Done: 0,
+    q2Done: 0,
+    q3Done: 0,
+    q4Done: 0,
+    role: 'ሰብሳቢና ሥራ አስፈጻሚ ኮሚቴ'
+  },
+  {
+    id: 940003,
+    task: 'ከአጥቢያ መንፈሳዊ ዘርፍ ኃላፊ ጋር በመመካከር የሴቶችን የደቀ መዝሙርነት ሕይወት ለማጠናከር መጽሐፍ ቅዱሳዊ ትምህርቶችን ማዘጋጀትና መስጠት',
+    unit: 'በቁጥር',
+    yearPlan: 24,
+    q1Plan: 6,
+    q2Plan: 6,
+    q3Plan: 6,
+    q4Plan: 6,
+    q1Done: 0,
+    q2Done: 0,
+    q3Done: 0,
+    q4Done: 0,
+    role: 'አስተባባሪና መንፈሳዊ ዘርፍ'
+  },
+  {
+    id: 940004,
+    task: 'የተከናወኑ ሥራዎችን በመሰብሰብና በማጠናቀር ለመንፈሳዊ ዘርፍ ኃላፊ እና ለቀጣይ የሴቶች አገልግሎት እርከን ሪፖርት ማድረግ',
+    unit: 'በዙር',
+    yearPlan: 4,
+    q1Plan: 1,
+    q2Plan: 1,
+    q3Plan: 1,
+    q4Plan: 1,
+    q1Done: 0,
+    q2Done: 0,
+    q3Done: 0,
+    q4Done: 0,
+    role: 'ሰብሳቢ፣ ጸሐፊና አስተባባሪ'
+  },
+  {
+    id: 940005,
+    task: 'ሴቶች ልዩ ልዩ ክህሎት የሚያገኙበትን ስልጠናና የዕድገት መንገድ ማፈላለግና ማመቻቸት',
+    unit: 'በዙር',
+    yearPlan: 4,
+    q1Plan: 1,
+    q2Plan: 1,
+    q3Plan: 1,
+    q4Plan: 1,
+    q1Done: 0,
+    q2Done: 0,
+    q3Done: 0,
+    q4Done: 0,
+    role: 'የሥራ አስፈጻሚ ኮሚቴ'
+  },
+  {
+    id: 940006,
+    task: 'በአጥቢያዪቱ የመሪዎች ጉባኤ ላይ በሰብሳቢው አማካይነት በውሳኔ ሰጪነት መሳተፍ',
+    unit: 'በቁጥር',
+    yearPlan: 12,
+    q1Plan: 3,
+    q2Plan: 3,
+    q3Plan: 3,
+    q4Plan: 3,
+    q1Done: 0,
+    q2Done: 0,
+    q3Done: 0,
+    q4Done: 0,
+    role: 'የሴቶች አገልግሎት ሰብሳቢ'
+  }
+];
+
+export const createDefaultWomenMinistryWorkspaceData = (): DepartmentWorkspaceData => ({
+  ...createEmptyDepartmentWorkspaceData(),
+  plans: DEFAULT_WOMEN_MINISTRY_PLANS.map((p) => ({ ...p })),
+  womenInternalBylaws: DEFAULT_WOMEN_INTERNAL_BYLAWS_TEXT,
+  womenCharterSeeded: true
 });
 
 export const createEmptyDepartmentWorkspaceData = (): DepartmentWorkspaceData => ({

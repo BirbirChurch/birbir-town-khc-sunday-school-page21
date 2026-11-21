@@ -1,8 +1,10 @@
 import { AnnualPlanItem, AppData, ChurchChild } from '../types';
 import {
   createDefaultAdminFinanceWorkspaceData,
+  createDefaultChildrenMinistryWorkspaceData,
   createDefaultEldersCouncilWorkspaceData,
   createDefaultEvangelismWorkspaceData,
+  createDefaultWomenMinistryWorkspaceData,
   DEFAULT_ORG_UNIT_PINS
 } from './churchStructure';
 
@@ -48,14 +50,17 @@ export const DEFAULT_CHOIR_GROUPS = [
   "ሐ መዘምራን",
   "የመዝሙር መሪዎች ቡድን",
   "ድራማና ሥነ-ጽሑፍ ቡድን",
-  "ኮሪዮግራፊ ቡድን"
+  "ኮሪዮግራፊ ቡድን",
+  "የጸሎት ቡድን",
+  "የምስክርነት ቡድን"
 ];
 
 export const DEFAULT_SPIRITUAL_GROUPS = [
   "የምስራች ክለብ",
   "የመቅህማ",
   "መሠረታዊ የክርስቲያናዊ ትምህርት",
-  "የመጽሐፍ ቅዱስ ጥናት ቡድን"
+  "የመጽሐፍ ቅዱስ ጥናት ቡድን",
+  "የደቀ መዝሙርነት ትምህርት"
 ];
 
 export const DEFAULT_SUBJECTS = [
@@ -89,7 +94,18 @@ export const DEFAULT_ANNUAL_PLAN: AnnualPlanItem[] = [
   { id: 21, task: "የተለያዩ ተጨማሪ መንፈሳዊ ትምህርቶችን መስጠት", unit: "በቁጥር", yearPlan: 40, q1Plan: 10, q2Plan: 10, q3Plan: 10, q4Plan: 10, q1Done: 10, q2Done: 0, q3Done: 0, q4Done: 0, role: "መጋቢዎችና መምህራን" },
   { id: 22, task: "ከመንፈሳዊ ዘርፍ ጋር የጋራ መድረክ መፍጠር", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 1, q2Done: 0, q3Done: 0, q4Done: 0, role: "አስተባባሪና መንፈሳዊ ዘርፍ" },
   { id: 23, task: "የሩብ ዓመት ሪፖርት ለመንፈሳዊ ዘርፍና ለህብረት መላክ", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 1, q2Done: 0, q3Done: 0, q4Done: 0, role: "አስተባባሪው" },
-  { id: 24, task: "የሩብ ዓመት ዕቅድ ክንውን መገምገም", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 1, q2Done: 0, q3Done: 0, q4Done: 0, role: "አስተባባሪና መሪዎች" }
+  { id: 24, task: "የሩብ ዓመት ዕቅድ ክንውን መገምገም", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 1, q2Done: 0, q3Done: 0, q4Done: 0, role: "አስተባባሪና መሪዎች" },
+  { id: 25, task: "በአጥቢያ የሚገኙ ልጆች በወንጌል አገልግሎት ለዕድሜ እኩዮቻቸው እንዲመሰክሩ ማነሳሳት", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "የምስክርነት ቡድንና መምህራን" },
+  { id: 26, task: "ለልጆች የመነቃቂያ፣ የማስተማሪያ እና የመዝናኛ ፕሮግራሞችን ማዘጋጀት", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "አስተባባሪና ኮሚቴ" },
+  { id: 27, task: "ለአጥቢያዪቱ መሪዎች እና ለልጆች አገልግሎት አስተባባሪዎች ስልጠና እንዲሰጥ ማመቻቸት", unit: "በዙር", yearPlan: 2, q1Plan: 0, q2Plan: 1, q3Plan: 0, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "ኮሚቴና መንፈሳዊ ዘርፍ" },
+  { id: 28, task: "ልጆች የመለገስ እና የርኁራኄ አገልግሎቶችን እንዲለማመዱ የሚያግዙ ፕሮግራሞችን ማዘጋጀት", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "ኮሚቴና መምህራን" },
+  { id: 29, task: "በአጥቢያዪቱ ለሚገኙ ልጆች ዓመታዊ የምስጋና እና የአንድነት ቀን ፕሮግራሞችን ማቅረብና ተግባራዊ ማድረግ", unit: "በዙር", yearPlan: 1, q1Plan: 0, q2Plan: 0, q3Plan: 1, q4Plan: 0, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "ሙሉ ኮሚቴና አስተባባሪ" },
+  { id: 30, task: "የልጅነት ዓመታትና ስለ ልጅነት ለቤተ ክርስቲያን መሪዎች እና ለምዕመናን ተገቢውን ግንዛቤ እንዲያገኙ ማድረግ", unit: "በዙር", yearPlan: 2, q1Plan: 0, q2Plan: 1, q3Plan: 0, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "አስተባባሪና ኮሚቴ" },
+  { id: 31, task: "በመንፈሳዊ ትምህርትና በቀለም ትምህርት ልቀው የተገኙ ልጆችን በመሸለም ማበረታታት", unit: "በዙር", yearPlan: 1, q1Plan: 0, q2Plan: 0, q3Plan: 0, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "አስተባባሪና ኮሚቴ" },
+  { id: 32, task: "በመንፈሳዊ ትምህርት ቤቶችና ኮሌጆች ስለ ልጅነት የሚገልጽ በሥርዓተ ትምህርት ውስጥ እንዲካተት መሞገትና ማበረታታት", unit: "በዙር", yearPlan: 2, q1Plan: 0, q2Plan: 1, q3Plan: 0, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "ሰብሳቢና አስተባባሪ" },
+  { id: 33, task: "አገልግሎቱን ሊያግዙ የሚችሉ የገቢ ማሰባሰቢያ ፕሮግራሞችን ማቅረብ፣ ማስተባበርና ተግባራዊ ማድረግ", unit: "በዙር", yearPlan: 2, q1Plan: 0, q2Plan: 1, q3Plan: 0, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "ኮሚቴና ገንዘብ ያዥ" },
+  { id: 34, task: "ከመንፈሳዊ ዘርፍ ኃላፊ ጋር በመመካከር ልጆችን የደቀ መዝሙርነት ሕይወት አቅም ለማጠናከር መጽሐፍ ቅዱሳዊ ትምህርቶችን ማዘጋጀትና መስጠት", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "መምህራንና መንፈሳዊ ዘርፍ" },
+  { id: 35, task: "ልጆች ልዩ ልዩ ክህሎት የሚያገኙበት መንገድ ማፈላለግ", unit: "በዙር", yearPlan: 4, q1Plan: 1, q2Plan: 1, q3Plan: 1, q4Plan: 1, q1Done: 0, q2Done: 0, q3Done: 0, q4Done: 0, role: "አስተባባሪና ኮሚቴ" }
 ];
 
 export const DEFAULT_CHAPELS: string[] = [
@@ -183,7 +199,9 @@ export const INITIAL_APP_DATA: AppData = {
   departmentData: {
     elders_council: createDefaultEldersCouncilWorkspaceData(),
     evangelism: createDefaultEvangelismWorkspaceData(),
-    admin_finance: createDefaultAdminFinanceWorkspaceData()
+    admin_finance: createDefaultAdminFinanceWorkspaceData(),
+    children_ministry: createDefaultChildrenMinistryWorkspaceData(),
+    women_ministry: createDefaultWomenMinistryWorkspaceData()
   },
   submissions: [],
   failedLoginAttempts: [],

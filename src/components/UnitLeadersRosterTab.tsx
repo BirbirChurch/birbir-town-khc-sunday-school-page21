@@ -25,6 +25,7 @@ interface UnitLeadersRosterTabProps {
   leaders: UnitLeaderRecord[];
   roleSuggestions?: string[];
   churchMembers?: ChurchMember[];
+  structureNote?: string;
   onSaveLeaders: (nextLeaders: UnitLeaderRecord[]) => void;
 }
 
@@ -43,6 +44,7 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
   leaders,
   roleSuggestions = [],
   churchMembers = [],
+  structureNote,
   onSaveLeaders
 }) => {
   const { t } = useLanguage();
@@ -221,6 +223,12 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
           <div className="text-2xl font-extrabold text-emerald-700 tabular-nums mt-1">{counts.active}</div>
         </div>
       </div>
+
+      {structureNote && (
+        <div className="bg-cyan-50 border border-cyan-200 text-cyan-950 rounded-2xl px-4 py-3 text-xs font-semibold leading-relaxed">
+          {structureNote}
+        </div>
+      )}
 
       {/* Main Card */}
       <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">

@@ -20,7 +20,8 @@ import {
   EyeOff,
   CheckCircle2,
   AlertTriangle,
-  ArrowUpRight
+  ArrowUpRight,
+  Layers
 } from 'lucide-react';
 import {
   AbsenteeRecord,
@@ -55,6 +56,11 @@ import { SubjectsTab } from './SubjectsTab';
 import { PlanReportTab } from './PlanReportTab';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
 import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
+import { ChildrenCharterAndProgramsPanel } from './ChildrenCharterAndProgramsPanel';
+import {
+  CHURCH_ORG_UNITS,
+  createDefaultChildrenMinistryWorkspaceData
+} from '../constants/churchStructure';
 import { useLanguage } from '../context/LanguageContext';
 
 export type ChildrenSubTabId =
@@ -66,6 +72,7 @@ export type ChildrenSubTabId =
   | 'choirTab'
   | 'spiritualTab'
   | 'topAchieversTab'
+  | 'charterProgramsTab'
   | 'leadersTab'
   | 'teachersTab'
   | 'subjectsTab'
@@ -266,7 +273,11 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
     }
   };
 
-  const childrenLeaders = appData.departmentData?.children_ministry?.leaders || [];
+  const childrenWorkspace =
+    appData.departmentData?.children_ministry || createDefaultChildrenMinistryWorkspaceData();
+  const childrenLeaders = childrenWorkspace.leaders || [];
+  const childrenUnitRoleSuggestions =
+    CHURCH_ORG_UNITS.find((u) => u.id === 'children_ministry')?.roleOptions || [];
 
   const subTabs: {
     id: ChildrenSubTabId;
@@ -279,10 +290,11 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
     { id: 'allStudentsMasterTab', label: t('ሁሉም የሰንበት ተማሪዎች', 'All Sunday School Students'), icon: Users, roles: ['admin', 'children_coordinator', 'leader'] },
     { id: 'classesTab', label: t('የሰንበት ክፍሎች & ውጤት', 'Classes & Scores'), icon: GraduationCap, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
     { id: 'attendanceTab', label: t('አተንዳንስ & መቆጣጠሪያ', 'Attendance & Tracking'), icon: CalendarCheck2, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
-    { id: 'choirTab', label: t('መዘምራንና ኪነ-ጥበብ', 'Choir & Arts'), icon: Music, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
-    { id: 'spiritualTab', label: t('መንፈሳዊ ትምህርት ቡድኖች', 'Spiritual Study Groups'), icon: BookOpen, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
-    { id: 'topAchieversTab', label: t('ከ1ኛ - 3ኛ ደረጃዎች', 'Top Achievers (1st–3rd)'), icon: Award, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
-    { id: 'leadersTab', label: t(`የመሪዎች ስም ዝርዝር (${childrenLeaders.length})`, `Leaders Roster (${childrenLeaders.length})`), icon: UserCog, roles: ['admin', 'children_coordinator', 'leader'] },
+    { id: 'choirTab', label: t('ጸሎት፣ መዝሙር፣ ምስክርነት እና ድራማ', 'Prayer, Choir, Witness & Drama'), icon: Music, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'spiritualTab', label: t('መንፈሳዊና ደቀ መዝሙርነት ትምህርት', 'Spiritual & Discipleship'), icon: BookOpen, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'topAchieversTab', label: t('መንፈሳዊና የቀለም ት/ት ሽልማት', 'Academic & Spiritual Awards'), icon: Award, roles: ['admin', 'children_coordinator', 'leader', 'teacher'] },
+    { id: 'charterProgramsTab', label: t('ፕሮግራሞች፣ በጀት እና አወቃቀር', 'Programs, Budget & Structure'), icon: Layers, roles: ['admin', 'children_coordinator', 'leader'] },
+    { id: 'leadersTab', label: t(`የኮሚቴና መሪዎች ዝርዝር (${childrenLeaders.length})`, `Committee & Leaders (${childrenLeaders.length})`), icon: UserCog, roles: ['admin', 'children_coordinator', 'leader'] },
     { id: 'teachersTab', label: t('መምህራን & PIN', 'Teachers & PIN'), icon: UserCheck, roles: ['admin', 'children_coordinator', 'leader'] },
     { id: 'subjectsTab', label: t('የትምህርት ዓይነቶች', 'Subjects'), icon: BookMarked, roles: ['admin', 'children_coordinator', 'leader'] },
     { id: 'planReportTab', label: t('የልጆች ዘርፍ ዕቅድ & ክንውን', 'Plans & Execution Reports'), icon: Target, roles: ['admin', 'children_coordinator', 'leader'] },
@@ -574,8 +586,10 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
                   { id: 'allStudentsMasterTab' as ChildrenSubTabId, title: 'ሁሉም የሰንበት ተማሪዎች', desc: 'የሁሉንም ክፍሎች ተማሪዎች አዘዋውር፣ አርም እና ቁጥጥር አድርግ', icon: Users },
                   { id: 'classesTab' as ChildrenSubTabId, title: 'የሰንበት ክፍሎች & ውጤት', desc: 'ተማሪዎችን ጨምር/ሰርዝ፣ ውጤት አርም፣ በExcel ጫን', icon: GraduationCap },
                   { id: 'attendanceTab' as ChildrenSubTabId, title: 'አተንዳንስ & መቆጣጠሪያ', desc: 'ሳምንታዊ አተንዳንስ ይያዙ፣ ቀሪዎችን ይከታተሉ', icon: CalendarCheck2 },
-                  { id: 'choirTab' as ChildrenSubTabId, title: 'መዘምራንና ኪነ-ጥበብ', desc: 'አዲስ ቡድን ፍጠር፣ አባላትን ጨምር ወይም ሰርዝ', icon: Music },
-                  { id: 'spiritualTab' as ChildrenSubTabId, title: 'መንፈሳዊ ትምህርት ቡድኖች', desc: 'አዲስ የትምህርት ቡድን ፍጠርና ተማሪዎችን መዝግብ', icon: BookOpen },
+                  { id: 'choirTab' as ChildrenSubTabId, title: 'ጸሎት፣ መዝሙር፣ ምስክርነት እና ድራማ', desc: 'የጸሎት፣ መዝሙር፣ ምስክርነትና ድራማ ቡድኖችን አደራጅ እና አስተባብር', icon: Music },
+                  { id: 'spiritualTab' as ChildrenSubTabId, title: 'መንፈሳዊና ደቀ መዝሙርነት ትምህርት', desc: 'ዕድሜ-ተኮር ትምህርቶችና የደቀ መዝሙርነት ቡድኖችን መዝግብ', icon: BookOpen },
+                  { id: 'charterProgramsTab' as ChildrenSubTabId, title: 'ፕሮግራሞች፣ በጀት እና ውስጣዊ ደንብ', desc: 'የምስጋና ቀን፣ ርኁራኄ፣ ስልጠና፣ ክህሎት፣ በጀት እና የአገልግሎቱን መዋቅር አስተዳድር', icon: Layers },
+                  { id: 'topAchieversTab' as ChildrenSubTabId, title: 'መንፈሳዊና የቀለም ት/ት ሽልማት', desc: 'በመንፈሳዊና በቀለም ትምህርት ልቀው የተገኙ ልጆችን መዝግብና ሸልም', icon: Award },
                   { id: 'teachersTab' as ChildrenSubTabId, title: 'መምህራን & PIN', desc: 'መምህራንን ጨምር፣ ክፍል/ትምህርት መድብ፣ PIN አስተካክል', icon: UserCheck },
                   { id: 'subjectsTab' as ChildrenSubTabId, title: 'የትምህርት ዓይነቶች', desc: 'ትምህርቶችን ጨምር/ሰርዝና ለየክፍሉ መድብ', icon: BookMarked },
                   { id: 'sendToSpiritualTab' as ChildrenSubTabId, title: 'ለመንፈሳዊ ዘርፍ መላኪያ', desc: 'ዕቅድ፣ ሪፖርትና ደብዳቤዎችን ለመንፈሳዊ ዘርፍ ላክ', icon: Send }
@@ -833,6 +847,29 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
             classList={props.classList}
             studentsByClass={appData.students?.[currentYear] || {}}
             nameScriptMode={props.nameScriptMode}
+            academicAwards={childrenWorkspace.childrenAcademicAwards || []}
+            currentUserRole={currentUserRole}
+            onSaveAcademicAwards={
+              props.onUpdateDepartmentData
+                ? (nextAwards) =>
+                    props.onUpdateDepartmentData?.('children_ministry', (prev) => ({
+                      ...prev,
+                      childrenAcademicAwards: nextAwards
+                    }))
+                : undefined
+            }
+          />
+        )}
+
+        {activeSubTab === 'charterProgramsTab' && currentUserRole !== 'teacher' && (
+          <ChildrenCharterAndProgramsPanel
+            currentYear={currentYear}
+            currentUserRole={currentUserRole}
+            ws={childrenWorkspace}
+            onUpdateWorkspace={(updater) =>
+              props.onUpdateDepartmentData?.('children_ministry', updater)
+            }
+            onNavigateSubTab={(target) => setActiveSubTab(target)}
           />
         )}
 
@@ -841,6 +878,8 @@ export const ChildrenMinistryPortal: React.FC<ChildrenMinistryPortalProps> = (pr
             unitTitle={unitName('children_ministry', 'የልጆች አገልግሎት')}
             currentYear={currentYear}
             leaders={childrenLeaders}
+            roleSuggestions={childrenUnitRoleSuggestions}
+            structureNote="የልጆች አገልግሎት ኮሚቴ እንደ አስፈላጊነቱ ከ3 እስከ 7 አባላት እና የሙሉ ጊዜ የልጆች አገልግሎት አስተባባሪ ይኖረዋል። አገልግሎቱ ተጠሪነቱ ለመንፈሳዊ ዘርፍ ኃላፊ ሲሆን፤ አስተባባሪው ለመንፈሳዊ ዘርፍ ኃላፊና ለሰብሳቢ ተጠሪ ነው። የሰብሳቢው አንድ የምርጫ ዙር ሦስት ዓመት ሲሆን ለሁለተኛ ዙር ከተመረጠ እና አንድ የምርጫ ዙር ከማንኛውም መዋቅር መሪነት በማረፍ በድጋሚ ሊመረጥ ይችላል።"
             churchMembers={appData.churchMembers || []}
             onSaveLeaders={(nextLeaders) =>
               props.onUpdateDepartmentData?.('children_ministry', (prev) => ({

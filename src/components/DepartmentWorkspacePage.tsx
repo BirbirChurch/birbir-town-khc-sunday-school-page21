@@ -29,7 +29,9 @@ import {
   Globe,
   UserCheck,
   History,
-  Building2
+  Building2,
+  ShieldCheck,
+  Calculator
 } from 'lucide-react';
 import {
   AnnualPlanItem,
@@ -52,6 +54,7 @@ import {
   CHURCH_ORG_UNITS,
   createDefaultEldersCouncilWorkspaceData,
   createEmptyDepartmentWorkspaceData,
+  DEFAULT_WOMEN_INTERNAL_BYLAWS_TEXT,
   getOrgUnitBreadcrumb,
   getOrgUnitById,
   getOrgUnitChildren,
@@ -65,15 +68,22 @@ import { BulkAgeIncrementOptions, BulkAgeIncrementStats } from '../utils/ageUpda
 import { NameScriptMode } from '../utils/amharicTransliterator';
 import { useLanguage } from '../context/LanguageContext';
 import { AdminHRPanel, AdminAssetsPanel } from './AdminHRAssetsPanel';
+import { AdminPayrollPanel } from './AdminPayrollPanel';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
-import { buildHouseholdContextMap, isMarriedWife } from '../utils/chapelDemographics';
+import {
+  buildHouseholdContextMap,
+  isFemaleMember,
+  isMarriedWife,
+  parseMemberNumericAge
+} from '../utils/chapelDemographics';
 import type { AutoApplyDispatchMode } from './PlanDispatchPanel';
 import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
 import { SpiritualAllSectorsLeadersTab } from './SpiritualAllSectorsLeadersTab';
 import { HistoricalLeadersArchiveTab } from './HistoricalLeadersArchiveTab';
 import { EvangelismParticipationStatsPanel } from './EvangelismParticipationStatsPanel';
 import { MissionaryReportsPanel } from './MissionaryReportsPanel';
+import { WomenCharterPanel } from './WomenCharterPanel';
 import { syncChurchMemberToEvangelismRecords } from '../utils/memberMinistryProfile';
 
 const PlanBulkSenderPanel = lazyWithRetry(() =>
@@ -158,11 +168,13 @@ type SubTabId =
   | 'activities'
   | 'finances'
   | 'hr'
+  | 'payroll'
   | 'assets'
   | 'beneficiaries'
   | 'evangelism_stats'
   | 'missionaries'
   | 'missionary_reports'
+  | 'women_charter'
   | 'plans'
   | 'plan_dispatch'
   | 'consolidated_plans'
@@ -237,6 +249,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     if (!unit) return 'members';
     if (unitId === 'love_compassion') return 'beneficiaries';
     if (unitId === 'evangelism') return 'evangelism_stats';
+    if (unitId === 'women_ministry') return 'women_charter';
     if (unit.hasChurchRegistry && unit.kind === 'council_registry') return 'church_registry';
     if (unit.kind === 'governance' || unit.kind === 'special_hub') return 'overview';
     if (unit.kind === 'finance') return 'finances';
@@ -368,22 +381,28 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     if (!unit?.churchMemberSyncFilter) return [];
     const yearNum = parseInt(currentYear, 10) || 2018;
     const householdMap =
-      unit.churchMemberSyncFilter === 'women'
+      unit.churchMemberSyncFilter === 'women' ||
+      unit.churchMemberSyncFilter === 'women_ministry'
         ? buildHouseholdContextMap(churchMembers, yearNum)
         : null;
 
     return churchMembers.filter((cm) => {
       const g = String(cm.gender || '').trim();
-      const ageNum = typeof cm.age === 'number' ? cm.age : parseInt(String(cm.age ?? ''), 10);
+      const ageNum = parseMemberNumericAge(cm.age, yearNum);
+      if (unit.churchMemberSyncFilter === 'women_ministry' && householdMap) {
+        if (!isFemaleMember(cm)) return false;
+        if (ageNum !== null && ageNum > 29) return true;
+        return isMarriedWife(cm, householdMap, yearNum);
+      }
       if (unit.churchMemberSyncFilter === 'women' && householdMap) {
-        // ሴቶች ዘርፍ ውስጥ መካተት ያለባቸው የባል ሚስት የሆኑ (ባለትዳር) ሴቶች ብቻ ናቸው
+        // ሴቶች መተሳሰብ ዘርፍ ውስጥ መካተት ያለባቸው የባል ሚስት የሆኑ (ባለትዳር) ሴቶች ብቻ ናቸው
         return isMarriedWife(cm, householdMap, yearNum);
       }
       if (unit.churchMemberSyncFilter === 'men') {
-        return (g === 'ወ' || g.includes('ወንድ')) && (isNaN(ageNum) || ageNum >= 18);
+        return (g === 'ወ' || g.includes('ወንድ')) && (ageNum === null || ageNum >= 18);
       }
       if (unit.churchMemberSyncFilter === 'youth') {
-        return !isNaN(ageNum) && ageNum >= 15 && ageNum <= 29;
+        return ageNum !== null && ageNum >= 15 && ageNum <= 29;
       }
       return false;
     });
@@ -393,23 +412,35 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
 
   const handleSyncFromChurchMaster = () => {
     if (!unit.churchMemberSyncFilter || churchSyncCandidates.length === 0) return;
+    const yearNum = parseInt(currentYear, 10) || 2018;
     const existingNames = new Set(ws.members.map((m) => m.name.trim()));
     const toAdd: DepartmentMemberRecord[] = [];
     churchSyncCandidates.forEach((cm) => {
       const cleanName = String(cm.name || '').trim();
       if (!cleanName || existingNames.has(cleanName)) return;
       existingNames.add(cleanName);
+      const parsedAge = parseMemberNumericAge(cm.age, yearNum);
+      const isOver29 = parsedAge !== null && parsedAge > 29;
       toAdd.push({
         id: generateUniqueId(),
         name: cleanName,
         gender: cm.gender === 'ሴ' || String(cm.gender).includes('ሴት') ? 'ሴ' : 'ወ',
         age: cm.age,
         phone: cm.phone,
-        roleOrClass: unit.roleOptions[unit.roleOptions.length - 1] || 'መደበኛ አባል',
+        roleOrClass:
+          unit.churchMemberSyncFilter === 'women_ministry'
+            ? isOver29
+              ? 'መደበኛ አባል (ከ29 ዓመት በላይ)'
+              : 'ባለትዳር አባል (ከ29 ዓመት በታች - በፈቃድ)'
+            : unit.roleOptions[unit.roleOptions.length - 1] || 'መደበኛ አባል',
         educationOrLevel: cm.educationLevel,
         status: 'ንቁ',
         notes:
-          unit.churchMemberSyncFilter === 'women'
+          unit.churchMemberSyncFilter === 'women_ministry'
+            ? `${cm.chapel ? `ከ${cm.chapel} ቋት · ` : ''}${
+                isOver29 ? 'ጠቅላላ ጉባኤ (ከ29 ዓመት በላይ)' : 'ባለትዳር (ከ29 ዓመት በታች - በፈቃድ)'
+              }`
+            : unit.churchMemberSyncFilter === 'women'
             ? `${cm.chapel ? `ከ${cm.chapel} ቋት · ` : ''}የባል ሚስት (ባለትዳር)`
             : cm.chapel
             ? `ከ${cm.chapel} ቋት`
@@ -435,7 +466,11 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   const openAddMember = () => {
     setEditingMemberId(null);
     setMName('');
-    setMGender(unit.churchMemberSyncFilter === 'women' ? 'ሴ' : 'ወ');
+    setMGender(
+      unit.churchMemberSyncFilter === 'women' || unit.churchMemberSyncFilter === 'women_ministry'
+        ? 'ሴ'
+        : 'ወ'
+    );
     setMAge('');
     setMPhone('');
     setMRole(unit.roleOptions[0] || 'አባል');
@@ -461,10 +496,12 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   const handleSaveMember = (e: React.FormEvent) => {
     e.preventDefault();
     if (!mName.trim()) return;
+    const isWomenOnlyUnit =
+      unit.churchMemberSyncFilter === 'women' || unit.churchMemberSyncFilter === 'women_ministry';
     const record: DepartmentMemberRecord = {
       id: editingMemberId ?? generateUniqueId(),
       name: mName.trim(),
-      gender: unit.churchMemberSyncFilter === 'women' ? 'ሴ' : mGender,
+      gender: isWomenOnlyUnit ? 'ሴ' : mGender,
       age: mAge.trim() ? Number(mAge) || mAge.trim() : undefined,
       phone: mPhone.trim() || undefined,
       roleOrClass: mRole.trim() || 'አባል',
@@ -886,13 +923,27 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       ? [
           {
             id: 'hr' as SubTabId,
-            label: t(`የቤተክርስቲያኒቱ የሰው ኃይል (${(ws.hrRecords || []).length})`, `Church HR (${(ws.hrRecords || []).length})`),
+            label: t(`የሰው ኃይል እና ፕሮፋይል (${(ws.hrRecords || []).length})`, `Church HR & Profiles (${(ws.hrRecords || []).length})`),
             icon: Briefcase
+          },
+          {
+            id: 'payroll' as SubTabId,
+            label: t('የአገልጋዮች ደመወዝ ፔሮል (18% ጡሬታ)', 'Payroll (18% Pension)'),
+            icon: Calculator
           },
           {
             id: 'assets' as SubTabId,
             label: t(`ንብረት — ቋሚና አላቂ (${(ws.assetRecords || []).length})`, `Assets — Fixed/Consumable (${(ws.assetRecords || []).length})`),
             icon: Package
+          }
+        ]
+      : []),
+    ...(unitId === 'women_ministry'
+      ? [
+          {
+            id: 'women_charter' as SubTabId,
+            label: t('አወቃቀር፣ ተጠሪነት እና ደንብ', 'Structure & Bylaws'),
+            icon: ShieldCheck
           }
         ]
       : []),
@@ -1420,7 +1471,12 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>
-                    {unit.churchMemberSyncFilter === 'women'
+                    {unit.churchMemberSyncFilter === 'women_ministry'
+                      ? t(
+                          `ብቁ ሴቶችን (>29 እና ባለትዳር <29) ከቋት አስገባ (${churchSyncCandidates.length})`,
+                          `Sync Eligible Women (${churchSyncCandidates.length})`
+                        )
+                      : unit.churchMemberSyncFilter === 'women'
                       ? t(`የባል ሚስት የሆኑትን ከቋት አስገባ (${churchSyncCandidates.length})`, `Sync Married Wives (${churchSyncCandidates.length})`)
                       : t(`ከዋናው ቋት አስገባ (${churchSyncCandidates.length})`, `Sync from Registry (${churchSyncCandidates.length})`)}
                   </span>
@@ -1436,6 +1492,15 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               </button>
             </div>
           </div>
+
+          {unit.churchMemberSyncFilter === 'women_ministry' && (
+            <div className="mx-5 mt-4 bg-pink-50/80 border border-pink-200 text-pink-950 rounded-xl px-4 py-2.5 text-xs font-bold leading-relaxed">
+              {t(
+                'የሴቶች አገልግሎት ጠቅላላ ጉባኤ ዕድሜያቸው ከ29 ዓመት በላይ የሆኑ የቤተ ክርስቲያኒቱ ሴት አባላትን ያቅፋል፤ ሆኖም ዕድሜያቸው ከ29 ዓመት በታች የሆኑ ባለ ትዳር ሴቶች በአገልግሎቱ መታቀፍ ከፈለጉ አይከለከሉም።',
+                'Women Ministry general assembly includes female church members over 29; married women under 29 who wish to join are also welcomed.'
+              )}
+            </div>
+          )}
 
           {unit.churchMemberSyncFilter === 'women' && (
             <div className="mx-5 mt-4 bg-rose-50/80 border border-rose-200 text-rose-950 rounded-xl px-4 py-2.5 text-xs font-bold">
@@ -1528,6 +1593,14 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           leaders={ws.leaders || []}
           roleSuggestions={unit.roleOptions}
           churchMembers={churchMembers}
+          structureNote={
+            unitId === 'women_ministry'
+              ? t(
+                  'የሥራ አስፈጻሚ ኮሚቴ እንደ አስፈላጊነቱ ከ3 እስከ 7 አባላት ይኖረዋል · የሙሉ ጊዜ የሴቶች አገልግሎት አስተባባሪ ተጠሪነቱ ለአጥቢያ መንፈሳዊ ዘርፍ ኃላፊና ለሰብሳቢ ነው · የሰብሳቢው አንድ የምርጫ ዙር ሦስት ዓመት ሲሆን ለሁለተኛ ዙር ከተመረጡ እና አንድ የምርጫ ዙር ከተወረወሩ በኋላ በድጋሚ ሊመረጡ ይችላሉ · በመሪዎች ጉባኤ ላይ በሰብሳቢው አማካይነት በውሳኔ ሰጪነት ይሳተፋል።',
+                  'Executive committee has 3–7 members · Full-time coordinator reports to Spiritual Sector Head and Chair · Chair serves a 3-year term (2 consecutive terms, eligible again after 1 rest term) · Participates in Leaders Council decisions through the Chair.'
+                )
+              : undefined
+          }
           onSaveLeaders={(nextLeaders) =>
             onUpdateDepartmentData(unitId, (prev) => ({
               ...prev,
@@ -1766,14 +1839,39 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         </section>
       )}
 
-      {/* Sub-view: Admin HR & Assets */}
+      {/* Sub-view: Admin HR, Payroll & Assets */}
       {activeSubTab === 'hr' && unitId === 'admin_finance' && (
         <AdminHRPanel
           currentYear={currentYear}
           records={ws.hrRecords || []}
           churchMembers={churchMembers}
+          chapelList={chapelList}
           onSaveRecords={(next) =>
             onUpdateDepartmentData(unitId, (prev) => ({ ...prev, hrRecords: next }))
+          }
+          onOpenPayroll={() => setActiveSubTab('payroll')}
+        />
+      )}
+
+      {activeSubTab === 'payroll' && unitId === 'admin_finance' && (
+        <AdminPayrollPanel
+          currentYear={currentYear}
+          records={ws.hrRecords || []}
+          churchMembers={churchMembers}
+          onSaveRecords={(next) =>
+            onUpdateDepartmentData(unitId, (prev) => ({ ...prev, hrRecords: next }))
+          }
+          onRecordFinanceExpense={(entry) =>
+            onUpdateDepartmentData(unitId, (prev) => ({
+              ...prev,
+              finances: [
+                {
+                  ...entry,
+                  id: generateUniqueId()
+                },
+                ...(prev.finances || [])
+              ]
+            }))
           }
         />
       )}
@@ -1785,6 +1883,25 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           onSaveRecords={(next) =>
             onUpdateDepartmentData(unitId, (prev) => ({ ...prev, assetRecords: next }))
           }
+        />
+      )}
+
+      {/* Sub-view: Women Ministry Structure, Accountability, Mandates & Bylaws */}
+      {activeSubTab === 'women_charter' && unitId === 'women_ministry' && (
+        <WomenCharterPanel
+          currentYear={currentYear}
+          internalBylaws={ws.womenInternalBylaws || DEFAULT_WOMEN_INTERNAL_BYLAWS_TEXT}
+          membersCount={ws.members.length}
+          leadersCount={(ws.leaders || []).length}
+          plansCount={ws.plans.length}
+          onSaveInternalBylaws={(nextText) =>
+            onUpdateDepartmentData('women_ministry', (prev) => ({
+              ...prev,
+              womenInternalBylaws: nextText,
+              womenCharterSeeded: true
+            }))
+          }
+          onNavigateTab={(tab) => setActiveSubTab(tab)}
         />
       )}
 
@@ -2044,6 +2161,14 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               </button>
             </div>
             <form onSubmit={handleSaveMember} className="space-y-3 mt-4 text-xs">
+              {unit.churchMemberSyncFilter === 'women_ministry' && (
+                <div className="bg-pink-50 border border-pink-200 text-pink-950 rounded-xl px-3 py-2 text-[11px] font-bold">
+                  {t(
+                    'ዕድሜያቸው ከ29 ዓመት በላይ የሆኑ ሴት አባላት እንዲሁም መታቀፍ የሚፈልጉ ከ29 ዓመት በታች ባለትዳር ሴቶች እዚህ ይመዘገባሉ።',
+                    'Women over 29 and married women under 29 who wish to join may be registered here.'
+                  )}
+                </div>
+              )}
               {unit.churchMemberSyncFilter === 'women' && (
                 <div className="bg-rose-50 border border-rose-200 text-rose-950 rounded-xl px-3 py-2 text-[11px] font-bold">
                   {t(
@@ -2066,14 +2191,27 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">ጾታ</label>
                   <select
-                    value={unit.churchMemberSyncFilter === 'women' ? 'ሴ' : mGender}
-                    disabled={unit.churchMemberSyncFilter === 'women'}
+                    value={
+                      unit.churchMemberSyncFilter === 'women' ||
+                      unit.churchMemberSyncFilter === 'women_ministry'
+                        ? 'ሴ'
+                        : mGender
+                    }
+                    disabled={
+                      unit.churchMemberSyncFilter === 'women' ||
+                      unit.churchMemberSyncFilter === 'women_ministry'
+                    }
                     onChange={(e) => setMGender(e.target.value as 'ወ' | 'ሴ')}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold disabled:bg-slate-100"
                   >
-                    {unit.churchMemberSyncFilter !== 'women' && <option value="ወ">ወንድ</option>}
+                    {unit.churchMemberSyncFilter !== 'women' &&
+                      unit.churchMemberSyncFilter !== 'women_ministry' && (
+                        <option value="ወ">ወንድ</option>
+                      )}
                     <option value="ሴ">
-                      {unit.churchMemberSyncFilter === 'women' ? 'ሴት (የባል ሚስት)' : 'ሴት'}
+                      {unit.churchMemberSyncFilter === 'women'
+                        ? 'ሴት (የባል ሚስት)'
+                        : 'ሴት'}
                     </option>
                   </select>
                 </div>

@@ -34,7 +34,8 @@ export const UNIT_TRANSLATIONS_EN: Record<OrgUnitId, { name: string; shortDesc: 
   },
   women_ministry: {
     name: 'Women Ministry',
-    shortDesc: 'Married women (wives) spiritual fellowship, prayer groups, Bible study, and family encouragement'
+    shortDesc:
+      'General assembly for women over 29 (and married women under 29 who wish to join), 3–7 member executive committee, full-time coordinator, discipleship & skills development'
   },
   youth_ministry: {
     name: 'Youth Ministry',

@@ -203,6 +203,38 @@ export interface DepartmentFinanceRecord {
 
 export type HRCategory = 'full_time_minister' | 'admin_staff';
 
+export interface HREducationCredential {
+  id: string;
+  title: string; // e.g., Bachelor of Theology, Diploma, Grade 12
+  institution?: string;
+  fieldOfStudy?: string;
+  yearCompleted?: string;
+  notes?: string;
+  attachmentName?: string;
+  attachmentMimeType?: string;
+  attachmentSize?: number;
+  attachmentStorageKey?: string;
+  attachmentDataUrl?: string;
+  uploadedAt?: string;
+}
+
+export interface MinisterChildRecord {
+  id: string;
+  name: string;
+  gender: 'ወ' | 'ሴ' | string;
+  ageOrBirthDate?: string;
+  notes?: string;
+}
+
+export interface MinisterServiceHistoryItem {
+  id: string;
+  responsibility: string;
+  sectorOrPlace?: string;
+  startPeriod?: string;
+  endPeriod?: string;
+  notes?: string;
+}
+
 export interface ChurchHRRecord {
   id: number;
   category: HRCategory;
@@ -213,9 +245,21 @@ export interface ChurchHRRecord {
   department?: string;
   departments?: string[];
   phone?: string;
-  hireDate?: string;
-  monthlySalary?: number;
-  educationLevel?: string;
+  hireDate?: string; // የቅጥር ዘመን / ቀን
+  startingSalary?: number; // የመጀመሪያ ደሞዝ
+  monthlySalary?: number; // የአሁን ወርሃዊ ደመወዝ
+  pensionStartDate?: string; // ጡሬታ የተጀመረበት ጊዜ
+  pensionExempt?: boolean; // ከጡሬታ ነጻ (ነባሪ false)
+  bankName?: string; // የባንክ ስም
+  bankAccountNumber?: string; // የባንክ አካውንት ቁጥር
+  educationLevel?: string; // የትምህርት ደረጃ
+  educationCredentials?: HREducationCredential[]; // የትምህርት ማስረጃዎችና ሰነዶች
+  maritalStatus?: string; // የጋብቻ ሁኔታ
+  spouseName?: string; // የትዳር ጓደኛ (ሚስት/ባል) ስም
+  spousePhone?: string; // የትዳር ጓደኛ ስልክ
+  children?: MinisterChildRecord[]; // የአገልጋዩ ልጆች
+  serviceYears?: string; // የአገልግሎት ዘመን (ጽሁፍ ወይም ቁጥር)
+  serviceHistory?: MinisterServiceHistoryItem[]; // በቆይታው ያገለገለበት ኃላፊነቶች
   status: string;
   notes?: string;
 }
@@ -385,9 +429,28 @@ export interface DepartmentWorkspaceData {
   beneficiaryRecords?: CompassionBeneficiaryRecord[];
   missionaryRecords?: EvangelismMissionaryRecord[];
   missionaryReports?: MissionaryQuarterlyReportRecord[];
+  childrenInternalBylaws?: string;
+  childrenAcademicAwards?: ChildAcademicAwardRecord[];
+  childrenCharterSeeded?: boolean;
+  womenInternalBylaws?: string;
+  womenCharterSeeded?: boolean;
   eldersDefaultSeeded?: boolean;
   evangelismMissionariesDefaultSeeded?: boolean;
   adminHrDefaultSeeded?: boolean;
+  adminHrMinistersV2Seeded?: boolean;
+}
+
+export interface ChildAcademicAwardRecord {
+  id: number;
+  year: string;
+  studentName: string;
+  gender: 'ወ' | 'ሴ' | string;
+  awardType: 'የቀለም ትምህርት' | 'መንፈሳዊ እና የቀለም ትምህርት' | 'መንፈሳዊ ትምህርት';
+  schoolOrClass: string;
+  rankOrAverage: string;
+  prizeGiven?: string;
+  awardDate?: string;
+  notes?: string;
 }
 
 export type SubmissionType = 'plan' | 'report' | 'letter';

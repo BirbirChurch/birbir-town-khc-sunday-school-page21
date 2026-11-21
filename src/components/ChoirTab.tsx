@@ -143,7 +143,7 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
             <Music className="w-5 h-5 text-indigo-600" />
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">
-                የቡድን ዓይነት ይምረጡ፦
+                የአገልግሎት ቡድን ይምረጡ (የጸሎት፣ የመዝሙር፣ የምስክርነትና የድራማ ቡድኖች)፦
               </label>
               <select
                 value={selectedGroup}

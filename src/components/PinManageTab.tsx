@@ -10,7 +10,10 @@ import {
   GraduationCap,
   RefreshCw,
   Search,
-  AlertTriangle
+  AlertTriangle,
+  Layers,
+  Check,
+  X
 } from 'lucide-react';
 import { Teacher } from '../types';
 import { DEFAULT_CHAPELS, DEFAULT_CHAPEL_PINS } from '../constants/initialData';
@@ -34,6 +37,7 @@ interface PinManageTabProps {
     youthCoordinatorPin?: string
   ) => void;
   onUpdateTeacher?: (teacher: Teacher) => void;
+  onBulkUpdateTeacherPins?: (newPin: string) => void;
 }
 
 export const PinManageTab: React.FC<PinManageTabProps> = ({
@@ -46,7 +50,8 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   chapelList = DEFAULT_CHAPELS,
   teachers = [],
   onSavePins,
-  onUpdateTeacher
+  onUpdateTeacher,
+  onBulkUpdateTeacherPins
 }) => {
   const [newAdminPin, setNewAdminPin] = useState(adminPin);
   const [newLeaderPin, setNewLeaderPin] = useState(leaderPin);
@@ -116,6 +121,20 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
   const [showTeacherPins, setShowTeacherPins] = useState(true);
   const [teacherSearch, setTeacherSearch] = useState('');
   const [savedSuccess, setSavedSuccess] = useState<string>('');
+  const [errorMsg, setErrorMsg] = useState<string>('');
+
+  // Unified PIN (Make all PINs identical) state
+  const [unifiedPin, setUnifiedPin] = useState('');
+  const [showUnifiedPin, setShowUnifiedPin] = useState(false);
+  const [unifyAdminAndCoordinators, setUnifyAdminAndCoordinators] = useState(true);
+  const [unifyUnits, setUnifyUnits] = useState(true);
+  const [unifyChapels, setUnifyChapels] = useState(true);
+  const [unifyTeachers, setUnifyTeachers] = useState(false);
+  const [confirmUnifyOpen, setConfirmUnifyOpen] = useState(false);
+
+  // Per-section uniform PIN inputs
+  const [sectionUnitUniformPin, setSectionUnitUniformPin] = useState('');
+  const [sectionChapelUniformPin, setSectionChapelUniformPin] = useState('');
 
   const filteredTeachers = useMemo(() => {
     const q = teacherSearch.trim().toLowerCase();
@@ -171,9 +190,140 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
       }
     });
     if (fixedCount > 0) {
+      setErrorMsg('');
       setSavedSuccess(`✓ ${fixedCount} የተደጋገሙ ወይም ባዶ የመምህራን PINs በልዩ ቁጥር ተስተካክለዋል!`);
       setTimeout(() => setSavedSuccess(''), 4000);
     }
+  };
+
+  const handleRequestUnifyAllPins = () => {
+    const cleaned = unifiedPin.trim();
+    if (!cleaned) {
+      setSavedSuccess('');
+      setErrorMsg('እባክዎን ለሁሉም የሚሆን አንድ የምስጢር ቁጥር (PIN) መጀመሪያ ያስገቡ!');
+      return;
+    }
+    if (!unifyAdminAndCoordinators && !unifyUnits && !unifyChapels && !unifyTeachers) {
+      setSavedSuccess('');
+      setErrorMsg('እባክዎን ቢያንስ አንድ የPIN ክፍል ይምረጡ!');
+      return;
+    }
+    setErrorMsg('');
+    setConfirmUnifyOpen(true);
+  };
+
+  const handleConfirmUnifyAllPins = () => {
+    const cleaned = unifiedPin.trim();
+    if (!cleaned) return;
+
+    const nextAdminPin = unifyAdminAndCoordinators ? cleaned : newAdminPin.trim() || adminPin;
+    const nextChildrenCoordinatorPin = unifyAdminAndCoordinators
+      ? cleaned
+      : newCoordinatorPin.trim() || childrenCoordinatorPin;
+    const nextYouthCoordinatorPin = unifyAdminAndCoordinators
+      ? cleaned
+      : newYouthCoordinatorPin.trim() || youthCoordinatorPin;
+
+    const nextUnitPins: { [k: string]: string } = {};
+    CHURCH_ORG_UNITS.forEach((u) => {
+      if (unifyUnits) {
+        nextUnitPins[u.id] = cleaned;
+      } else if (u.id === 'children_ministry') {
+        nextUnitPins[u.id] =
+          (unifyAdminAndCoordinators ? cleaned : editedUnitPins[u.id] || newLeaderPin || u.defaultPin).trim();
+      } else {
+        nextUnitPins[u.id] = (editedUnitPins[u.id] || u.defaultPin).trim();
+      }
+    });
+
+    const nextLeaderPin =
+      unifyAdminAndCoordinators || unifyUnits
+        ? cleaned
+        : (nextUnitPins.children_ministry || newLeaderPin || leaderPin).trim();
+    nextUnitPins.children_ministry = nextLeaderPin;
+
+    const nextChapelPins: { [k: string]: string } = {};
+    chapelList.forEach((ch, idx) => {
+      nextChapelPins[ch] = unifyChapels
+        ? cleaned
+        : (editedChapelPins[ch] || DEFAULT_CHAPEL_PINS[ch] || String(2001 + idx)).trim();
+    });
+
+    setNewAdminPin(nextAdminPin);
+    setNewCoordinatorPin(nextChildrenCoordinatorPin);
+    setNewYouthCoordinatorPin(nextYouthCoordinatorPin);
+    setNewLeaderPin(nextLeaderPin);
+    setEditedUnitPins(nextUnitPins);
+    setEditedChapelPins(nextChapelPins);
+
+    onSavePins(
+      nextAdminPin,
+      nextLeaderPin,
+      nextChapelPins,
+      nextUnitPins,
+      nextChildrenCoordinatorPin,
+      nextYouthCoordinatorPin
+    );
+
+    if (unifyTeachers && teachers.length > 0) {
+      if (onBulkUpdateTeacherPins) {
+        onBulkUpdateTeacherPins(cleaned);
+      } else if (onUpdateTeacher) {
+        teachers.forEach((t) => onUpdateTeacher({ ...t, pin: cleaned }));
+      }
+    }
+
+    const updatedGroups: string[] = [];
+    if (unifyAdminAndCoordinators) updatedGroups.push('ዋና አዲሚንና አስተባባሪዎች');
+    if (unifyUnits) updatedGroups.push(`${CHURCH_ORG_UNITS.length} መዋቅር ክፍሎች`);
+    if (unifyChapels) updatedGroups.push(`${chapelList.length} ቻፕሎች`);
+    if (unifyTeachers && teachers.length > 0) updatedGroups.push(`${teachers.length} መምህራን`);
+
+    setConfirmUnifyOpen(false);
+    setErrorMsg('');
+    setSavedSuccess(
+      `✓ የተመረጡት ሁሉም (${updatedGroups.join('፣ ')}) በተመሳሳይ የምስጢር ቁጥር "${cleaned}" ተቀይረው ተቀምጠዋል!`
+    );
+    setTimeout(() => setSavedSuccess(''), 6000);
+  };
+
+  const handleApplyUniformUnitsInForm = () => {
+    const cleaned = sectionUnitUniformPin.trim();
+    if (!cleaned) {
+      setSavedSuccess('');
+      setErrorMsg('እባክዎን ለሁሉም መዋቅር ክፍሎች የሚሆን ተመሳሳይ PIN ያስገቡ!');
+      return;
+    }
+    const next: { [k: string]: string } = {};
+    CHURCH_ORG_UNITS.forEach((u) => {
+      next[u.id] = cleaned;
+    });
+    setEditedUnitPins(next);
+    setNewLeaderPin(cleaned);
+    setErrorMsg('');
+    setSavedSuccess(
+      `✓ ለ${CHURCH_ORG_UNITS.length}ቱም መዋቅር ክፍሎች ተመሳሳይ PIN (${cleaned}) ተሞልቷል፤ ለማስቀመጥ "PIN አስቀምጥ" የሚለውን ይጫኑ።`
+    );
+    setTimeout(() => setSavedSuccess(''), 4500);
+  };
+
+  const handleApplyUniformChapelsInForm = () => {
+    const cleaned = sectionChapelUniformPin.trim();
+    if (!cleaned) {
+      setSavedSuccess('');
+      setErrorMsg('እባክዎን ለ10ሩም ቻፕሎች የሚሆን ተመሳሳይ PIN ያስገቡ!');
+      return;
+    }
+    const next: { [k: string]: string } = {};
+    chapelList.forEach((ch) => {
+      next[ch] = cleaned;
+    });
+    setEditedChapelPins(next);
+    setErrorMsg('');
+    setSavedSuccess(
+      `✓ ለ${chapelList.length}ሩም ቻፕሎች ተመሳሳይ PIN (${cleaned}) ተሞልቷል፤ ለማስቀመጥ "PIN አስቀምጥ" የሚለውን ይጫኑ።`
+    );
+    setTimeout(() => setSavedSuccess(''), 4500);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -182,7 +332,8 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     const resolvedCoordinatorPin = (newCoordinatorPin || '').trim();
     const resolvedYouthCoordinatorPin = (newYouthCoordinatorPin || '').trim();
     if (!newAdminPin.trim() || !resolvedChildrenPin || !resolvedCoordinatorPin || !resolvedYouthCoordinatorPin) {
-      setSavedSuccess('እባክዎን የዋና አዲሚን፣ የልጆችና የወጣቶች አስተባባሪ እንዲሁም የአመራር PIN ቁጥሮችን ያስገቡ!');
+      setSavedSuccess('');
+      setErrorMsg('እባክዎን የዋና አዲሚን፣ የልጆችና የወጣቶች አስተባባሪ እንዲሁም የአመራር PIN ቁጥሮችን ያስገቡ!');
       return;
     }
 
@@ -190,7 +341,8 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     for (const ch of chapelList) {
       const val = (editedChapelPins[ch] || '').trim();
       if (!val) {
-        setSavedSuccess(`እባክዎን የ"${ch}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
+        setSavedSuccess('');
+        setErrorMsg(`እባክዎን የ"${ch}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
         return;
       }
       cleanedChapelPins[ch] = val;
@@ -203,7 +355,8 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
           ? resolvedChildrenPin
           : (editedUnitPins[u.id] || '').trim();
       if (!val) {
-        setSavedSuccess(`እባክዎን የ"${u.name}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
+        setSavedSuccess('');
+        setErrorMsg(`እባክዎን የ"${u.name}" መግቢያ ቁልፍ (PIN) ባዶ አይተዉ!`);
         return;
       }
       cleanedUnitPins[u.id] = val;
@@ -217,7 +370,10 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
       resolvedCoordinatorPin,
       resolvedYouthCoordinatorPin
     );
-    setSavedSuccess('✓ የዋና አዲሚን፣ የልጆችና የወጣቶች አስተባባሪ፣ የሁሉም መዋቅር ክፍሎች እና የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs) ተቀምጠዋል!');
+    setErrorMsg('');
+    setSavedSuccess(
+      `✓ የዋና አዲሚን፣ የልጆችና የወጣቶች አስተባባሪ፣ የሁሉም (${CHURCH_ORG_UNITS.length}) መዋቅር ክፍሎች እና የ${chapelList.length}ሩም ቻፕሎች መግቢያ ቁልፎች (PINs) ተቀምጠዋል!`
+    );
     setTimeout(() => setSavedSuccess(''), 4000);
   };
 
@@ -246,6 +402,12 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     }
   };
 
+  const selectedUnifyCount =
+    (unifyAdminAndCoordinators ? (unifyUnits ? 3 : 4) : 0) +
+    (unifyUnits ? CHURCH_ORG_UNITS.length : 0) +
+    (unifyChapels ? chapelList.length : 0) +
+    (unifyTeachers ? teachers.length : 0);
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Top Banner */}
@@ -265,12 +427,190 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
         </div>
       </div>
 
+      {errorMsg && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-bold flex items-center gap-2 shadow-xs">
+          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
       {savedSuccess && (
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold flex items-center gap-2 shadow-xs">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           <span>{savedSuccess}</span>
         </div>
       )}
+
+      {/* Unify All PINs Card */}
+      <div className="bg-gradient-to-br from-amber-50/80 via-white to-blue-50/70 rounded-2xl p-5 sm:p-6 border-2 border-amber-300/80 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200/70">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Layers className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
+                ሁሉንም ምስጢር ቁጥር (PIN) በአንድ ጊዜ ተመሳሳይ ማድረጊያ
+              </h4>
+              <p className="text-[11px] text-slate-600 mt-0.5">
+                ለሁሉም የአጥቢያ መዋቅር ክፍሎች፣ ቻፕሎች፣ አስተባባሪዎች እና አስፈላጊ ሆኖ ሲገኝ ለመምህራንም አንድ ተመሳሳይ የምስጢር ቁጥር በአንድ ጠቅታ ያድርጉ።
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div className="lg:col-span-5 space-y-2">
+            <label className="block text-xs font-bold text-slate-800">
+              ለሁሉም የሚሆን ተመሳሳይ ምስጢር ቁጥር (PIN) ያስገቡ፦
+            </label>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showUnifiedPin ? 'text' : 'password'}
+                  value={unifiedPin}
+                  onChange={(e) => {
+                    setUnifiedPin(e.target.value);
+                    if (confirmUnifyOpen) setConfirmUnifyOpen(false);
+                  }}
+                  placeholder="ለምሳሌ፦ 2019 ወይም 1234"
+                  className="w-full px-3.5 py-2.5 pr-10 bg-white border border-amber-300 rounded-xl text-base sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowUnifiedPin(!showUnifiedPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                  aria-label="ምስጢር ቁጥር አሳይ ወይም ደብቅ"
+                >
+                  {showUnifiedPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleRequestUnifyAllPins}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition shrink-0 cursor-pointer"
+              >
+                ተመሳሳይ አድርግ
+              </button>
+            </div>
+          </div>
+
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition">
+              <input
+                type="checkbox"
+                checked={unifyAdminAndCoordinators}
+                onChange={(e) => {
+                  setUnifyAdminAndCoordinators(e.target.checked);
+                  setConfirmUnifyOpen(false);
+                }}
+                className="mt-0.5 w-4 h-4 accent-blue-900 rounded cursor-pointer"
+              />
+              <div className="text-xs">
+                <div className="font-bold text-slate-900">ዋና አዲሚን እና አስተባባሪዎች</div>
+                <div className="text-[10px] text-slate-500">
+                  ዋና አዲሚን፣ የልጆች አስተባባሪ፣ የልጆች አመራር እና የወጣቶች አስተባባሪ
+                </div>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition">
+              <input
+                type="checkbox"
+                checked={unifyUnits}
+                onChange={(e) => {
+                  setUnifyUnits(e.target.checked);
+                  setConfirmUnifyOpen(false);
+                }}
+                className="mt-0.5 w-4 h-4 accent-blue-900 rounded cursor-pointer"
+              />
+              <div className="text-xs">
+                <div className="font-bold text-slate-900">
+                  ሁሉም መዋቅር ክፍሎች ({CHURCH_ORG_UNITS.length})
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  ከሽማግሌዎች ጉባኤ እስከ ሴቶች/ወንዶች ህብረት ያሉ ሁሉም ዘርፎች
+                </div>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white border border-slate-200 cursor-pointer hover:border-blue-300 transition">
+              <input
+                type="checkbox"
+                checked={unifyChapels}
+                onChange={(e) => {
+                  setUnifyChapels(e.target.checked);
+                  setConfirmUnifyOpen(false);
+                }}
+                className="mt-0.5 w-4 h-4 accent-blue-900 rounded cursor-pointer"
+              />
+              <div className="text-xs">
+                <div className="font-bold text-slate-900">
+                  ሁሉም ቻፕሎች ({chapelList.length})
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  10ሩም የአጥቢያ ቻፕሎች በሙሉ
+                </div>
+              </div>
+            </label>
+
+            {teachers.length > 0 && (onBulkUpdateTeacherPins || onUpdateTeacher) && (
+              <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white border border-amber-200 cursor-pointer hover:border-amber-400 transition">
+                <input
+                  type="checkbox"
+                  checked={unifyTeachers}
+                  onChange={(e) => {
+                    setUnifyTeachers(e.target.checked);
+                    setConfirmUnifyOpen(false);
+                  }}
+                  className="mt-0.5 w-4 h-4 accent-amber-600 rounded cursor-pointer"
+                />
+                <div className="text-xs">
+                  <div className="font-bold text-slate-900">
+                    የመምህራን PIN ጭምር ({teachers.length})
+                  </div>
+                  <div className="text-[10px] text-amber-800">
+                    ማሳሰቢያ፦ መምህራን በPIN ብቻ ስለሚገቡ ተመሳሳይ ከሆነ የመጀመሪያውን መምህር ብቻ ይከፍታል።
+                  </div>
+                </div>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {confirmUnifyOpen && (
+          <div className="p-3.5 rounded-xl bg-amber-100/90 border border-amber-400 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2 text-xs font-bold text-amber-950">
+              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5 sm:mt-0" />
+              <span>
+                የተመረጡት {selectedUnifyCount} የምስጢር ቁጥሮች በሙሉ ወደ{' '}
+                <span className="font-mono bg-white px-2 py-0.5 rounded border border-amber-300 text-slate-900">
+                  {unifiedPin.trim()}
+                </span>{' '}
+                ተቀይረው ወዲያውኑ ይቀመጡ?
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleConfirmUnifyAllPins}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>አዎ፣ አረጋግጥና አስቀምጥ</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmUnifyOpen(false)}
+                className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold px-3 py-2 rounded-lg transition inline-flex items-center gap-1 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>ተወው</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Section 1: Admin & General Leader PINs */}
@@ -292,7 +632,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                   value={newAdminPin}
                   onChange={(e) => setNewAdminPin(e.target.value)}
                   placeholder="አስተባባሪ PIN"
-                  className="w-full px-3.5 py-2.5 pr-10 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  className="w-full px-3.5 py-2.5 pr-10 border border-slate-300 rounded-xl text-base sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
                 <button
                   type="button"
@@ -315,7 +655,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                   value={newCoordinatorPin}
                   onChange={(e) => setNewCoordinatorPin(e.target.value)}
                   placeholder="የልጆች አስተባባሪ PIN"
-                  className="w-full px-3.5 py-2.5 pr-10 border border-emerald-300 bg-emerald-50/40 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  className="w-full px-3.5 py-2.5 pr-10 border border-emerald-300 bg-emerald-50/40 rounded-xl text-base sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-600"
                 />
                 <button
                   type="button"
@@ -348,7 +688,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                     }));
                   }}
                   placeholder="መሪዎች PIN"
-                  className="w-full px-3.5 py-2.5 pr-10 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="w-full px-3.5 py-2.5 pr-10 border border-slate-300 rounded-xl text-base sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-teal-600"
                 />
                 <button
                   type="button"
@@ -371,7 +711,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                   value={newYouthCoordinatorPin}
                   onChange={(e) => setNewYouthCoordinatorPin(e.target.value)}
                   placeholder="የወጣቶች አስተባባሪ PIN"
-                  className="w-full px-3.5 py-2.5 pr-10 border border-purple-300 bg-purple-50/40 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-purple-600"
+                  className="w-full px-3.5 py-2.5 pr-10 border border-purple-300 bg-purple-50/40 rounded-xl text-base sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-purple-600"
                 />
                 <button
                   type="button"
@@ -382,26 +722,42 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-purple-800 mt-1 font-semibold">
-                የወጣቶች አስተባባሪ ገጽ (የመሪዎች PIN ከታች ያለው 3204 ነው)
+                የወጣቶች አስተባባሪ ገጽ (የመሪዎች PIN ከታች ያለው ነው)
               </p>
             </div>
           </div>
         </div>
 
-        {/* Section 2: All 18 Church Organizational Units PINs (1 - 1.2.7.6) */}
+        {/* Section 2: All Church Organizational Units PINs */}
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100">
             <div>
               <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                 <Shield className="w-4 h-4 text-blue-800" />
-                <span>የቤተክርስቲያን መዋቅር መምሪያዎች እና አገልግሎቶች መግቢያ ቁልፎች</span>
+                <span>የቤተክርስቲያን መዋቅር መምሪያዎች እና አገልግሎቶች መግቢያ ቁልፎች ({CHURCH_ORG_UNITS.length})</span>
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                እያንዳንዱ መምሪያና አገልግሎት ራሱን ችሎ በራሱ ገጽ እንዲገባ የሚያገለግል ልዩ የመግቢያ ቁልፍ (PIN)
+                እያንዳንዱ መምሪያና አገልግሎት ራሱን ችሎ በራሱ ገጽ እንዲገባ የሚያገለግል የመግቢያ ቁልፍ (PIN)
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1">
+                <input
+                  type={showUnitPins ? 'text' : 'password'}
+                  value={sectionUnitUniformPin}
+                  onChange={(e) => setSectionUnitUniformPin(e.target.value)}
+                  placeholder="ተመሳሳይ PIN..."
+                  className="w-28 px-2 py-1 text-base sm:text-xs font-mono font-bold bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyUniformUnitsInForm}
+                  className="bg-blue-900 hover:bg-blue-800 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer whitespace-nowrap"
+                >
+                  ለሁሉም አንድ አድርግ
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowUnitPins(!showUnitPins)}
@@ -461,7 +817,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                         setNewLeaderPin(val);
                       }
                     }}
-                    className="w-24 text-center px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-24 text-center px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-base sm:text-xs font-mono font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                   <button
                     type="button"
@@ -497,11 +853,27 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                 <span>የ10ሩም ቻፕሎች መግቢያ ቁልፎች (PINs)</span>
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                እያንዳንዱ ቻፕል የራሱን መረጃ ብቻ እንዲያስተዳድር የተመደበለት ልዩ መግቢያ ቁልፍ
+                እያንዳንዱ ቻፕል የራሱን መረጃ ብቻ እንዲያስተዳድር የተመደበለት መግቢያ ቁልፍ
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 bg-amber-50/70 border border-amber-200 rounded-xl p-1">
+                <input
+                  type={showChapelPins ? 'text' : 'password'}
+                  value={sectionChapelUniformPin}
+                  onChange={(e) => setSectionChapelUniformPin(e.target.value)}
+                  placeholder="ተመሳሳይ PIN..."
+                  className="w-28 px-2 py-1 text-base sm:text-xs font-mono font-bold bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyUniformChapelsInForm}
+                  className="bg-amber-700 hover:bg-amber-800 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer whitespace-nowrap"
+                >
+                  ለሁሉም አንድ አድርግ
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowChapelPins(!showChapelPins)}
@@ -544,7 +916,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                         [chapelName]: e.target.value
                       }))
                     }
-                    className="w-24 text-center px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-24 text-center px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-base sm:text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
                   />
                   <button
                     type="button"
@@ -570,7 +942,9 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
               className="bg-blue-900 hover:bg-blue-800 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition duration-200 text-xs flex items-center gap-2 cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4 text-amber-300" />
-              <span>የዋና አዲሚን፣ የ18ቱ መዋቅር ክፍሎችና የ10ሩም ቻፕሎች PIN አስቀምጥ</span>
+              <span>
+                የዋና አዲሚን፣ የ{CHURCH_ORG_UNITS.length}ቱ መዋቅር ክፍሎችና የ{chapelList.length}ሩም ቻፕሎች PIN አስቀምጥ
+              </span>
             </button>
           </div>
         </div>
@@ -586,7 +960,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                 <span>የልጆች አገልግሎት መምህራን መግቢያ ቁልፎች (Teacher PINs - {teachers.length})</span>
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                መምህራን በምስጥር ቁጥር (PIN) ብቻ ስለሚገቡ የእያንዳንዱ መምህር PIN የተለየ መሆን አለበት
+                መምህራን በምስጥር ቁጥር (PIN) ብቻ ስለሚገቡ የእያንዳንዱ መምህር PIN የተለየ መሆን ይመከራል
               </p>
             </div>
 
@@ -598,7 +972,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                   value={teacherSearch}
                   onChange={(e) => setTeacherSearch(e.target.value)}
                   placeholder="መምህር ወይም ክፍል ፈልግ..."
-                  className="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48"
+                  className="pl-8 pr-3 py-1.5 text-base sm:text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48"
                 />
               </div>
               <button
@@ -617,7 +991,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
               <div className="flex items-center gap-2 font-bold">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
-                  ማስጠንቀቂያ፦ አንድ ዓይነት የተደጋገመ PIN ({Array.from(duplicateTeacherPins).join(', ')}) ተገኝቷል! መምህራን በPIN ብቻ ስለሚገቡ ሁሉም የተለየ ቁጥር ሊኖራቸው ይገባል።
+                  ማስጠንቀቂያ፦ አንድ ዓይነት የተደጋገመ PIN ({Array.from(duplicateTeacherPins).join(', ')}) ተገኝቷል! መምህራን በPIN ብቻ ስለሚገቡ የተለየ ቁጥር ካልተሰጣቸው የመጀመሪያውን መምህር ብቻ ይከፍታል።
                 </span>
               </div>
               <button
@@ -652,7 +1026,7 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
                       type={showTeacherPins ? 'text' : 'password'}
                       value={t.pin}
                       onChange={(e) => onUpdateTeacher({ ...t, pin: e.target.value.trim() })}
-                      className={`w-20 text-center px-2 py-1 bg-white border rounded-lg text-xs font-mono font-bold focus:outline-none focus:ring-2 ${
+                      className={`w-20 text-center px-2 py-1 bg-white border rounded-lg text-base sm:text-xs font-mono font-bold focus:outline-none focus:ring-2 ${
                         isDup ? 'border-rose-400 focus:ring-rose-500 text-rose-800' : 'border-slate-300 focus:ring-indigo-500'
                       }`}
                     />
@@ -674,3 +1048,4 @@ export const PinManageTab: React.FC<PinManageTabProps> = ({
     </div>
   );
 };
+

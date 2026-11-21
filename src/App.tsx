@@ -1946,6 +1946,18 @@ export default function App() {
     }));
   };
 
+  const handleBulkUpdateTeacherPins = (newPin: string) => {
+    const cleaned = newPin.trim();
+    if (!cleaned) return;
+    updateAppData(
+      (prev) => ({
+        ...prev,
+        teachers: prev.teachers.map((t) => ({ ...t, pin: cleaned }))
+      }),
+      { immediate: true }
+    );
+  };
+
   const handleAddTeacher = (newTeacher: Omit<Teacher, 'id'>) => {
     const tWithId: Teacher = {
       ...newTeacher,
@@ -2597,6 +2609,7 @@ export default function App() {
                     teachers={appData.teachers}
                     onSavePins={handleSavePins}
                     onUpdateTeacher={handleUpdateTeacher}
+                    onBulkUpdateTeacherPins={handleBulkUpdateTeacherPins}
                   />
                 ) : (currentUserRole === 'admin' || loggedInUnit === 'elders_council') &&
                   activeAdminView === 'churchOverviewStatsTab' ? (
