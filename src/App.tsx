@@ -4,6 +4,7 @@
  */
 
 import React, { Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { LazyErrorBoundary, lazyWithRetry } from './components/LazyBoundary';
 import {
   Shield,
@@ -2889,6 +2890,7 @@ export default function App() {
         </Suspense>
         </LazyErrorBoundary>
       )}
+      <SpeedInsights />
     </div>
   );
 }
