@@ -166,7 +166,6 @@ export default function App() {
       }
     );
 
-    const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
 
 return () => {
       unsubscribe();
@@ -190,7 +189,6 @@ return () => {
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
-    const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
 
 return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
@@ -207,7 +205,6 @@ return () => {
     const timer = window.setTimeout(() => {
       void import('./components/DepartmentWorkspacePage').catch(() => {});
     }, 300);
-    const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
 
 return () => window.clearTimeout(timer);
   }, [currentUserRole]);
@@ -2128,7 +2125,6 @@ return () => window.clearTimeout(timer);
   };
 
   if (!appData) {
-    const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
 
 return (
       <div className="min-h-screen min-h-[100dvh] bg-slate-900 flex flex-col items-center justify-center text-white p-4">
@@ -2144,7 +2140,6 @@ return (
     currentUserRole === 'admin' ||
     (currentUserRole === 'leader' && !loggedInChapel && sidebarUnits.length > 1);
 
-  const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
 
 return (
     <div className="min-h-screen min-h-[100dvh] overflow-x-clip bg-slate-100/70 text-slate-900 flex flex-col font-sans print:min-h-0 print:bg-white print:block">
@@ -2531,7 +2526,6 @@ return (
                             activeAdminView === 'unitPage') &&
                           activeOrgUnit === u.id;
                         const indentPx = Math.max(0, (u.level - 1) * 12);
-                        const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
 
 return (
                           <button
