@@ -166,7 +166,9 @@ export default function App() {
       }
     );
 
-    return () => {
+    const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
+
+return () => {
       unsubscribe();
     };
   }, []);
@@ -188,7 +190,9 @@ export default function App() {
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
+    const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
+
+return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       if (syncTimeoutRef.current && latestDataRef.current) {
         clearTimeout(syncTimeoutRef.current);
@@ -203,7 +207,9 @@ export default function App() {
     const timer = window.setTimeout(() => {
       void import('./components/DepartmentWorkspacePage').catch(() => {});
     }, 300);
-    return () => window.clearTimeout(timer);
+    const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
+
+return () => window.clearTimeout(timer);
   }, [currentUserRole]);
 
   // Instant local state update with debounced background cloud sync
@@ -2122,7 +2128,9 @@ export default function App() {
   };
 
   if (!appData) {
-    return (
+    const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
+
+return (
       <div className="min-h-screen min-h-[100dvh] bg-slate-900 flex flex-col items-center justify-center text-white p-4">
         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
         <h2 className="text-lg font-bold text-center">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h2>
@@ -2136,7 +2144,9 @@ export default function App() {
     currentUserRole === 'admin' ||
     (currentUserRole === 'leader' && !loggedInChapel && sidebarUnits.length > 1);
 
-  return (
+  const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
+
+return (
     <div className="min-h-screen min-h-[100dvh] overflow-x-clip bg-slate-100/70 text-slate-900 flex flex-col font-sans print:min-h-0 print:bg-white print:block">
       {!currentUserRole ? (
         // CLEAN OUTSIDE LOGIN SCREEN: Nothing from dashboard/database is visible outside!
@@ -2521,7 +2531,9 @@ export default function App() {
                             activeAdminView === 'unitPage') &&
                           activeOrgUnit === u.id;
                         const indentPx = Math.max(0, (u.level - 1) * 12);
-                        return (
+                        const handleOpenBibleSchool = () => { const url = import.meta.env.VITE_BIBLE_SCHOOL_URL || "https://birbir-town-khc-bibel-school-11.vercel.app"; window.location.assign(url); };
+
+return (
                           <button
                             key={`nav_unit_${u.id}`}
                             type="button"
