@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   UserCheck,
@@ -28,12 +28,16 @@ import {
 import {
   CHAPEL_LEADER_CATEGORIES,
   CHURCH_ORG_UNITS,
+  DEFAULT_LEADERSHIP_ROLE_OPTIONS,
   isUnderSpiritualCouncil
 } from '../constants/churchStructure';
 import { generateUniqueId } from '../utils/idGenerator';
 import { useLanguage } from '../context/LanguageContext';
 import { formatDualDateText } from '../utils/ethiopianDate';
 import { DualDateBadge, DualDateInput } from './DualDate';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface SpiritualAllSectorsLeadersTabProps {
   currentYear: string;
@@ -48,14 +52,7 @@ interface SpiritualAllSectorsLeadersTabProps {
   onOpenHistoricalArchive?: () => void;
 }
 
-const DEFAULT_ROLES = [
-  'ዋና ሰብሳቢ / አስተባባሪ',
-  'ምክትል ሰብሳቢ',
-  'ጸሐፊ',
-  'ገንዘብ ያዥ',
-  'ሂሳብ ሹም / ቁጥጥር',
-  'የአመራር ኮሚቴ አባል'
-];
+const DEFAULT_ROLES = DEFAULT_LEADERSHIP_ROLE_OPTIONS;
 
 export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersTabProps> = ({
   currentYear,
@@ -67,6 +64,7 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
   onOpenHistoricalArchive
 }) => {
   const { t, unitName, chapelLabel } = useLanguage();
+  const allSectorsExportRef = useRef<HTMLDivElement | null>(null);
 
   const [viewMode, setViewMode] = useState<'spiritual' | 'all' | 'chapels_7'>('spiritual');
   const [sectorFilter, setSectorFilter] = useState<string>('all');
@@ -88,6 +86,18 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
   const [fStartDate, setFStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [fStatus, setFStatus] = useState('ንቁ');
   const [fNotes, setFNotes] = useState('');
+  const [fPhoto, setFPhoto] = useState<PersonPhotoValue>({});
+
+  const memberPhotoLookup = useMemo(() => {
+    const map = new Map<string, { photoDataUrl?: string; photoStorageKey?: string }>();
+    churchMembers.forEach((m) => {
+      const k = (m.name || '').trim().toLowerCase();
+      if (k && (m.photoDataUrl || m.photoStorageKey)) {
+        map.set(k, { photoDataUrl: m.photoDataUrl, photoStorageKey: m.photoStorageKey });
+      }
+    });
+    return map;
+  }, [churchMembers]);
 
   // Quick-Archive Year prompt banner state
   const [archiveYearInput, setArchiveYearInput] = useState(`${currentYear} ዓ/ም`);
@@ -216,6 +226,7 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
     setFStartDate(new Date().toISOString().split('T')[0]);
     setFStatus('ንቁ');
     setFNotes('');
+    setFPhoto({});
     setIsModalOpen(true);
   };
 
@@ -229,6 +240,12 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
     setFStartDate(ldr.termOrStartDate || '');
     setFStatus(ldr.status || 'ንቁ');
     setFNotes(ldr.notes || '');
+    setFPhoto({
+      photoDataUrl: ldr.photoDataUrl,
+      photoStorageKey: ldr.photoStorageKey,
+      photoName: ldr.photoName,
+      photoUpdatedAt: ldr.photoUpdatedAt
+    });
     setIsModalOpen(true);
   };
 
@@ -244,7 +261,11 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
       phone: fPhone.trim() || undefined,
       termOrStartDate: fStartDate.trim() || undefined,
       status: fStatus,
-      notes: fNotes.trim() || undefined
+      notes: fNotes.trim() || undefined,
+      photoDataUrl: fPhoto.photoDataUrl,
+      photoStorageKey: fPhoto.photoStorageKey,
+      photoName: fPhoto.photoName,
+      photoUpdatedAt: fPhoto.photoUpdatedAt
     };
 
     if (editingRef && editingRef.unitId !== fUnitId) {
@@ -316,7 +337,11 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
       phone: ldr.phone,
       status: ldr.status === 'ንቁ' ? 'በአገልግሎት ላይ' : 'አገልግሎት የጨረሰ',
       notes: ldr.notes,
-      recordedAt: new Date().toISOString().split('T')[0]
+      recordedAt: new Date().toISOString().split('T')[0],
+      photoDataUrl: ldr.photoDataUrl,
+      photoStorageKey: ldr.photoStorageKey,
+      photoName: ldr.photoName,
+      photoUpdatedAt: ldr.photoUpdatedAt
     };
 
     onUpdateDepartmentData('spiritual_council', (prev) => ({
@@ -359,7 +384,11 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
             phone: ldr.phone,
             status: ldr.status === 'ንቁ' ? 'በአገልግሎት ላይ' : 'አገልግሎት የጨረሰ',
             notes: ldr.notes,
-            recordedAt: new Date().toISOString().split('T')[0]
+            recordedAt: new Date().toISOString().split('T')[0],
+            photoDataUrl: ldr.photoDataUrl,
+            photoStorageKey: ldr.photoStorageKey,
+            photoName: ldr.photoName,
+            photoUpdatedAt: ldr.photoUpdatedAt
           });
         }
       });
@@ -450,7 +479,7 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
   );
 
   return (
-    <div className="space-y-5">
+    <div ref={allSectorsExportRef} className="space-y-5">
       {noticeMsg && (
         <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-2xl px-4 py-3 text-xs font-bold flex items-center justify-between gap-3 print:hidden">
           <span className="flex items-center gap-2">
@@ -507,6 +536,10 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
               <Download className="w-3.5 h-3.5" />
               <span>Excel</span>
             </button>
+            <ExportPhotoButton
+              targetRef={allSectorsExportRef}
+              fileName={`የሁሉም_ዘርፎች_መሪዎች_${currentYear}`}
+            />
             <button
               type="button"
               onClick={() => window.print()}
@@ -713,17 +746,31 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                     </p>
                   ) : (
                     <ul className="mt-2.5 space-y-1">
-                      {list.slice(0, 3).map((l) => (
-                        <li
-                          key={l.id}
-                          className="text-[11px] text-slate-700 flex items-center justify-between gap-1.5 truncate"
-                        >
-                          <span className="font-bold truncate">• {l.name}</span>
-                          <span className="text-[10px] text-slate-500 shrink-0 truncate max-w-[110px]">
-                            {l.roleTitle}
-                          </span>
-                        </li>
-                      ))}
+                      {list.slice(0, 3).map((l) => {
+                        const fallback = memberPhotoLookup.get((l.name || '').trim().toLowerCase());
+                        return (
+                          <li
+                            key={l.id}
+                            className="text-[11px] text-slate-700 flex items-center justify-between gap-1.5 truncate"
+                          >
+                            <span className="flex items-center gap-1.5 min-w-0 font-bold">
+                              <PersonAvatarBadge
+                                name={l.name}
+                                gender={l.gender}
+                                photoDataUrl={l.photoDataUrl}
+                                photoStorageKey={l.photoStorageKey}
+                                fallbackPhotoDataUrl={fallback?.photoDataUrl}
+                                fallbackPhotoStorageKey={fallback?.photoStorageKey}
+                                size="xs"
+                              />
+                              <span className="truncate">{l.name}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-500 shrink-0 truncate max-w-[110px]">
+                              {l.roleTitle}
+                            </span>
+                          </li>
+                        );
+                      })}
                       {list.length > 3 && (
                         <li className="text-[10px] font-bold text-sky-700">
                           +{list.length - 3} {t('ተጨማሪ...', 'more...')}
@@ -860,7 +907,9 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                     </td>
                   </tr>
                 ) : (
-                  filteredChapelLeaders.map((cl, idx) => (
+                  filteredChapelLeaders.map((cl, idx) => {
+                    const fallback = memberPhotoLookup.get((cl.name || '').trim().toLowerCase());
+                    return (
                     <tr key={cl.id} className="hover:bg-slate-50/70">
                       <td className="py-2.5 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
                       <td className="py-2.5 px-4 font-bold text-slate-900">
@@ -871,7 +920,20 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                           {catLabelMap.get(cl.category) || cl.category}
                         </span>
                       </td>
-                      <td className="py-2.5 px-4 font-extrabold text-slate-900">{cl.name}</td>
+                      <td className="py-2.5 px-4 font-extrabold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <PersonAvatarBadge
+                            name={cl.name}
+                            gender={cl.gender}
+                            photoDataUrl={cl.photoDataUrl}
+                            photoStorageKey={cl.photoStorageKey}
+                            fallbackPhotoDataUrl={fallback?.photoDataUrl}
+                            fallbackPhotoStorageKey={fallback?.photoStorageKey}
+                            size="sm"
+                          />
+                          <span>{cl.name}</span>
+                        </div>
+                      </td>
                       <td className="py-2.5 px-3 font-semibold text-slate-700">{cl.gender}</td>
                       <td className="py-2.5 px-4 font-semibold text-slate-800">
                         {cl.roleTitle || '—'}
@@ -888,7 +950,8 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                       </td>
                       <td className="py-2.5 px-3 font-semibold text-slate-700">{cl.status}</td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -931,6 +994,7 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                   filteredSectorRows.map((item, idx) => {
                     const rowKey = `${item.unitId}_${item.leader.id}`;
                     const isDeleting = confirmDeleteKey === rowKey;
+                    const fallback = memberPhotoLookup.get((item.leader.name || '').trim().toLowerCase());
                     return (
                       <tr key={rowKey} className="hover:bg-slate-50/70">
                         <td className="py-2.5 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
@@ -941,7 +1005,18 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                           </span>
                         </td>
                         <td className="py-2.5 px-4 font-extrabold text-slate-900">
-                          {item.leader.name}
+                          <div className="flex items-center gap-2">
+                            <PersonAvatarBadge
+                              name={item.leader.name}
+                              gender={item.leader.gender}
+                              photoDataUrl={item.leader.photoDataUrl}
+                              photoStorageKey={item.leader.photoStorageKey}
+                              fallbackPhotoDataUrl={fallback?.photoDataUrl}
+                              fallbackPhotoStorageKey={fallback?.photoStorageKey}
+                              size="sm"
+                            />
+                            <span>{item.leader.name}</span>
+                          </div>
                         </td>
                         <td className="py-2.5 px-3 font-semibold text-slate-700">
                           {item.leader.gender}
@@ -1085,6 +1160,14 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                         setFGender(match.gender);
                       }
                       if (match.phone && !fPhone) setFPhone(match.phone);
+                      if (!fPhoto.photoDataUrl && (match.photoDataUrl || match.photoStorageKey)) {
+                        setFPhoto({
+                          photoDataUrl: match.photoDataUrl,
+                          photoStorageKey: match.photoStorageKey,
+                          photoName: match.photoName,
+                          photoUpdatedAt: match.photoUpdatedAt
+                        });
+                      }
                     }
                   }}
                   placeholder={t('ሙሉ ስም ያስገቡ ወይም ከአባላት ይምረጡ...', 'Type full name or pick member...')}
@@ -1135,13 +1218,32 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                   list="sectorRoleDatalist"
                   value={fRoleTitle}
                   onChange={(e) => setFRoleTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-base sm:text-xs"
                 />
                 <datalist id="sectorRoleDatalist">
                   {roleSuggestionsForModal.map((r) => (
                     <option key={r} value={r} />
                   ))}
                 </datalist>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {roleSuggestionsForModal.map((r) => {
+                    const active = fRoleTitle.trim() === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setFRoleTitle(r)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          active
+                            ? 'bg-blue-900 text-white border-blue-900'
+                            : 'bg-slate-50 hover:bg-blue-50 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1177,6 +1279,15 @@ export const SpiritualAllSectorsLeadersTab: React.FC<SpiritualAllSectorsLeadersT
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl"
                 />
               </div>
+
+              <PersonPhotoField
+                compact
+                storagePrefix="unit_leader"
+                personId={editingRef?.id}
+                name={fName}
+                value={fPhoto}
+                onChange={setFPhoto}
+              />
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button

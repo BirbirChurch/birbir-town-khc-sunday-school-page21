@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Calendar, FileSpreadsheet, Layers, BarChart2, X } from 'lucide-react';
 import {
   PerClassAgeCohortRow,
   SundaySchoolAgeBucketKey,
   SundaySchoolAgeCohortStats
 } from '../utils/sundaySchoolAgeStats';
+import { ExportPhotoButton } from './ExportPhotoButton';
 
 interface SundaySchoolAgeCohortCardProps {
   stats: SundaySchoolAgeCohortStats;
@@ -36,6 +37,7 @@ export const SundaySchoolAgeCohortCard: React.FC<SundaySchoolAgeCohortCardProps>
   className = ''
 }) => {
   const [viewMode, setViewMode] = useState<'summary' | 'per_class'>('summary');
+  const cardExportRef = useRef<HTMLDivElement | null>(null);
   const activePerClassRows = (perClassCohorts || []).filter((r) => r.grandTotal.total > 0);
   const canShowPerClass = activePerClassRows.length > 0;
   const effectiveViewMode = viewMode === 'per_class' && canShowPerClass ? 'per_class' : 'summary';
@@ -48,6 +50,7 @@ export const SundaySchoolAgeCohortCard: React.FC<SundaySchoolAgeCohortCardProps>
 
   return (
     <div
+      ref={cardExportRef}
       className={`bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm print:shadow-none print:border-slate-400 print:rounded-none print:mb-4 print:break-inside-avoid ${className}`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100 gap-2 print:border-slate-300">
@@ -116,6 +119,14 @@ export const SundaySchoolAgeCohortCard: React.FC<SundaySchoolAgeCohortCardProps>
               <span>የዕድሜ ስታቲስቲክስ Excel</span>
             </button>
           )}
+          <ExportPhotoButton
+            targetRef={cardExportRef}
+            fileName={`የሰንበት_ተማሪዎች_የዕድሜ_ምድብ_ማጠቃለያ${scopeLabel ? `_${scopeLabel}` : ''}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
         </div>
       </div>
 

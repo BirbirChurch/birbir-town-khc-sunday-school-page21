@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   BarChart3,
@@ -37,7 +37,9 @@ import {
 } from '../utils/churchOverviewStats';
 import { resolveOfficialChapel } from '../utils/memberCodeGenerator';
 import { ChurchMemberBreakdownSection } from './ChurchMemberBreakdownSection';
+import { computeMemberAgeCohorts } from '../utils/chapelDemographics';
 import { useLanguage } from '../context/LanguageContext';
+import { ExportPhotoButton } from './ExportPhotoButton';
 
 interface ChurchStatisticsDashboardTabProps {
   currentYear: string;
@@ -86,6 +88,18 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
   planDispatches = []
 }) => {
   const { t, unitName, chapelLabel, classLabel } = useLanguage();
+  const kpiSummaryRef = useRef<HTMLElement | null>(null);
+  const sec1MatrixRef = useRef<HTMLElement | null>(null);
+  const sec2ChapelRef = useRef<HTMLElement | null>(null);
+  const sec2bChapelChildrenAgeRef = useRef<HTMLDivElement | null>(null);
+  const sec3DeptsRef = useRef<HTMLElement | null>(null);
+  const sec4aHrRef = useRef<HTMLElement | null>(null);
+  const sec4bAssetsRef = useRef<HTMLElement | null>(null);
+  const sec4cMissionariesRef = useRef<HTMLElement | null>(null);
+  const sec4dCompassionYouthRef = useRef<HTMLElement | null>(null);
+  const sec5WorkflowRef = useRef<HTMLElement | null>(null);
+  const sec6ChildrenAgeRef = useRef<HTMLElement | null>(null);
+  const sec7SundayClassRef = useRef<HTMLElement | null>(null);
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showChapelChildAgeBreakdown, setShowChapelChildAgeBreakdown] = useState<boolean>(false);
@@ -97,6 +111,11 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
       (m) => resolveOfficialChapel(m.chapel || '') === targetChapel
     );
   }, [churchMembers, loggedInChapel]);
+
+  const memberAgeCohorts = useMemo(
+    () => computeMemberAgeCohorts(scopedChurchMembers, parseInt(currentYear, 10) || 2019),
+    [scopedChurchMembers, currentYear]
+  );
 
   const stats = useMemo(
     () =>
@@ -835,7 +854,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
       </div>
 
       {/* Header & Controls Bar */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 print:hidden">
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5 text-slate-900">
@@ -860,7 +879,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -893,7 +912,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
         </div>
 
         {/* View Segment Switcher */}
-        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div className="inline-flex flex-wrap bg-slate-100 p-1 rounded-xl gap-1">
             <button
               type="button"
@@ -994,7 +1013,21 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
       </section>
 
       {/* Top 4 KPI Cards (Flat Hairline Surfaces, Tabular Numerals, Zero-Pill Discipline) */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section ref={kpiSummaryRef} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs sm:text-sm font-extrabold text-slate-800">
+            {t(`ዋና የቤተክርስቲያን አሃዞች (${currentYear} ዓ/ም)`, `Key Church Figures (${currentYear})`)}
+          </h3>
+          <ExportPhotoButton
+            targetRef={kpiSummaryRef}
+            fileName={`ዋና_የቤተክርስቲያን_አሃዞች${loggedInChapel ? `_${loggedInChapel}` : ''}_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between gap-3">
           <div className="flex items-center justify-between text-xs font-bold text-slate-500">
             <span>{t('የቤተክርስቲያኒቱ አባላት', 'Church Master Members')}</span>
@@ -1007,6 +1040,13 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
             <span>{t('ወንድ', 'Male')} {stats.membersSummary.male.toLocaleString()}</span>
             <span className="text-slate-300">·</span>
             <span>{t('ሴት', 'Female')} {stats.membersSummary.female.toLocaleString()}</span>
+          </div>
+          <div className="text-[11px] font-semibold text-slate-600 tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span>{t('ወጣቶች 15-29:', 'Youth 15-29:')} <strong className="text-blue-900">{memberAgeCohorts.youth15to29.toLocaleString()}</strong></span>
+            <span className="text-slate-300">·</span>
+            <span>{t('ጎልማሶች 30-59:', 'Adults 30-59:')} <strong className="text-emerald-800">{memberAgeCohorts.adults30to59.toLocaleString()}</strong></span>
+            <span className="text-slate-300">·</span>
+            <span>{t('አዛውንቶች 60+:', 'Seniors 60+:')} <strong className="text-purple-800">{memberAgeCohorts.seniors60Plus.toLocaleString()}</strong></span>
           </div>
         </div>
 
@@ -1054,11 +1094,12 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
             <span>{t('ሴት', 'Female')} {stats.sundaySchoolSummary.female.toLocaleString()}</span>
           </div>
         </div>
+        </div>
       </section>
 
       {/* Section 1: Master Summary Matrix — ALL Church Datasets */}
       {viewFilter === 'all' && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section ref={sec1MatrixRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
@@ -1074,13 +1115,23 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                 )}
               </p>
             </div>
-            {!loggedInChapel && (
-              <div className="text-xs font-semibold text-slate-600 tabular-nums">
-                {t('ፋይናንስ ቀሪ፦', 'Net Balance:')} {ext.orgUnitGrandTotal.balance.toLocaleString()} {t('ብር', 'ETB')}
-                <span className="text-slate-300 mx-1.5">·</span>
-                {t('ንብረት ግምት፦', 'Assets Value:')} {ext.assetsTotal.totalValue.toLocaleString()} {t('ብር', 'ETB')}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {!loggedInChapel && (
+                <div className="text-xs font-semibold text-slate-600 tabular-nums">
+                  {t('ፋይናንስ ቀሪ፦', 'Net Balance:')} {ext.orgUnitGrandTotal.balance.toLocaleString()} {t('ብር', 'ETB')}
+                  <span className="text-slate-300 mx-1.5">·</span>
+                  {t('ንብረት ግምት፦', 'Assets Value:')} {ext.assetsTotal.totalValue.toLocaleString()} {t('ብር', 'ETB')}
+                </div>
+              )}
+              <ExportPhotoButton
+                targetRef={sec1MatrixRef}
+                fileName={`1_አጠቃላይ_የወንድ_ሴት_ድምር_ማጠቃለያ${loggedInChapel ? `_${loggedInChapel}` : ''}_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1177,7 +1228,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
 
       {/* Section 2: Per-Chapel Household, Members, Youth, Women & Children Breakdown */}
       {(viewFilter === 'all' || viewFilter === 'chapels') && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section ref={sec2ChapelRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1197,15 +1248,25 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowChapelChildAgeBreakdown((prev) => !prev)}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition cursor-pointer print:hidden whitespace-nowrap"
-            >
-              {showChapelChildAgeBreakdown
-                ? t('የልጆች ዕድሜ ዝርዝር ደብቅ', 'Hide Children Age Breakdown')
-                : t('የቻፕሉን ልጆች በዕድሜ (0-3..13-14) አሳይ', 'Show Children by Age (0-3..13-14)')}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowChapelChildAgeBreakdown((prev) => !prev)}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition cursor-pointer print:hidden whitespace-nowrap"
+              >
+                {showChapelChildAgeBreakdown
+                  ? t('የልጆች ዕድሜ ዝርዝር ደብቅ', 'Hide Children Age Breakdown')
+                  : t('የቻፕሉን ልጆች በዕድሜ (0-3..13-14) አሳይ', 'Show Children by Age (0-3..13-14)')}
+              </button>
+              <ExportPhotoButton
+                targetRef={sec2ChapelRef}
+                fileName={`2_የየቻፕሉ_ቤተሰብ_አባላት_ወጣቶች_ሴቶች_ልጆች${loggedInChapel ? `_${loggedInChapel}` : ''}_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
           </div>
 
           {filteredChapelRows.length === 0 ? (
@@ -1462,13 +1523,23 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
 
           {/* Optional expandable Per-Chapel Children Age Matrix (0-3 .. 13-14) */}
           {showChapelChildAgeBreakdown && filteredChapelRows.length > 0 && (
-            <div className="border-t border-slate-200 bg-slate-50/60 p-4 sm:p-5">
-              <h4 className="text-xs font-extrabold text-slate-800 mb-3">
-                {t(
-                  'የእያንዳንዱ ቻፕል ልጆች (0–14) በዕድሜ ምድብ ዝርዝር (ወንድ / ሴት / ድምር)',
-                  'Per-Chapel Children Age Cohort Breakdown (M / F / Total)'
-                )}
-              </h4>
+            <div ref={sec2bChapelChildrenAgeRef} className="border-t border-slate-200 bg-slate-50/60 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h4 className="text-xs font-extrabold text-slate-800">
+                  {t(
+                    'የእያንዳንዱ ቻፕል ልጆች (0–14) በዕድሜ ምድብ ዝርዝር (ወንድ / ሴት / ድምር)',
+                    'Per-Chapel Children Age Cohort Breakdown (M / F / Total)'
+                  )}
+                </h4>
+                <ExportPhotoButton
+                  targetRef={sec2bChapelChildrenAgeRef}
+                  fileName={`2ለ_የቻፕሎች_ልጆች_በዕድሜ_ምድብ${loggedInChapel ? `_${loggedInChapel}` : ''}_${currentYear}`}
+                  labelAm="በፎቶ (PNG)"
+                  labelEn="Photo (PNG)"
+                  variant="secondary"
+                  compact
+                />
+              </div>
               <div className="overflow-x-auto bg-white border border-slate-200 rounded-xl">
                 <table className="w-full text-[11px] border-collapse">
                   <thead>
@@ -1525,7 +1596,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
 
       {/* Section 3: All 17 Organizational Departments Breakdown (M/F/Total + Activities + Plans + Finances) */}
       {!loggedInChapel && (viewFilter === 'all' || viewFilter === 'departments') && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section ref={sec3DeptsRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
@@ -1541,6 +1612,14 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                 )}
               </p>
             </div>
+            <ExportPhotoButton
+              targetRef={sec3DeptsRef}
+              fileName={`3_የ17ቱ_ዘርፎች_አባላት_ዕቅዶች_ፋይናንስ_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
           </div>
 
           <div className="overflow-x-auto">
@@ -1682,7 +1761,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {/* 4A: Church HR (Full-Time Ministers & Admin Staff) */}
           {!loggedInChapel && (
-            <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <section ref={sec4aHrRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1693,16 +1772,26 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                     {t('የሙሉ ጊዜ አገልጋዮች እና የአስተዳደር ሠራተኞች (ወንድ / ሴት / ድምር)', 'Full-time ministers and administration staff')}
                   </p>
                 </div>
-                {onNavigateUnit && (
-                  <button
-                    type="button"
-                    onClick={() => onNavigateUnit('admin_finance')}
-                    className="text-[11px] font-bold text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer print:hidden"
-                  >
-                    <span>{t('ክፈት', 'Open')}</span>
-                    <ArrowUpRight className="w-3 h-3" />
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {onNavigateUnit && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateUnit('admin_finance')}
+                      className="text-[11px] font-bold text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer print:hidden"
+                    >
+                      <span>{t('ክፈት', 'Open')}</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </button>
+                  )}
+                  <ExportPhotoButton
+                    targetRef={sec4aHrRef}
+                    fileName={`4ሀ_የቤተክርስቲያን_የሰው_ኃይል_HR_${currentYear}`}
+                    labelAm="በፎቶ (PNG)"
+                    labelEn="Photo (PNG)"
+                    variant="secondary"
+                    compact
+                  />
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
@@ -1775,7 +1864,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
 
           {/* 4B: Church Assets (Fixed & Consumable) */}
           {!loggedInChapel && (
-            <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <section ref={sec4bAssetsRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1786,16 +1875,26 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                     {t('የቋሚ እና አላቂ ንብረቶች ብዛትና ጠቅላላ ግምት (ብር)', 'Fixed and consumable assets counts and valuation')}
                   </p>
                 </div>
-                {onNavigateUnit && (
-                  <button
-                    type="button"
-                    onClick={() => onNavigateUnit('admin_finance')}
-                    className="text-[11px] font-bold text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer print:hidden"
-                  >
-                    <span>{t('ክፈት', 'Open')}</span>
-                    <ArrowUpRight className="w-3 h-3" />
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {onNavigateUnit && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateUnit('admin_finance')}
+                      className="text-[11px] font-bold text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer print:hidden"
+                    >
+                      <span>{t('ክፈት', 'Open')}</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </button>
+                  )}
+                  <ExportPhotoButton
+                    targetRef={sec4bAssetsRef}
+                    fileName={`4ለ_የቤተክርስቲያን_ንብረት_ማጠቃለያ_${currentYear}`}
+                    labelAm="በፎቶ (PNG)"
+                    labelEn="Photo (PNG)"
+                    variant="secondary"
+                    compact
+                  />
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
@@ -1858,7 +1957,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
 
           {/* 4C: Evangelism Missionaries (4 Scopes) */}
           {!loggedInChapel && (
-            <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <section ref={sec4cMissionariesRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1869,16 +1968,26 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                     {t('አለም አቀፋዊ፣ አገር አቀፋዊ፣ ክልላዊ እና አከባቢያዊ ሚሽነሪዎች (ወ/ሴ/ድምር)', 'International, National, Regional & Local missionaries')}
                   </p>
                 </div>
-                {onNavigateUnit && (
-                  <button
-                    type="button"
-                    onClick={() => onNavigateUnit('evangelism')}
-                    className="text-[11px] font-bold text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer print:hidden"
-                  >
-                    <span>{t('ክፈት', 'Open')}</span>
-                    <ArrowUpRight className="w-3 h-3" />
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {onNavigateUnit && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateUnit('evangelism')}
+                      className="text-[11px] font-bold text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer print:hidden"
+                    >
+                      <span>{t('ክፈት', 'Open')}</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </button>
+                  )}
+                  <ExportPhotoButton
+                    targetRef={sec4cMissionariesRef}
+                    fileName={`4ሐ_የወንጌል_ሚሽነሪዎች_ማጠቃለያ_${currentYear}`}
+                    labelAm="በፎቶ (PNG)"
+                    labelEn="Photo (PNG)"
+                    variant="secondary"
+                    compact
+                  />
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
@@ -1935,7 +2044,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
           )}
 
           {/* 4D: Love & Compassion Beneficiaries & Youth Ministry Fellowships */}
-          <section className={`bg-white border border-slate-200 rounded-2xl overflow-hidden ${loggedInChapel ? 'xl:col-span-2' : ''}`}>
+          <section ref={sec4dCompassionYouthRef} className={`bg-white border border-slate-200 rounded-2xl overflow-hidden ${loggedInChapel ? 'xl:col-span-2' : ''}`}>
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1951,6 +2060,14 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                   {t('በወንድ / በሴት / በድምር የተደራጀ ዝርዝር', 'Organized by Male / Female / Total')}
                 </p>
               </div>
+              <ExportPhotoButton
+                targetRef={sec4dCompassionYouthRef}
+                fileName={`4መ_ፍቅርና_ርኅራሄ_እና_ወጣቶች_ህብረቶች_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
             </div>
             <div className="overflow-x-auto max-h-[340px]">
               <table className="w-full text-xs border-collapse">
@@ -2036,7 +2153,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
 
       {/* Section 5: Plans, Reports & Letters Workflow Summary */}
       {(viewFilter === 'all' || viewFilter === 'departments') && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section ref={sec5WorkflowRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -2055,6 +2172,14 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                 )}
               </p>
             </div>
+            <ExportPhotoButton
+              targetRef={sec5WorkflowRef}
+              fileName={`5_የዕቅዶች_ሪፖርቶች_ደብዳቤዎች_ማጠቃለያ_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200">
@@ -2124,21 +2249,32 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
         >
           {/* Left: Church Children Age Cohort Breakdown (0-3 .. 13-14) */}
           <section
+            ref={sec6ChildrenAgeRef}
             className={`bg-white border border-slate-200 rounded-2xl overflow-hidden ${
               !loggedInChapel ? 'xl:col-span-5' : ''
             }`}
           >
-            <div className="px-5 py-4 border-b border-slate-200">
-              <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
-                {t(
-                  '6. የቤተክርስቲያኒቱ ልጆች በዕድሜ ምድብ (ወንድ / ሴት / ድምር)',
-                  '6. Church Children by Age Group (Male / Female / Total)'
-                )}
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {loggedInChapel ? `${chapelLabel(loggedInChapel)} — ` : ''}
-                {t('የልጆች ቋት (0–14 ዓመት) የዕድሜ ክፍፍል', 'Children registry (0–14 years) age cohorts')}
-              </p>
+            <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                  {t(
+                    '6. የቤተክርስቲያኒቱ ልጆች በዕድሜ ምድብ (ወንድ / ሴት / ድምር)',
+                    '6. Church Children by Age Group (Male / Female / Total)'
+                  )}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {loggedInChapel ? `${chapelLabel(loggedInChapel)} — ` : ''}
+                  {t('የልጆች ቋት (0–14 ዓመት) የዕድሜ ክፍፍል', 'Children registry (0–14 years) age cohorts')}
+                </p>
+              </div>
+              <ExportPhotoButton
+                targetRef={sec6ChildrenAgeRef}
+                fileName={`6_የልጆች_ዕድሜ_ምድብ_ስታቲስቲክስ${loggedInChapel ? `_${loggedInChapel}` : ''}_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
@@ -2218,7 +2354,7 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
 
           {/* Right: Sunday School Students Per Class Breakdown */}
           {!loggedInChapel && (
-            <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden xl:col-span-7">
+            <section ref={sec7SundayClassRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden xl:col-span-7">
               <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
@@ -2235,6 +2371,14 @@ export const ChurchStatisticsDashboardTab: React.FC<ChurchStatisticsDashboardTab
                     {stats.sundaySchoolAgeStats.cohorts[4].total})
                   </p>
                 </div>
+                <ExportPhotoButton
+                  targetRef={sec7SundayClassRef}
+                  fileName={`7_የሰንበት_ትቤት_ተማሪዎች_በየክፍሉ_${currentYear}`}
+                  labelAm="በፎቶ (PNG)"
+                  labelEn="Photo (PNG)"
+                  variant="secondary"
+                  compact
+                />
               </div>
 
               <div className="overflow-x-auto max-h-[460px] print:max-h-none">

@@ -269,7 +269,12 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       members: Array.isArray(ws.members)
         ? ws.members.map((m) => {
             const checkedId = ensureUniqueId(m?.id);
-            return checkedId !== m?.id ? { ...m, id: checkedId } : m;
+            const normEdu = canonicalizeEducationLevel(m?.educationOrLevel);
+            if (checkedId !== m?.id || normEdu !== m?.educationOrLevel) {
+              modified = true;
+              return { ...m, id: checkedId, educationOrLevel: normEdu };
+            }
+            return m;
           })
         : [],
       activities: Array.isArray(ws.activities)
@@ -311,7 +316,12 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       hrRecords: Array.isArray(ws.hrRecords)
         ? ws.hrRecords.map((hr) => {
             const checkedId = ensureUniqueId(hr?.id);
-            return checkedId !== hr?.id ? { ...hr, id: checkedId } : hr;
+            const normEdu = canonicalizeEducationLevel(hr?.educationLevel);
+            if (checkedId !== hr?.id || normEdu !== hr?.educationLevel) {
+              modified = true;
+              return { ...hr, id: checkedId, educationLevel: normEdu };
+            }
+            return hr;
           })
         : [],
       assetRecords: Array.isArray(ws.assetRecords)
@@ -334,6 +344,14 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
               ])
             )
           : {},
+      spiritualMasterPlansByYear:
+        ws.spiritualMasterPlansByYear && typeof ws.spiritualMasterPlansByYear === 'object'
+          ? ws.spiritualMasterPlansByYear
+          : undefined,
+      chapelMasterPlans:
+        ws.chapelMasterPlans && typeof ws.chapelMasterPlans === 'object'
+          ? ws.chapelMasterPlans
+          : undefined,
       youthChoirGroups: Array.isArray(ws.youthChoirGroups) ? ws.youthChoirGroups : undefined,
       youthChoirMembers: Array.isArray(ws.youthChoirMembers)
         ? ws.youthChoirMembers.map((m) => {
@@ -367,7 +385,12 @@ export const sanitizeAndDeduplicateAppData = (data: AppData): AppData => {
       missionaryRecords: Array.isArray(ws.missionaryRecords)
         ? ws.missionaryRecords.map((mr) => {
             const checkedId = ensureUniqueId(mr?.id);
-            return checkedId !== mr?.id ? { ...mr, id: checkedId } : mr;
+            const normEdu = canonicalizeEducationLevel(mr?.educationLevel);
+            if (checkedId !== mr?.id || normEdu !== mr?.educationLevel) {
+              modified = true;
+              return { ...mr, id: checkedId, educationLevel: normEdu };
+            }
+            return mr;
           })
         : undefined,
       missionaryReports: Array.isArray(ws.missionaryReports)

@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Lock,
   Building2,
-  Database,
   ChevronRight,
   HeartHandshake,
   Wallet,
@@ -78,7 +77,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   onFailedLoginAttempt,
   onLoginSuccess
 }) => {
-  const { lang, setLang, t, unitName, unitDesc, chapelLabel } = useLanguage();
+  const { lang, setLang, t, unitName, chapelLabel } = useLanguage();
   const [activeMode, setActiveMode] = useState<'admin' | 'teacher' | 'unit' | null>(null);
   const [activeUnitId, setActiveUnitId] = useState<OrgUnitId | null>(null);
   const [chapelAuthMode, setChapelAuthMode] = useState<'dept' | 'single_chapel'>('single_chapel');
@@ -311,6 +310,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         return <Users className={className} />;
       case 'women_fellowship':
         return <Users className={className} />;
+      case 'youth_children_dev_et1004':
+        return <Sprout className={className} />;
       default:
         return <Building2 className={className} />;
     }
@@ -347,7 +348,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       const theme = getOrgUnitTheme(activeUnit.id);
       return {
         title: unitName(activeUnit.id, activeUnit.name),
-        subtitle: unitDesc(activeUnit.id, activeUnit.shortDesc),
+        subtitle: '',
         headerBg: theme.loginHeaderBg,
         buttonBg: `${theme.buttonBg} ${theme.buttonHover}`,
         ringClass: theme.ringClass,
@@ -522,7 +523,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                   <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
                     {unitName(eldersUnit.id, eldersUnit.name)}
                   </h3>
-                  <p className="text-xs text-slate-600 mt-0.5">{unitDesc(eldersUnit.id, eldersUnit.shortDesc)}</p>
                 </div>
               </div>
               <button
@@ -548,17 +548,10 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     >
                       {getUnitIcon('office', 'w-4 h-4')}
                     </div>
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
-                          {unitName(officeUnit.id, officeUnit.name)}
-                        </h4>
-                        <span className="text-[11px] font-bold text-indigo-800 inline-flex items-center gap-1">
-                          <Database className="w-3 h-3" />
-                          <span>{t('የቤተክርስቲያን መረጃ ቋት', 'Church Master Database')}</span>
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600">{unitDesc(officeUnit.id, officeUnit.shortDesc)}</p>
+                    <div className="min-w-0">
+                      <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
+                        {unitName(officeUnit.id, officeUnit.name)}
+                      </h4>
                     </div>
                   </div>
                   <button
@@ -575,35 +568,69 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 <div className="relative pl-5 sm:pl-7 space-y-2 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-slate-200">
                   {officeChildren.map((child) => {
                     const tTheme = getOrgUnitTheme(child.id);
+                    const nestedChildren = getOrgUnitChildren(child.id);
                     return (
-                      <button
-                        key={child.id}
-                        type="button"
-                        onClick={() => handleSelectUnit(child.id)}
-                        className={`w-full text-left px-4 py-3 rounded-xl border transition flex items-center justify-between gap-3 cursor-pointer group ${tTheme.surfaceBg} ${tTheme.surfaceBorder} ${tTheme.surfaceHover}`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className={`w-8 h-8 rounded-lg ${tTheme.iconBg} ${tTheme.iconText} flex items-center justify-center shrink-0`}
-                          >
-                            {getUnitIcon(child.id, 'w-4 h-4')}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-extrabold text-xs sm:text-sm text-slate-900">
-                              {unitName(child.id, child.name)}
-                            </div>
-                            <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-1">
-                              {unitDesc(child.id, child.shortDesc)}
-                            </p>
-                          </div>
-                        </div>
-                        <span
-                          className={`inline-flex items-center gap-1 text-xs font-bold shrink-0 ${tTheme.subtleText}`}
+                      <div key={child.id} className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectUnit(child.id)}
+                          className={`w-full text-left px-4 py-3 rounded-xl border transition flex items-center justify-between gap-3 cursor-pointer group ${tTheme.surfaceBg} ${tTheme.surfaceBorder} ${tTheme.surfaceHover}`}
                         >
-                          <span>{t('ግባ', 'Enter')}</span>
-                          <ChevronRight className="w-4 h-4 opacity-70 group-hover:translate-x-0.5 transition-transform" />
-                        </span>
-                      </button>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className={`w-8 h-8 rounded-lg ${tTheme.iconBg} ${tTheme.iconText} flex items-center justify-center shrink-0`}
+                            >
+                              {getUnitIcon(child.id, 'w-4 h-4')}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-extrabold text-xs sm:text-sm text-slate-900">
+                                {unitName(child.id, child.name)}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            className={`inline-flex items-center gap-1 text-xs font-bold shrink-0 ${tTheme.subtleText}`}
+                          >
+                            <span>{t('ግባ', 'Enter')}</span>
+                            <ChevronRight className="w-4 h-4 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+                          </span>
+                        </button>
+
+                        {nestedChildren.length > 0 && (
+                          <div className="relative pl-5 sm:pl-7 space-y-2 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-emerald-200">
+                            {nestedChildren.map((subChild) => {
+                              const sTheme = getOrgUnitTheme(subChild.id);
+                              return (
+                                <button
+                                  key={subChild.id}
+                                  type="button"
+                                  onClick={() => handleSelectUnit(subChild.id)}
+                                  className={`w-full text-left px-4 py-2.5 rounded-xl border transition flex items-center justify-between gap-3 cursor-pointer group ${sTheme.surfaceBg} ${sTheme.surfaceBorder} ${sTheme.surfaceHover}`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div
+                                      className={`w-7 h-7 rounded-lg ${sTheme.iconBg} ${sTheme.iconText} flex items-center justify-center shrink-0`}
+                                    >
+                                      {getUnitIcon(subChild.id, 'w-3.5 h-3.5')}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="font-extrabold text-xs sm:text-sm text-slate-900">
+                                        {unitName(subChild.id, subChild.name)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span
+                                    className={`inline-flex items-center gap-1 text-xs font-bold shrink-0 ${sTheme.subtleText}`}
+                                  >
+                                    <span>{t('ግባ', 'Enter')}</span>
+                                    <ChevronRight className="w-4 h-4 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -620,17 +647,10 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     >
                       {getUnitIcon('spiritual_council', 'w-4 h-4')}
                     </div>
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
-                          {unitName(spiritualUnit.id, spiritualUnit.name)}
-                        </h4>
-                        <span className="text-[11px] font-bold text-sky-800 inline-flex items-center gap-1">
-                          <Database className="w-3 h-3" />
-                          <span>{t('የቤተክርስቲያን መረጃ ቋት', 'Church Master Database')}</span>
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600">{unitDesc(spiritualUnit.id, spiritualUnit.shortDesc)}</p>
+                    <div className="min-w-0">
+                      <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
+                        {unitName(spiritualUnit.id, spiritualUnit.name)}
+                      </h4>
                     </div>
                   </div>
                   <button
@@ -664,9 +684,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                             <div className="font-extrabold text-xs sm:text-sm text-slate-900">
                               {unitName(child.id, child.name)}
                             </div>
-                            <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-1">
-                              {unitDesc(child.id, child.shortDesc)}
-                            </p>
                           </div>
                         </div>
                         <span
@@ -728,7 +745,9 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-lg sm:text-xl font-extrabold text-white">{hdr.title}</h3>
-                    <p className="text-xs text-white/80 mt-1 leading-relaxed">{hdr.subtitle}</p>
+                    {hdr.subtitle && (
+                      <p className="text-xs text-white/80 mt-1 leading-relaxed">{hdr.subtitle}</p>
+                    )}
                   </div>
                 </div>
               </div>

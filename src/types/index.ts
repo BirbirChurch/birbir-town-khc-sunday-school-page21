@@ -8,6 +8,10 @@ export interface Teacher {
   pin: string;
   phone?: string;
   order?: number;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export interface Student {
@@ -27,6 +31,10 @@ export interface Student {
   chapel?: string; // ቻፕል
   parentName?: string; // የወላጅ ስም
   phone?: string; // የወላጅ ስልክ
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export interface AbsenteeRecord {
@@ -45,6 +53,10 @@ export interface ChoirMember {
   gender: string;
   group: string;
   phone?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export interface SpiritualMember {
@@ -53,11 +65,30 @@ export interface SpiritualMember {
   age: number | string;
   gender: string;
   group: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
+}
+
+export type PlanQuarterKey = 'q1' | 'q2' | 'q3' | 'q4';
+
+export interface PlanExecutionLogEntry {
+  id: number;
+  date: string; // ISO YYYY-MM-DD or YYYY-MM-DDTHH:mm
+  quarter: PlanQuarterKey; // Auto-detected from Ethiopian calendar month (or selected)
+  quantity: number; // የተሰራው መጠን (በዕቅዱ መለኪያ መሰረት)
+  workTitle: string; // የተሰራው ስራ ዝርዝር
+  performedBy?: string; // ስራውን ያከናወነው / ኃላፊ
+  locationOrNotes?: string; // ቦታ / ማስታወሻ
+  linkedActivityId?: number; // ከአገልግሎት ተግባራት ጋር የተገናኘ ከሆነ
+  recordedAt?: string;
 }
 
 export interface AnnualPlanItem {
   id: number;
   year?: string;
+  itemCode?: string;
   task: string;
   unit: string;
   yearPlan: number | string;
@@ -70,6 +101,8 @@ export interface AnnualPlanItem {
   q3Done: number | string;
   q4Done: number | string;
   role: string;
+  remarks?: string;
+  executionLogs?: PlanExecutionLogEntry[];
 }
 
 export type WeeklyAttendanceStatus = 'P' | 'A' | 'E' | '';
@@ -113,6 +146,10 @@ export interface ChurchChild {
   isBaptized?: boolean; // የተጠመቀ/ች (አማራጭ)
   notes?: string; // ማስታወሻ
   registeredDate?: string; // የተመዘገበበት ቀን
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export type WomenHouseholdCategory = 'married' | 'female_head' | 'other';
@@ -145,6 +182,10 @@ export interface ChurchMember {
   spiritualCourses?: string[]; // በቤተክርስቲያኒቱ እየተማረ ያለው መንፈሳዊ ትምህርት (መቅህማ፣ BTCP፣ መጽሐፍ ቅዱስ ት/ቤት...)
   sheetName?: string; // የኤክሴል ሺት ስም
   registeredDate?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export type OrgUnitId =
@@ -164,7 +205,8 @@ export type OrgUnitId =
   | 'bible_school'
   | 'rehoboth_school'
   | 'men_fellowship'
-  | 'women_fellowship';
+  | 'women_fellowship'
+  | 'youth_children_dev_et1004';
 
 export interface DepartmentMemberRecord {
   id: number;
@@ -177,6 +219,10 @@ export interface DepartmentMemberRecord {
   status: string;
   joinDate?: string;
   notes?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export interface DepartmentActivityRecord {
@@ -188,6 +234,10 @@ export interface DepartmentActivityRecord {
   participantsCount?: number;
   status: 'ታቅዷል' | 'በሂደት ላይ' | 'ተጠናቋል';
   summary?: string;
+  linkedPlanId?: number;
+  linkedPlanTask?: string;
+  linkedQuarter?: PlanQuarterKey;
+  linkedQuantity?: number;
 }
 
 export interface DepartmentFinanceRecord {
@@ -224,6 +274,13 @@ export interface MinisterChildRecord {
   gender: 'ወ' | 'ሴ' | string;
   ageOrBirthDate?: string;
   notes?: string;
+  memberCode?: string;
+  linkedMemberId?: number;
+  linkedChildId?: number;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export interface MinisterServiceHistoryItem {
@@ -260,6 +317,17 @@ export interface ChurchHRRecord {
   children?: MinisterChildRecord[]; // የአገልጋዩ ልጆች
   serviceYears?: string; // የአገልግሎት ዘመን (ጽሁፍ ወይም ቁጥር)
   serviceHistory?: MinisterServiceHistoryItem[]; // በቆይታው ያገለገለበት ኃላፊነቶች
+  photoDataUrl?: string; // የአገልጋዩ / የሠራተኛው ፎቶ (Thumbnail / Sync)
+  photoStorageKey?: string; // ከፍተኛ ጥራት ያለው ፎቶ ማከማቻ ቁልፍ
+  photoName?: string; // የፎቶው ፋይል ስም
+  photoUpdatedAt?: string; // ፎቶው የተስተካከለበት ቀን
+  spousePhotoDataUrl?: string; // የትዳር ጓደኛ ፎቶ
+  spousePhotoStorageKey?: string;
+  spousePhotoName?: string;
+  spousePhotoUpdatedAt?: string;
+  linkedMemberId?: number; // ከቤተክርስቲያን መረጃ ቋት ጋር የተገናኘው የአባል መለያ ID
+  linkedMemberCode?: string; // ከመረጃ ቋት የተገናኘው የአባል ኮድ
+  linkedFamilyCode?: string; // ከመረጃ ቋት የተገናኘው የቤተሰብ ኮድ
   status: string;
   notes?: string;
 }
@@ -294,6 +362,10 @@ export interface YouthGroupMemberRecord {
   status?: string;
   joinDate?: string;
   notes?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export type BeneficiarySupportType = 'permanent' | 'temporary';
@@ -314,6 +386,10 @@ export interface CompassionBeneficiaryRecord {
   familySize?: number;
   status: string;
   notes?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export type MissionaryScope = 'international' | 'national' | 'regional' | 'local';
@@ -331,6 +407,10 @@ export interface EvangelismMissionaryRecord {
   monthlySupportAmount?: number;
   status: string;
   notes?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export interface GenderCountPair {
@@ -370,6 +450,10 @@ export interface UnitLeaderRecord {
   termOrStartDate?: string;
   status: string;
   notes?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export type ChapelLeaderCategoryId =
@@ -392,6 +476,10 @@ export interface ChapelLeaderRecord {
   assignedDate?: string;
   status: string;
   notes?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export interface HistoricalLeaderRecord {
@@ -407,6 +495,10 @@ export interface HistoricalLeaderRecord {
   status: string;
   notes?: string;
   recordedAt?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
+  photoName?: string;
+  photoUpdatedAt?: string;
 }
 
 export interface DepartmentWorkspaceData {
@@ -420,6 +512,17 @@ export interface DepartmentWorkspaceData {
   hrRecords?: ChurchHRRecord[];
   assetRecords?: ChurchAssetRecord[];
   chapelPlans?: { [chapelName: string]: AnnualPlanItem[] };
+  spiritualMasterPlansByYear?: { [year: string]: SpiritualMasterPlanSheetData };
+  chapelMasterPlans?: {
+    [chapelName: string]: {
+      [year: string]: SpiritualMasterPlanSheetData;
+    };
+  };
+  chapelPerformanceAgreements?: {
+    [chapelName: string]: {
+      [year: string]: ChapelPerformanceAgreementData;
+    };
+  };
   youthChoirGroups?: string[];
   youthChoirMembers?: YouthGroupMemberRecord[];
   youthWorshipLeaders?: YouthGroupMemberRecord[];
@@ -438,6 +541,79 @@ export interface DepartmentWorkspaceData {
   evangelismMissionariesDefaultSeeded?: boolean;
   adminHrDefaultSeeded?: boolean;
   adminHrMinistersV2Seeded?: boolean;
+}
+
+export interface SpiritualMasterPlanRowValues {
+  yearPlan: number | string;
+  half1: number | string;
+  half2: number | string;
+  q1: number | string;
+  q2: number | string;
+  q3: number | string;
+  q4: number | string;
+  remarks?: string;
+}
+
+export interface SpiritualMasterPlanNarratives {
+  otherActivities: string[];
+  challenges: string[];
+  solutions: string[];
+  thanksgiving: string[];
+  prayer: string[];
+}
+
+export interface SpiritualMasterPlanSignOff {
+  reporterName?: string;
+  reporterSignature?: string;
+  reporterDate?: string;
+  receiverName?: string;
+  receiverSignature?: string;
+  receiverDate?: string;
+}
+
+export interface SpiritualMasterPlanSheetData {
+  year: string;
+  rows: { [itemCode: string]: SpiritualMasterPlanRowValues };
+  narratives: SpiritualMasterPlanNarratives;
+  signOff: SpiritualMasterPlanSignOff;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface ChapelPerformanceAgreementRowValue {
+  annualGoal: string;
+  annualPlan: string;
+  q1Plan: string;
+  q2Plan: string;
+  q3Plan: string;
+  q4Plan: string;
+  q1Exec: string;
+  q2Exec: string;
+  q3Exec: string;
+  q4Exec: string;
+  remarks?: string;
+}
+
+export interface ChapelPerformanceAgreementSignOff {
+  evangelistHrId?: number;
+  evangelistName?: string;
+  evangelistSignature?: string;
+  evangelistDate?: string;
+  spiritualName?: string;
+  spiritualSignature?: string;
+  spiritualDate?: string;
+  adminName?: string;
+  adminSignature?: string;
+  adminDate?: string;
+}
+
+export interface ChapelPerformanceAgreementData {
+  year: string;
+  chapelName: string;
+  rows: { [itemCode: string]: ChapelPerformanceAgreementRowValue };
+  signOff: ChapelPerformanceAgreementSignOff;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface ChildAcademicAwardRecord {

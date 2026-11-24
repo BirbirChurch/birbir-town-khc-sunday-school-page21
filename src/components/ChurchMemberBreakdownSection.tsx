@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Droplets,
@@ -14,6 +14,7 @@ import {
   computeChurchMemberDetailedBreakdown,
   SpiritualStatusBreakdown
 } from '../utils/churchMemberBreakdownStats';
+import { ExportPhotoButton } from './ExportPhotoButton';
 
 export type SpiritualFilterValue =
   | 'all'
@@ -48,6 +49,10 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
   selectedOccupationKey = 'all',
   onSelectOccupationKey
 }) => {
+  const spiritualSectionRef = useRef<HTMLElement | null>(null);
+  const educationSectionRef = useRef<HTMLElement | null>(null);
+  const occupationSectionRef = useRef<HTMLElement | null>(null);
+
   const stats = useMemo(
     () => computeChurchMemberDetailedBreakdown(members),
     [members]
@@ -196,7 +201,7 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
   return (
     <div className="space-y-6">
       {/* 1. Spiritual Participation Section: Baptized, Lord's Supper, Tithe */}
-      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <section ref={spiritualSectionRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900">
@@ -209,7 +214,7 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap print:hidden">
             {selectedSpiritualFilter !== 'all' && onSelectSpiritualFilter && (
               <button
                 type="button"
@@ -219,6 +224,14 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
                 ✕ የመንፈሳዊ ማጣሪያ አጽዳ
               </button>
             )}
+            <ExportPhotoButton
+              targetRef={spiritualSectionRef}
+              fileName={`የአባላት_መንፈሳዊ_ተሳትፎ_ማጠቃለያ${scopeLabel ? `_${scopeLabel}` : ''}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
             <button
               type="button"
               onClick={handleExportBreakdownExcel}
@@ -247,7 +260,7 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
                       onClick={() =>
                         onSelectSpiritualFilter(isActiveYes ? 'all' : item.yesFilter)
                       }
-                      className={`text-[11px] font-bold px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-lg transition cursor-pointer print:hidden ${
                         isActiveYes
                           ? 'bg-blue-900 text-white'
                           : 'text-blue-700 hover:bg-blue-50'
@@ -377,7 +390,7 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
       {/* 2. Side-by-Side Detailed Education Level & Occupation Breakdowns (ወንድ / ሴት / ድምር) */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Education Level Detailed Table */}
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col">
+        <section ref={educationSectionRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -388,15 +401,25 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
                 {stats.educationLevels.length} የትምህርት ደረጃ ምድቦች · ጠቅላላ {totalCount.toLocaleString('am-ET')} አባላት
               </p>
             </div>
-            {selectedEducationKey !== 'all' && onSelectEducationKey && (
-              <button
-                type="button"
-                onClick={() => onSelectEducationKey('all')}
-                className="text-[11px] font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition cursor-pointer"
-              >
-                ✕ አጽዳ
-              </button>
-            )}
+            <div className="flex items-center gap-1.5 print:hidden shrink-0">
+              {selectedEducationKey !== 'all' && onSelectEducationKey && (
+                <button
+                  type="button"
+                  onClick={() => onSelectEducationKey('all')}
+                  className="text-[11px] font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                >
+                  ✕ አጽዳ
+                </button>
+              )}
+              <ExportPhotoButton
+                targetRef={educationSectionRef}
+                fileName={`የአባላት_የትምህርት_ደረጃ_ዝርዝር${scopeLabel ? `_${scopeLabel}` : ''}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
           </div>
 
           <div className="overflow-x-auto max-h-[380px] flex-1">
@@ -441,8 +464,13 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
                       >
                         <td className="py-2.5 px-3 text-slate-500 tabular-nums">{idx + 1}</td>
                         <td className="py-2.5 px-3 font-bold text-slate-900">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span>{row.label}</span>
+                            {row.englishHint && !row.label.includes(row.englishHint) && (
+                              <span className="text-[10px] font-semibold text-slate-400">
+                                ({row.englishHint})
+                              </span>
+                            )}
                             {isSelected && <Filter className="w-3 h-3 text-indigo-700 shrink-0" />}
                           </div>
                         </td>
@@ -496,7 +524,7 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
         </section>
 
         {/* Occupation / Job Type Detailed Table */}
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col">
+        <section ref={occupationSectionRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -507,15 +535,25 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
                 {stats.occupations.length} የስራ ዓይነት ምድቦች · ጠቅላላ {totalCount.toLocaleString('am-ET')} አባላት
               </p>
             </div>
-            {selectedOccupationKey !== 'all' && onSelectOccupationKey && (
-              <button
-                type="button"
-                onClick={() => onSelectOccupationKey('all')}
-                className="text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition cursor-pointer"
-              >
-                ✕ አጽዳ
-              </button>
-            )}
+            <div className="flex items-center gap-1.5 print:hidden shrink-0">
+              {selectedOccupationKey !== 'all' && onSelectOccupationKey && (
+                <button
+                  type="button"
+                  onClick={() => onSelectOccupationKey('all')}
+                  className="text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                >
+                  ✕ አጽዳ
+                </button>
+              )}
+              <ExportPhotoButton
+                targetRef={occupationSectionRef}
+                fileName={`የአባላት_የስራ_ዓይነት_ዝርዝር${scopeLabel ? `_${scopeLabel}` : ''}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
           </div>
 
           <div className="overflow-x-auto max-h-[380px] flex-1">
@@ -560,8 +598,13 @@ export const ChurchMemberBreakdownSection: React.FC<ChurchMemberBreakdownSection
                       >
                         <td className="py-2.5 px-3 text-slate-500 tabular-nums">{idx + 1}</td>
                         <td className="py-2.5 px-3 font-bold text-slate-900">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span>{row.label}</span>
+                            {row.englishHint && !row.label.includes(row.englishHint) && (
+                              <span className="text-[10px] font-semibold text-slate-400">
+                                ({row.englishHint})
+                              </span>
+                            )}
                             {isSelected && <Filter className="w-3 h-3 text-emerald-700 shrink-0" />}
                           </div>
                         </td>

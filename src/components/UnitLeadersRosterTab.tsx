@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   UserCheck,
@@ -14,10 +14,14 @@ import {
   UserPlus
 } from 'lucide-react';
 import { ChurchMember, UnitLeaderRecord } from '../types';
+import { DEFAULT_LEADERSHIP_ROLE_OPTIONS } from '../constants/churchStructure';
 import { generateUniqueId } from '../utils/idGenerator';
 import { useLanguage } from '../context/LanguageContext';
 import { formatDualDateText, formatDualDateTimeText, getAdjustedNow } from '../utils/ethiopianDate';
 import { DualDateBadge, DualDateInput } from './DualDate';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface UnitLeadersRosterTabProps {
   unitTitle: string;
@@ -29,15 +33,6 @@ interface UnitLeadersRosterTabProps {
   onSaveLeaders: (nextLeaders: UnitLeaderRecord[]) => void;
 }
 
-const DEFAULT_LEADER_ROLES = [
-  'ዋና ሰብሳቢ / አስተባባሪ',
-  'ምክትል ሰብሳቢ',
-  'ጸሐፊ',
-  'ገንዘብ ያዥ',
-  'ሂሳብ ሹም / ቁጥጥር',
-  'የአመራር ኮሚቴ አባል'
-];
-
 export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
   unitTitle,
   currentYear,
@@ -48,6 +43,7 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
   onSaveLeaders
 }) => {
   const { t } = useLanguage();
+  const leadersExportRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ንቁ' | 'በእረፍት'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -56,19 +52,31 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
 
   const [nameInput, setNameInput] = useState('');
   const [genderInput, setGenderInput] = useState<'ወ' | 'ሴ'>('ወ');
-  const [roleInput, setRoleInput] = useState(roleSuggestions[0] || DEFAULT_LEADER_ROLES[0]);
+  const [roleInput, setRoleInput] = useState(DEFAULT_LEADERSHIP_ROLE_OPTIONS[0]);
   const [phoneInput, setPhoneInput] = useState('');
   const [startDateInput, setStartDateInput] = useState(() => new Date().toISOString().split('T')[0]);
   const [statusInput, setStatusInput] = useState('ንቁ');
   const [notesInput, setNotesInput] = useState('');
+  const [photoInput, setPhotoInput] = useState<PersonPhotoValue>({});
+
+  const memberPhotoLookup = useMemo(() => {
+    const map = new Map<string, { photoDataUrl?: string; photoStorageKey?: string }>();
+    churchMembers.forEach((m) => {
+      const k = (m.name || '').trim().toLowerCase();
+      if (k && (m.photoDataUrl || m.photoStorageKey)) {
+        map.set(k, { photoDataUrl: m.photoDataUrl, photoStorageKey: m.photoStorageKey });
+      }
+    });
+    return map;
+  }, [churchMembers]);
 
   // Quick pick from church members modal
   const [isPickOpen, setIsPickOpen] = useState(false);
   const [pickSearch, setPickSearch] = useState('');
-  const [pickRole, setPickRole] = useState(roleSuggestions[0] || DEFAULT_LEADER_ROLES[0]);
+  const [pickRole, setPickRole] = useState(DEFAULT_LEADERSHIP_ROLE_OPTIONS[0]);
 
   const combinedRoleOptions = useMemo(() => {
-    const merged = [...DEFAULT_LEADER_ROLES, ...roleSuggestions];
+    const merged = [...DEFAULT_LEADERSHIP_ROLE_OPTIONS, ...roleSuggestions];
     return Array.from(new Set(merged.map((r) => r.trim()).filter(Boolean)));
   }, [roleSuggestions]);
 
@@ -113,11 +121,12 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
     setEditingId(null);
     setNameInput('');
     setGenderInput('ወ');
-    setRoleInput(combinedRoleOptions[0] || 'ዋና ሰብሳቢ / አስተባባሪ');
+    setRoleInput(DEFAULT_LEADERSHIP_ROLE_OPTIONS[0]);
     setPhoneInput('');
     setStartDateInput(new Date().toISOString().split('T')[0]);
     setStatusInput('ንቁ');
     setNotesInput('');
+    setPhotoInput({});
     setIsModalOpen(true);
   };
 
@@ -130,6 +139,12 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
     setStartDateInput(rec.termOrStartDate || '');
     setStatusInput(rec.status || 'ንቁ');
     setNotesInput(rec.notes || '');
+    setPhotoInput({
+      photoDataUrl: rec.photoDataUrl,
+      photoStorageKey: rec.photoStorageKey,
+      photoName: rec.photoName,
+      photoUpdatedAt: rec.photoUpdatedAt
+    });
     setIsModalOpen(true);
   };
 
@@ -144,7 +159,11 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
       phone: phoneInput.trim() || undefined,
       termOrStartDate: startDateInput.trim() || undefined,
       status: statusInput,
-      notes: notesInput.trim() || undefined
+      notes: notesInput.trim() || undefined,
+      photoDataUrl: photoInput.photoDataUrl,
+      photoStorageKey: photoInput.photoStorageKey,
+      photoName: photoInput.photoName,
+      photoUpdatedAt: photoInput.photoUpdatedAt
     };
 
     if (editingId) {
@@ -164,7 +183,11 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
       phone: member.phone?.trim() || undefined,
       termOrStartDate: new Date().toISOString().split('T')[0],
       status: 'ንቁ',
-      notes: member.chapel ? `ቻፕል፦ ${member.chapel}` : undefined
+      notes: member.chapel ? `ቻፕል፦ ${member.chapel}` : undefined,
+      photoDataUrl: member.photoDataUrl,
+      photoStorageKey: member.photoStorageKey,
+      photoName: member.photoName,
+      photoUpdatedAt: member.photoUpdatedAt
     };
     onSaveLeaders([...leaders, record]);
   };
@@ -193,7 +216,7 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div ref={leadersExportRef} className="space-y-4">
       <div className="hidden print:block text-center pb-3 mb-3 border-b border-slate-300">
         <h1 className="text-lg font-extrabold">የብርብር ከተማ ቃለ ሕይወት ቤተ ክርስቲያን</h1>
         <h2 className="text-sm font-bold">
@@ -241,8 +264,8 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 {t(
-                  'የዚህን ዘርፍ አመራሮች (ሰብሳቢ፣ ምክትል፣ ጸሐፊ፣ ገንዘብ ያዥ እና የኮሚቴ አባላት) ስም፣ የስራ ድርሻ እና ስልክ ይመዝግቡ።',
-                  'Record and manage leaders (chairperson, vice, secretary, treasurer, committee) for this ministry.'
+                  'የዚህን ዘርፍ አመራሮች (ሰብሳቢ፣ ምክትል ሰብሳቢ፣ ፀሐፊ፣ ሂሳብ ሹም፣ ገንዘብ ያዥ፣ ንብረት ክፍል፣ የሰው ኃይል፣ አባል/ምክትል ፀሐፊ፣ አባል/ምክትል ልማት) ስም፣ የስራ ድርሻ እና ስልክ ይመዝግቡ።',
+                  'Record and manage leaders (Chair, Vice Chair, Secretary, Accountant, Treasurer, Property, HR, Member/Deputy Secretary, Member/Deputy Development).'
                 )}
               </p>
             </div>
@@ -267,6 +290,10 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
                 <Download className="w-3.5 h-3.5" />
                 <span>{t('ኤክሴል አውርድ', 'Export Excel')}</span>
               </button>
+              <ExportPhotoButton
+                targetRef={leadersExportRef}
+                fileName={`${unitTitle}_የመሪዎች_ስም_ዝርዝር_${currentYear}`}
+              />
               <button
                 type="button"
                 onClick={() => window.print()}
@@ -352,12 +379,27 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredLeaders.map((l, idx) => (
+                filteredLeaders.map((l, idx) => {
+                  const fallback = memberPhotoLookup.get((l.name || '').trim().toLowerCase());
+                  return (
                   <tr key={l.id} className="hover:bg-slate-50/70">
                     <td className="py-3 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
                     <td className="py-3 px-4">
-                      <div className="font-extrabold text-slate-900">{l.name}</div>
-                      {l.notes && <div className="text-[11px] text-slate-500 mt-0.5">{l.notes}</div>}
+                      <div className="flex items-center gap-2.5">
+                        <PersonAvatarBadge
+                          name={l.name}
+                          gender={l.gender}
+                          photoDataUrl={l.photoDataUrl}
+                          photoStorageKey={l.photoStorageKey}
+                          fallbackPhotoDataUrl={fallback?.photoDataUrl}
+                          fallbackPhotoStorageKey={fallback?.photoStorageKey}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-extrabold text-slate-900">{l.name}</div>
+                          {l.notes && <div className="text-[11px] text-slate-500 mt-0.5">{l.notes}</div>}
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3 px-3 text-center font-bold text-slate-700">{l.gender}</td>
                     <td className="py-3 px-4">
@@ -432,7 +474,8 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
                       )}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -507,13 +550,32 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
                   list="unitLeaderRoleSuggestions"
                   value={roleInput}
                   onChange={(e) => setRoleInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-base sm:text-xs"
                 />
                 <datalist id="unitLeaderRoleSuggestions">
                   {combinedRoleOptions.map((r) => (
                     <option key={r} value={r} />
                   ))}
                 </datalist>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {combinedRoleOptions.map((r) => {
+                    const active = roleInput.trim() === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setRoleInput(r)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          active
+                            ? 'bg-blue-900 text-white border-blue-900'
+                            : 'bg-slate-50 hover:bg-blue-50 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -542,6 +604,15 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl"
                 />
               </div>
+
+              <PersonPhotoField
+                compact
+                storagePrefix="unit_leader"
+                personId={editingId ?? undefined}
+                name={nameInput}
+                value={photoInput}
+                onChange={setPhotoInput}
+              />
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
@@ -590,8 +661,27 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
                   list="unitLeaderRoleSuggestions"
                   value={pickRole}
                   onChange={(e) => setPickRole(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-base sm:text-xs"
                 />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {combinedRoleOptions.map((r) => {
+                    const active = pickRole.trim() === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setPickRole(r)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          active
+                            ? 'bg-blue-900 text-white border-blue-900'
+                            : 'bg-slate-50 hover:bg-blue-50 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="relative">
@@ -618,10 +708,19 @@ export const UnitLeadersRosterTab: React.FC<UnitLeadersRosterTabProps> = ({
                     key={m.id}
                     className="px-3.5 py-2.5 flex items-center justify-between gap-2 hover:bg-slate-50 text-xs"
                   >
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 truncate">{m.name}</div>
-                      <div className="text-[11px] text-slate-500">
-                        {m.gender || 'ወ'} · {m.chapel || '—'} · {m.phone || '—'}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <PersonAvatarBadge
+                        name={m.name}
+                        gender={m.gender}
+                        photoDataUrl={m.photoDataUrl}
+                        photoStorageKey={m.photoStorageKey}
+                        size="sm"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 truncate">{m.name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {m.gender || 'ወ'} · {m.chapel || '—'} · {m.phone || '—'}
+                        </div>
                       </div>
                     </div>
                     <button

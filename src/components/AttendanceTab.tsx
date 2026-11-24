@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import {
   Calendar,
   UserX,
@@ -118,6 +119,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
   // Quarter filter for 40-week grid
   const [quarterFilter, setQuarterFilter] = useState<QuarterFilter>('all');
+  const attendanceExportRef = useRef<HTMLDivElement>(null);
   const [searchStudent, setSearchStudent] = useState('');
   const [isPrinting, setIsPrinting] = useState(false);
 
@@ -819,7 +821,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div ref={attendanceExportRef} className="space-y-6">
       {/* Printable Sheet Header (Clean, crisp church header for official attendance register) */}
       <div className="hidden print:block text-center pb-3 mb-3 border-b-2 border-slate-900">
         <h1 className="text-xl font-black text-slate-950">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
@@ -839,7 +841,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       </div>
 
       {/* View Switcher & Class Selection Bar */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-sm print:hidden">
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-sm">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
           {/* Class and Mode Tabs */}
           <div className="flex flex-wrap items-center gap-3">
@@ -860,7 +862,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
             </div>
 
             {/* View Mode Buttons */}
-            <div className="inline-flex bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+            <div className="inline-flex bg-slate-100 p-1 rounded-xl text-xs font-semibold print:hidden">
               <button
                 onClick={() => setActiveView('roster40')}
                 className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
@@ -900,7 +902,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
           </div>
 
           {/* Action Tools - Horizontally Scrollable Row (ወደ ጎን) */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin max-w-full shrink-0">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin max-w-full shrink-0 print:hidden">
             {/* Excel ጫን (High Visibility Front Button) */}
             <label
               className="bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer shrink-0 border border-teal-800"
@@ -970,6 +972,13 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                 ))}
               </select>
             </div>
+
+            <ExportPhotoButton
+              targetRef={attendanceExportRef}
+              fileName={`የ40_ሳምንት_አቴንዳንስ_${selectedClass}_${currentYear}`}
+              variant="secondary"
+              compact
+            />
 
             {/* Print / PDF */}
             <button
@@ -1831,7 +1840,13 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
               </div>
 
               {/* Fast 1-Click Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 print:hidden">
+                <ExportPhotoButton
+                  targetRef={attendanceExportRef}
+                  fileName={`የሳምንቱ_አቴንዳንስ_${selectedClass}_ሳምንት_${selectedWeek}_${currentYear}`}
+                  variant="secondary"
+                  compact
+                />
                 <button
                   onClick={handleExportPDF}
                   className="bg-rose-700 hover:bg-rose-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer border border-rose-800"
@@ -2108,7 +2123,13 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 print:hidden">
+              <ExportPhotoButton
+                targetRef={attendanceExportRef}
+                fileName={`የቀሪዎች_ማህደር_${absenteeClassFilter}_${currentYear}`}
+                variant="secondary"
+                compact
+              />
               <button
                 onClick={handleExportPDF}
                 className="bg-rose-700 hover:bg-rose-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer border border-rose-800"

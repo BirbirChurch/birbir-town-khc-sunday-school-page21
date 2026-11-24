@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import { Award, Printer, Download, Filter, Trophy, GraduationCap, Plus, Edit2, Trash2, X } from 'lucide-react';
 import { ChildAcademicAwardRecord, Role, Student } from '../types';
 import { downloadCSV } from '../utils/csv';
@@ -37,6 +38,7 @@ export const TopAchieversTab: React.FC<TopAchieversTabProps> = ({
   const [awPrize, setAwPrize] = useState('');
   const [awDate, setAwDate] = useState('');
   const [awNotes, setAwNotes] = useState('');
+  const achieversExportRef = useRef<HTMLDivElement>(null);
 
   const canManageAwards =
     Boolean(onSaveAcademicAwards) &&
@@ -98,7 +100,7 @@ export const TopAchieversTab: React.FC<TopAchieversTabProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div ref={achieversExportRef} className="space-y-6">
       {/* Printable Sheet Header */}
       <div className="hidden print:block text-center pb-4 mb-4 border-b border-slate-300">
         <h1 className="text-xl font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
@@ -112,7 +114,7 @@ export const TopAchieversTab: React.FC<TopAchieversTabProps> = ({
       </div>
 
       {/* Controls */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm print:hidden">
+      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
@@ -133,7 +135,7 @@ export const TopAchieversTab: React.FC<TopAchieversTabProps> = ({
             💡 <strong>ማስታወሻ፦</strong> ይህ ገጽ ለሽልማት <strong>ከ1ኛ እስከ 3ኛ የወጡትን 3 ተማሪዎች</strong> ብቻ ያሳያል። የክፍሉን ሙሉ ተማሪዎች ለማየት ወይም አዲስ ተማሪዎችን ለማስገባት <strong>"ክፍሎች"</strong> ወይም <strong>"አተንዳንስ"</strong> የሚለውን ትር ይጠቀሙ።
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-slate-400" />
               <select
@@ -149,6 +151,13 @@ export const TopAchieversTab: React.FC<TopAchieversTabProps> = ({
                 ))}
               </select>
             </div>
+
+            <ExportPhotoButton
+              targetRef={achieversExportRef}
+              fileName={`ከ1ኛ_እስከ_3ኛ_የወጡ_${currentYear}`}
+              variant="secondary"
+              compact
+            />
 
             <button
               onClick={() => window.print()}

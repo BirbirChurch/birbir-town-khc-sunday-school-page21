@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   History,
@@ -23,9 +23,16 @@ import {
   HistoricalLeaderRecord,
   OrgUnitId
 } from '../types';
-import { CHAPEL_LEADER_CATEGORIES, CHURCH_ORG_UNITS } from '../constants/churchStructure';
+import {
+  CHAPEL_LEADER_CATEGORIES,
+  CHURCH_ORG_UNITS,
+  DEFAULT_LEADERSHIP_ROLE_OPTIONS
+} from '../constants/churchStructure';
 import { generateUniqueId } from '../utils/idGenerator';
 import { useLanguage } from '../context/LanguageContext';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface HistoricalLeadersArchiveTabProps {
   currentYear: string;
@@ -36,23 +43,21 @@ interface HistoricalLeadersArchiveTabProps {
   onSaveRecords: (nextRecords: HistoricalLeaderRecord[]) => void;
 }
 
-const STANDARD_RESPONSIBILITIES = [
-  'ዋና ሰብሳቢ / አስተባባሪ',
-  'ምክትል ሰብሳቢ',
-  'ጸሐፊ',
-  'ገንዘብ ያዥ',
-  'ሂሳብ ሹም / ቁጥጥር',
-  'የመንፈሳዊ ዘርፍ ኃላፊ',
-  'የወንጌል አገልግሎት መሪ',
-  'የወጣቶች አገልግሎት አስተባባሪ',
-  'የልጆች አገልግሎት አስተባባሪ',
-  'የሴቶች አገልግሎት መሪ',
-  'የዲያቆናት ዋና መሪ',
-  'ፍቅርና ርኅራሄ አስተባባሪ',
-  'የቻፕል መሪ / አስተባባሪ',
-  'የልማት ዘርፍ ሰብሳቢ',
-  'የአመራር ኮሚቴ አባል'
-];
+const STANDARD_RESPONSIBILITIES = Array.from(
+  new Set([
+    ...DEFAULT_LEADERSHIP_ROLE_OPTIONS,
+    'የመንፈሳዊ ዘርፍ ኃላፊ',
+    'የወንጌል አገልግሎት መሪ',
+    'የወጣቶች አገልግሎት አስተባባሪ',
+    'የልጆች አገልግሎት አስተባባሪ',
+    'የሴቶች አገልግሎት መሪ',
+    'የዲያቆናት ዋና መሪ',
+    'ፍቅርና ርኅራሄ አስተባባሪ',
+    'የቻፕል መሪ / አስተባባሪ',
+    'የልማት ዘርፍ ሰብሳቢ',
+    'የአመራር ኮሚቴ አባል'
+  ])
+);
 
 const ARCHIVE_STATUSES = [
   'አገልግሎት የጨረሰ',
@@ -70,6 +75,7 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
   onSaveRecords
 }) => {
   const { t, unitName, chapelLabel } = useLanguage();
+  const archiveExportRef = useRef<HTMLDivElement | null>(null);
 
   const [viewMode, setViewMode] = useState<'table' | 'by_year' | 'by_sector'>('table');
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,6 +98,18 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
   const [fPhone, setFPhone] = useState('');
   const [fStatus, setFStatus] = useState<string>('አገልግሎት የጨረሰ');
   const [fNotes, setFNotes] = useState('');
+  const [fPhoto, setFPhoto] = useState<PersonPhotoValue>({});
+
+  const memberPhotoLookup = useMemo(() => {
+    const map = new Map<string, { photoDataUrl?: string; photoStorageKey?: string }>();
+    churchMembers.forEach((m) => {
+      const k = (m.name || '').trim().toLowerCase();
+      if (k && (m.photoDataUrl || m.photoStorageKey)) {
+        map.set(k, { photoDataUrl: m.photoDataUrl, photoStorageKey: m.photoStorageKey });
+      }
+    });
+    return map;
+  }, [churchMembers]);
 
   // Import from current leaders prompt state
   const [showImportBar, setShowImportBar] = useState(false);
@@ -199,6 +217,7 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
     setFPhone('');
     setFStatus('አገልግሎት የጨረሰ');
     setFNotes('');
+    setFPhoto({});
     setIsModalOpen(true);
   };
 
@@ -214,6 +233,12 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
     setFPhone(rec.phone || '');
     setFStatus(rec.status || 'አገልግሎት የጨረሰ');
     setFNotes(rec.notes || '');
+    setFPhoto({
+      photoDataUrl: rec.photoDataUrl,
+      photoStorageKey: rec.photoStorageKey,
+      photoName: rec.photoName,
+      photoUpdatedAt: rec.photoUpdatedAt
+    });
     setIsModalOpen(true);
   };
 
@@ -240,7 +265,11 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
       phone: fPhone.trim() || undefined,
       status: fStatus,
       notes: fNotes.trim() || undefined,
-      recordedAt: new Date().toISOString().split('T')[0]
+      recordedAt: new Date().toISOString().split('T')[0],
+      photoDataUrl: fPhoto.photoDataUrl,
+      photoStorageKey: fPhoto.photoStorageKey,
+      photoName: fPhoto.photoName,
+      photoUpdatedAt: fPhoto.photoUpdatedAt
     };
 
     const next = editingId
@@ -289,7 +318,11 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
             phone: ldr.phone,
             status: ldr.status === 'ንቁ' ? 'በአገልግሎት ላይ' : 'አገልግሎት የጨረሰ',
             notes: ldr.notes,
-            recordedAt: today
+            recordedAt: today,
+            photoDataUrl: ldr.photoDataUrl,
+            photoStorageKey: ldr.photoStorageKey,
+            photoName: ldr.photoName,
+            photoUpdatedAt: ldr.photoUpdatedAt
           });
         }
       });
@@ -315,7 +348,11 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
             phone: cl.phone,
             status: cl.status === 'ንቁ' ? 'በአገልግሎት ላይ' : 'አገልግሎት የጨረሰ',
             notes: cl.notes,
-            recordedAt: today
+            recordedAt: today,
+            photoDataUrl: cl.photoDataUrl,
+            photoStorageKey: cl.photoStorageKey,
+            photoName: cl.photoName,
+            photoUpdatedAt: cl.photoUpdatedAt
           });
         }
       });
@@ -368,7 +405,7 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
   };
 
   return (
-    <div className="space-y-5">
+    <div ref={archiveExportRef} className="space-y-5">
       {noticeMsg && (
         <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-2xl px-4 py-3 text-xs font-bold flex items-center gap-2 print:hidden">
           <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
@@ -414,6 +451,10 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
               <Download className="w-3.5 h-3.5" />
               <span>Excel</span>
             </button>
+            <ExportPhotoButton
+              targetRef={archiveExportRef}
+              fileName={`በየዘመናቱ_ያገለገሉ_መሪዎች_መዝገብ_${currentYear}`}
+            />
             <button
               type="button"
               onClick={() => window.print()}
@@ -667,6 +708,7 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                       rec.sectorId !== 'other'
                         ? unitName(rec.sectorId, rec.sectorName)
                         : rec.sectorName;
+                    const fallback = memberPhotoLookup.get((rec.name || '').trim().toLowerCase());
                     return (
                       <tr key={rec.id} className="hover:bg-slate-50/70">
                         <td className="py-2.5 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
@@ -675,7 +717,20 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                             {rec.serviceYear}
                           </span>
                         </td>
-                        <td className="py-2.5 px-4 font-extrabold text-slate-900">{rec.name}</td>
+                        <td className="py-2.5 px-4 font-extrabold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            <PersonAvatarBadge
+                              name={rec.name}
+                              gender={rec.gender}
+                              photoDataUrl={rec.photoDataUrl}
+                              photoStorageKey={rec.photoStorageKey}
+                              fallbackPhotoDataUrl={fallback?.photoDataUrl}
+                              fallbackPhotoStorageKey={fallback?.photoStorageKey}
+                              size="sm"
+                            />
+                            <span>{rec.name}</span>
+                          </div>
+                        </td>
                         <td className="py-2.5 px-3 font-semibold text-slate-700">{rec.gender}</td>
                         <td className="py-2.5 px-4 font-bold text-sky-900">
                           {resolvedSector}
@@ -778,12 +833,22 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                         rec.sectorId !== 'other'
                           ? unitName(rec.sectorId, rec.sectorName)
                           : rec.sectorName;
+                      const fallback = memberPhotoLookup.get((rec.name || '').trim().toLowerCase());
                       return (
                         <div
                           key={rec.id}
                           className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-50/70 text-xs"
                         >
                           <div className="flex flex-wrap items-center gap-2.5">
+                            <PersonAvatarBadge
+                              name={rec.name}
+                              gender={rec.gender}
+                              photoDataUrl={rec.photoDataUrl}
+                              photoStorageKey={rec.photoStorageKey}
+                              fallbackPhotoDataUrl={fallback?.photoDataUrl}
+                              fallbackPhotoStorageKey={fallback?.photoStorageKey}
+                              size="sm"
+                            />
                             <span className="font-extrabold text-slate-900 text-sm">{rec.name}</span>
                             <span className="px-2 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-900 font-bold">
                               {resolvedSector}
@@ -843,7 +908,9 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                     {items
                       .slice()
                       .sort((a, b) => b.serviceYear.localeCompare(a.serviceYear))
-                      .map((rec) => (
+                      .map((rec) => {
+                        const fallback = memberPhotoLookup.get((rec.name || '').trim().toLowerCase());
+                        return (
                         <div
                           key={rec.id}
                           className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-50/70 text-xs"
@@ -852,6 +919,15 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                             <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-950 font-extrabold tabular-nums">
                               {rec.serviceYear}
                             </span>
+                            <PersonAvatarBadge
+                              name={rec.name}
+                              gender={rec.gender}
+                              photoDataUrl={rec.photoDataUrl}
+                              photoStorageKey={rec.photoStorageKey}
+                              fallbackPhotoDataUrl={fallback?.photoDataUrl}
+                              fallbackPhotoStorageKey={fallback?.photoStorageKey}
+                              size="sm"
+                            />
                             <span className="font-extrabold text-slate-900 text-sm">{rec.name}</span>
                             <span className="font-bold text-slate-700">{rec.responsibility}</span>
                             {rec.chapelName && (
@@ -871,7 +947,8 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                             </button>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 </div>
               ))
@@ -918,6 +995,14 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                     if (match) {
                       if (match.gender === 'ሴ' || match.gender === 'ወ') setFGender(match.gender);
                       if (match.phone && !fPhone) setFPhone(match.phone);
+                      if (!fPhoto.photoDataUrl && (match.photoDataUrl || match.photoStorageKey)) {
+                        setFPhoto({
+                          photoDataUrl: match.photoDataUrl,
+                          photoStorageKey: match.photoStorageKey,
+                          photoName: match.photoName,
+                          photoUpdatedAt: match.photoUpdatedAt
+                        });
+                      }
                     }
                   }}
                   placeholder={t('ሙሉ ስም ያስገቡ ወይም ከአባላት ይምረጡ...', 'Full name...')}
@@ -1052,14 +1137,33 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                   list="historicalRoleDatalist"
                   value={fResponsibility}
                   onChange={(e) => setFResponsibility(e.target.value)}
-                  placeholder={t('ለምሳሌ፡ ዋና ሰብሳቢ፣ ጸሐፊ፣ ወጣቶች አስተባባሪ...', 'e.g., Chairperson, Secretary...')}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
+                  placeholder={t('ለምሳሌ፡ ሰብሳቢ፣ ምክትል ሰብሳቢ፣ ፀሐፊ...', 'e.g., Chairperson, Secretary...')}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-base sm:text-xs"
                 />
                 <datalist id="historicalRoleDatalist">
                   {roleSuggestions.map((r) => (
                     <option key={r} value={r} />
                   ))}
                 </datalist>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {DEFAULT_LEADERSHIP_ROLE_OPTIONS.map((r) => {
+                    const active = fResponsibility.trim() === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setFResponsibility(r)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          active
+                            ? 'bg-blue-900 text-white border-blue-900'
+                            : 'bg-slate-50 hover:bg-blue-50 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1092,6 +1196,15 @@ export const HistoricalLeadersArchiveTab: React.FC<HistoricalLeadersArchiveTabPr
                   />
                 </div>
               </div>
+
+              <PersonPhotoField
+                compact
+                storagePrefix="historical_leader"
+                personId={editingId ?? undefined}
+                name={fName}
+                value={fPhoto}
+                onChange={setFPhoto}
+              />
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button

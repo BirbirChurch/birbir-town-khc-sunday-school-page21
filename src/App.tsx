@@ -62,7 +62,10 @@ import {
 } from './utils/ageUpdater';
 import { Header } from './components/Header';
 import { LoginPortal } from './components/LoginPortal';
+import { AdminSecurityMonitorTab } from './components/AdminSecurityMonitorTab';
 import { NameScriptMode } from './utils/amharicTransliterator';
+import { getCurrentEthiopianFiscalPlanYear } from './utils/planExecutionRollup';
+import { computeMemberAgeCohorts } from './utils/chapelDemographics';
 import { findActiveBrowserBlock, getCurrentBrowserInfo } from './utils/browserIdentity';
 import { useLanguage } from './context/LanguageContext';
 
@@ -104,17 +107,14 @@ const ChapelsHubPage = lazyWithRetry(() =>
 const PlanBulkSenderPanel = lazyWithRetry(() =>
   import('./components/PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
 );
-const AdminSecurityMonitorTab = lazyWithRetry(() =>
-  import('./components/AdminSecurityMonitorTab').then((m) => ({
-    default: m.AdminSecurityMonitorTab
-  }))
-);
 
 export default function App() {
   const { t, unitName, chapelLabel } = useLanguage();
   const [appData, setAppData] = useState<AppData | null>(null);
   const [syncStatus, setSyncStatus] = useState<'connected' | 'saving' | 'offline' | 'error'>('connected');
-  const [currentYear, setCurrentYear] = useState<string>('2019');
+  const [currentYear, setCurrentYear] = useState<string>(() =>
+    String(getCurrentEthiopianFiscalPlanYear())
+  );
   const [currentUserRole, setCurrentUserRole] = useState<Role | null>(null);
   const [loggedInTeacher, setLoggedInTeacher] = useState<Teacher | null>(null);
   const [selectedClass, setSelectedClass] = useState<string>(CLASS_LIST[1] || CLASS_LIST[0]); // 1ኛ ክፍል ሀ
@@ -158,7 +158,7 @@ export default function App() {
         const sanitized = sanitizeAndDeduplicateAppData(data);
         setAppData(sanitized);
         if (sanitized.years && sanitized.years.length > 0 && !sanitized.years.includes(currentYear)) {
-          setCurrentYear(sanitized.years[0]);
+          setCurrentYear(sanitized.years[sanitized.years.length - 1]);
         }
       },
       (status) => {
@@ -490,7 +490,14 @@ return () => window.clearTimeout(timer);
       if (targetUnitId === loggedInUnit) return true;
       if (loggedInUnit === 'elders_council') return true;
       if (loggedInUnit === 'office') {
-        return targetUnitId === 'holistic_community' || targetUnitId === 'admin_finance';
+        return (
+          targetUnitId === 'holistic_community' ||
+          targetUnitId === 'development' ||
+          targetUnitId === 'admin_finance'
+        );
+      }
+      if (loggedInUnit === 'holistic_community') {
+        return targetUnitId === 'development';
       }
       if (loggedInUnit === 'spiritual_council') {
         const target = getOrgUnitById(targetUnitId);
@@ -1303,6 +1310,13 @@ return () => window.clearTimeout(timer);
     }));
   };
 
+  const handleUpdateChoirMember = (updated: ChoirMember) => {
+    updateAppData((prev) => ({
+      ...prev,
+      choirMembers: (prev.choirMembers || []).map((m) => (m.id === updated.id ? updated : m))
+    }));
+  };
+
   const handleDeleteChoirMember = (id: number) => {
     updateAppData((prev) => ({
       ...prev,
@@ -1338,6 +1352,13 @@ return () => window.clearTimeout(timer);
     updateAppData((prev) => ({
       ...prev,
       spiritualMembers: [...(prev.spiritualMembers || []), ...withIds]
+    }));
+  };
+
+  const handleUpdateSpiritualMember = (updated: SpiritualMember) => {
+    updateAppData((prev) => ({
+      ...prev,
+      spiritualMembers: (prev.spiritualMembers || []).map((m) => (m.id === updated.id ? updated : m))
     }));
   };
 
@@ -2124,6 +2145,15 @@ return () => window.clearTimeout(timer);
     e.target.value = '';
   };
 
+  const memberAgeCohorts = useMemo(
+    () =>
+      computeMemberAgeCohorts(
+        appData?.churchMembers || [],
+        parseInt(currentYear, 10) || 2019
+      ),
+    [appData?.churchMembers, currentYear]
+  );
+
   if (!appData) {
 
 return (
@@ -2212,7 +2242,7 @@ return (
                     </span>
                   ) : (
                     <span className="font-bold text-emerald-200 tabular-nums">
-                      {t('ዋና አዲሚን (Super Admin)', 'Super Admin')} — {t('የቤተክርስቲያን አባላት፦', 'Members:')} {(appData.churchMembers || []).length} · {t('ልጆች፦', 'Children:')} {(appData.churchChildren || []).length} · {t('ሰንበት ተማሪዎች፦', 'Sunday School:')} {countStudentsInData(appData)}
+                      {t('ዋና አዲሚን (Super Admin)', 'Super Admin')} — {t('የቤተክርስቲያን አባላት፦', 'Members:')} {(appData.churchMembers || []).length} · {t('ወጣቶች (15-29)፦', 'Youth (15-29):')} {memberAgeCohorts.youth15to29} · {t('ጎልማሶች (30-59)፦', 'Adults (30-59):')} {memberAgeCohorts.adults30to59} · {t('አዛውንቶች (60 እና ከዛ በላይ)፦', 'Seniors (60+):')} {memberAgeCohorts.seniors60Plus} · {t('ልጆች፦', 'Children:')} {(appData.churchChildren || []).length} · {t('ሰንበት ተማሪዎች፦', 'Sunday School:')} {countStudentsInData(appData)}
                     </span>
                   )}
                 </div>
@@ -2688,10 +2718,12 @@ return (
                     onDeleteAttendance={handleDeleteAttendance}
                     onAddChoirMember={handleAddChoirMember}
                     onAddChoirMembersBatch={handleAddChoirMembersBatch}
+                    onUpdateChoirMember={handleUpdateChoirMember}
                     onDeleteChoirMember={handleDeleteChoirMember}
                     onAddChoirGroup={handleAddChoirGroup}
                     onAddSpiritualMember={handleAddSpiritualMember}
                     onAddSpiritualMembersBatch={handleAddSpiritualMembersBatch}
+                    onUpdateSpiritualMember={handleUpdateSpiritualMember}
                     onDeleteSpiritualMember={handleDeleteSpiritualMember}
                     onAddSpiritualGroup={handleAddSpiritualGroup}
                     onUpdatePlan={handleUpdatePlan}
@@ -2799,6 +2831,7 @@ return (
                     onBatchAddMembers={handleBatchAddChurchMembers}
                     onAddMember={handleAddChurchMember}
                     onUpdateMember={handleUpdateChurchMember}
+                    onUpdateChild={handleUpdateChurchChild}
                     onDeleteMember={handleDeleteChurchMember}
                     onClearChurchMembers={handleClearChurchMembers}
                     onExtractChildrenToChildrenTab={handleBatchAddChurchChildren}

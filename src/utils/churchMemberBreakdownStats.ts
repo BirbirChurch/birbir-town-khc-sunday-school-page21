@@ -37,6 +37,7 @@ export interface SpiritualStatusBreakdown {
 export interface DetailedCategoryRow {
   key: string;
   label: string;
+  englishHint?: string;
   isUnspecified: boolean;
   male: number;
   female: number;
@@ -63,6 +64,7 @@ export const SUGGESTED_EDUCATION_LEVELS: string[] = [
   '9ኛ - 10ኛ ክፍል',
   '11ኛ - 12ኛ ክፍል',
   'ቴክኒክና ሙያ (TVET / ሰርተፊኬት)',
+  'መጽሐፍ ቅዱስ ት/ቤት',
   'ዲፕሎማ',
   'ዲግሪ',
   'ማስተርስ',
@@ -77,8 +79,26 @@ export const SUGGESTED_OCCUPATIONS: string[] = [
   'ገበሬ',
   'የቤት እመቤት',
   'የቤት ውስጥ',
+  'የቤት ሠራተኛ',
   'የቀን ሠራተኛ',
+  'መምህር',
+  'የጤና ባለሙያ',
+  'ሹፌር',
+  'ኢንጂነር',
+  'የሂሳብ / የባንክ ባለሙያ',
   'አገልጋይ / ወንጌላዊ / ቄስ',
+  'ጥበቃ',
+  'ፖሊስ / መከላከያ',
+  'አናጺ',
+  'ግንበኛ',
+  'ልብስ ሰፊ',
+  'የNGO ሠራተኛ',
+  'ቴክኒሻን / መካኒክ',
+  'ጸሐፊ / የቢሮ ሠራተኛ',
+  'የጽዳት ሠራተኛ',
+  'የሕግ ባለሙያ',
+  'የምግብና መስተንግዶ ሠራተኛ',
+  'ጸጉር አስተካካይ / ሳሎን',
   'ጡረተኛ',
   'ስራ የሌለው/ች'
 ];
@@ -132,12 +152,13 @@ export const computeChurchMemberDetailedBreakdown = (
     g: 'male' | 'female' | 'unspecified',
     kind: 'education' | 'occupation'
   ) => {
-    const { key, label, isUnspecified } = normalizeMemberCategoryValue(rawValue, kind);
+    const { key, label, englishHint, isUnspecified } = normalizeMemberCategoryValue(rawValue, kind);
     let entry = map.get(key);
     if (!entry) {
       entry = {
         key,
         label,
+        englishHint,
         isUnspecified,
         male: 0,
         female: 0,

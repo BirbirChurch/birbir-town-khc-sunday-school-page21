@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import {
   UserCheck,
   UserPlus,
@@ -13,8 +14,12 @@ import {
   BookOpen,
   Printer,
   Download,
-  Upload
+  Upload,
+  Camera,
+  X
 } from 'lucide-react';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 import { Teacher, Role } from '../types';
 import { downloadCSV, readCSVFile } from '../utils/csv';
 
@@ -43,12 +48,16 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPins, setShowPins] = useState(false);
   const [sortBy, setSortBy] = useState<'class' | 'name' | 'id'>('class');
+  const teachersExportRef = useRef<HTMLDivElement>(null);
 
   // Form states
   const [name, setName] = useState('');
   const [assignedClass, setAssignedClass] = useState(classList[0]);
   const [assignedSubject, setAssignedSubject] = useState(subjects[0] || 'አጠቃላይ');
   const [pin, setPin] = useState('');
+  const [teacherPhoto, setTeacherPhoto] = useState<PersonPhotoValue>({});
+  const [editingPhotoTeacher, setEditingPhotoTeacher] = useState<Teacher | null>(null);
+  const [editTeacherPhoto, setEditTeacherPhoto] = useState<PersonPhotoValue>({});
 
   const isAdmin = currentUserRole === 'admin' || currentUserRole === 'children_coordinator';
 
@@ -156,11 +165,13 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       assignedClass,
       assignedSubject,
       pin: finalPin,
-      order: teachers.length + 1
+      order: teachers.length + 1,
+      ...teacherPhoto
     });
 
     setName('');
     setPin('');
+    setTeacherPhoto({});
     setShowAddModal(false);
   };
 
@@ -223,7 +234,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div ref={teachersExportRef} className="space-y-6">
       {/* Printable Sheet Header */}
       <div className="hidden print:block text-center pb-4 mb-4 border-b border-slate-300">
         <h1 className="text-xl font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
@@ -234,7 +245,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       </div>
 
       {/* Controls Header */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm print:hidden">
+      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -247,7 +258,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5 print:hidden">
             {/* Sorting Sequence Selector */}
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs">
               <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
@@ -274,6 +285,13 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 className="pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-600 w-48"
               />
             </div>
+
+            <ExportPhotoButton
+              targetRef={teachersExportRef}
+              fileName="የመምህራን_መዝገብ"
+              variant="secondary"
+              compact
+            />
 
             <button
               onClick={() => window.print()}
@@ -362,16 +380,26 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
 
                     {/* Teacher Name */}
                     <td className="py-2.5 px-4 border-r border-slate-200 text-left font-bold text-slate-900">
-                      {isAdmin ? (
-                        <input
-                          type="text"
-                          defaultValue={t.name}
-                          onBlur={(e) => handleNameBlur(t, e.target.value)}
-                          className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-teal-600 focus:bg-white px-1 py-0.5 rounded text-xs outline-none"
+                      <div className="flex items-center gap-2">
+                        <PersonAvatarBadge
+                          name={t.name}
+                          photoDataUrl={t.photoDataUrl}
+                          photoStorageKey={t.photoStorageKey}
+                          size="sm"
                         />
-                      ) : (
-                        <span>{t.name}</span>
-                      )}
+                        <div className="min-w-0 flex-1">
+                          {isAdmin ? (
+                            <input
+                              type="text"
+                              defaultValue={t.name}
+                              onBlur={(e) => handleNameBlur(t, e.target.value)}
+                              className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-teal-600 focus:bg-white px-1 py-0.5 rounded text-xs outline-none"
+                            />
+                          ) : (
+                            <span>{t.name}</span>
+                          )}
+                        </div>
+                      </div>
                     </td>
 
                     {/* Assigned Class */}
@@ -445,6 +473,22 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                     {isAdmin && (
                       <td className="py-2 px-2 print:hidden">
                         <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPhotoTeacher(t);
+                              setEditTeacherPhoto({
+                                photoDataUrl: t.photoDataUrl,
+                                photoStorageKey: t.photoStorageKey,
+                                photoName: t.photoName,
+                                photoUpdatedAt: t.photoUpdatedAt
+                              });
+                            }}
+                            className="p-1 rounded text-teal-700 hover:text-teal-900 hover:bg-teal-50 cursor-pointer"
+                            title="የመምህር ፎቶ አስገባ / ቀይር"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleMove(idx, 'up')}
@@ -559,10 +603,21 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 </div>
               </div>
 
+              <PersonPhotoField
+                compact
+                storagePrefix="teacher"
+                name={name}
+                value={teacherPhoto}
+                onChange={setTeacherPhoto}
+              />
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => {
+                    setTeacherPhoto({});
+                    setShowAddModal(false);
+                  }}
                   className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-medium"
                 >
                   ሰርዝ
@@ -575,6 +630,59 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Teacher Photo Modal */}
+      {editingPhotoTeacher && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">የመምህር ፎቶ አስተዳድር</h3>
+                <p className="text-xs text-slate-500">{editingPhotoTeacher.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPhotoTeacher(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <PersonPhotoField
+              storagePrefix="teacher"
+              personId={editingPhotoTeacher.id}
+              name={editingPhotoTeacher.name}
+              value={editTeacherPhoto}
+              onChange={setEditTeacherPhoto}
+            />
+            <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingPhotoTeacher(null)}
+                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-medium cursor-pointer"
+              >
+                ሰርዝ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateTeacher({
+                    ...editingPhotoTeacher,
+                    photoDataUrl: editTeacherPhoto.photoDataUrl,
+                    photoStorageKey: editTeacherPhoto.photoStorageKey,
+                    photoName: editTeacherPhoto.photoName,
+                    photoUpdatedAt: editTeacherPhoto.photoUpdatedAt
+                  });
+                  setEditingPhotoTeacher(null);
+                }}
+                className="px-4 py-2 text-xs bg-teal-700 hover:bg-teal-600 text-white rounded-xl font-bold shadow cursor-pointer"
+              >
+                ፎቶ አስቀምጥ
+              </button>
+            </div>
           </div>
         </div>
       )}

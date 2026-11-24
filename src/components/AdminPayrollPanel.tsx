@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Calculator,
@@ -12,6 +12,7 @@ import {
   Send
 } from 'lucide-react';
 import {
+  ChurchChild,
   ChurchHRRecord,
   ChurchMember,
   DepartmentFinanceRecord,
@@ -27,13 +28,18 @@ import {
   resolveHighestEducationLabel,
   roundBirr
 } from '../utils/hrProfileAndPayroll';
-import { findMatchingChurchMemberForHR } from '../utils/hrMemberMatcher';
+import { findMatchingChurchMemberForHR, resolveServantChurchFamily } from '../utils/hrMemberMatcher';
 import { MinisterProfileModal } from './MinisterProfileModal';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface AdminPayrollPanelProps {
   currentYear: string;
   records: ChurchHRRecord[];
   churchMembers?: ChurchMember[];
+  churchChildren?: ChurchChild[];
+  onUpdateChurchMember?: (member: ChurchMember) => void;
+  onUpdateChurchChild?: (child: ChurchChild) => void;
   onSaveRecords: (updated: ChurchHRRecord[]) => void;
   onRecordFinanceExpense?: (entry: Omit<DepartmentFinanceRecord, 'id'>) => void;
 }
@@ -42,10 +48,14 @@ export const AdminPayrollPanel: React.FC<AdminPayrollPanelProps> = ({
   currentYear,
   records,
   churchMembers = [],
+  churchChildren = [],
+  onUpdateChurchMember,
+  onUpdateChurchChild,
   onSaveRecords,
   onRecordFinanceExpense
 }) => {
   const { t, lang } = useLanguage();
+  const payrollExportRef = useRef<HTMLDivElement | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>(ETHIOPIAN_MONTHS_AM[2]); // ኅዳር default or current
   const [categoryFilter, setCategoryFilter] = useState<'all' | HRCategory>('all');
   const [activeOnly, setActiveOnly] = useState<boolean>(true);
@@ -245,7 +255,7 @@ export const AdminPayrollPanel: React.FC<AdminPayrollPanelProps> = ({
   }, [activeProfileRecord, churchMembers]);
 
   return (
-    <div className="space-y-5">
+    <div ref={payrollExportRef} className="space-y-5">
       {/* Top Payroll Header & Controls */}
       <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -295,6 +305,11 @@ export const AdminPayrollPanel: React.FC<AdminPayrollPanelProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span>{t('Excel አውርድ', 'Export Excel')}</span>
             </button>
+
+            <ExportPhotoButton
+              targetRef={payrollExportRef}
+              fileName={`የአገልጋዮች_ደመወዝ_ፔሮል_${selectedMonth}_${currentYear}`}
+            />
 
             <button
               type="button"
@@ -522,23 +537,35 @@ export const AdminPayrollPanel: React.FC<AdminPayrollPanelProps> = ({
               ) : (
                 rowsWithCalc.map((row, idx) => {
                   const r = row.record;
+                  const fam = resolveServantChurchFamily(r, churchMembers, churchChildren);
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/70 align-middle">
                       <td className="py-2.5 px-2.5 tabular-nums text-slate-500 font-semibold">{idx + 1}</td>
-                      <td className="py-2.5 px-3 min-w-[175px]">
+                      <td className="py-2.5 px-3 min-w-[195px]">
                         <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <button
-                              type="button"
-                              onClick={() => setProfileRecordId(r.id)}
-                              className="font-extrabold text-slate-900 hover:text-teal-800 hover:underline text-left cursor-pointer"
-                            >
-                              {r.name}
-                            </button>
-                            <div className="text-[10px] font-semibold text-slate-500">
-                              {r.category === 'full_time_minister'
-                                ? t('የሙሉ ጊዜ አገልጋይ', 'Full-Time Minister')
-                                : t('የአስተዳደር ሠራተኛ', 'Admin Staff')}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <PersonAvatarBadge
+                              name={r.name}
+                              gender={r.gender}
+                              photoDataUrl={r.photoDataUrl}
+                              photoStorageKey={r.photoStorageKey}
+                              fallbackPhotoDataUrl={fam.selfMember?.photoDataUrl}
+                              fallbackPhotoStorageKey={fam.selfMember?.photoStorageKey}
+                              size="xs"
+                            />
+                            <div className="min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => setProfileRecordId(r.id)}
+                                className="font-extrabold text-slate-900 hover:text-teal-800 hover:underline text-left cursor-pointer truncate block"
+                              >
+                                {r.name}
+                              </button>
+                              <div className="text-[10px] font-semibold text-slate-500">
+                                {r.category === 'full_time_minister'
+                                  ? t('የሙሉ ጊዜ አገልጋይ', 'Full-Time Minister')
+                                  : t('የአስተዳደር ሠራተኛ', 'Admin Staff')}
+                              </div>
                             </div>
                           </div>
                           <button
@@ -657,32 +684,44 @@ export const AdminPayrollPanel: React.FC<AdminPayrollPanelProps> = ({
           ) : (
             rowsWithCalc.map((row, idx) => {
               const r = row.record;
+              const fam = resolveServantChurchFamily(r, churchMembers, churchChildren);
               return (
                 <div key={r.id} className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-bold text-slate-400 tabular-nums">#{idx + 1}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                            r.category === 'full_time_minister'
-                              ? 'bg-teal-50 text-teal-900 border border-teal-200'
-                              : 'bg-indigo-50 text-indigo-900 border border-indigo-200'
-                          }`}
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <PersonAvatarBadge
+                        name={r.name}
+                        gender={r.gender}
+                        photoDataUrl={r.photoDataUrl}
+                        photoStorageKey={r.photoStorageKey}
+                        fallbackPhotoDataUrl={fam.selfMember?.photoDataUrl}
+                        fallbackPhotoStorageKey={fam.selfMember?.photoStorageKey}
+                        size="md"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-slate-400 tabular-nums">#{idx + 1}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                              r.category === 'full_time_minister'
+                                ? 'bg-teal-50 text-teal-900 border border-teal-200'
+                                : 'bg-indigo-50 text-indigo-900 border border-indigo-200'
+                            }`}
+                          >
+                            {r.category === 'full_time_minister'
+                              ? t('የሙሉ ጊዜ አገልጋይ', 'Full-Time Minister')
+                              : t('የአስተዳደር ሠራተኛ', 'Admin Staff')}
+                          </span>
+                          <span className="text-xs font-bold text-slate-600">{r.gender}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setProfileRecordId(r.id)}
+                          className="text-base font-extrabold text-slate-900 hover:text-teal-800 mt-1 text-left cursor-pointer"
                         >
-                          {r.category === 'full_time_minister'
-                            ? t('የሙሉ ጊዜ አገልጋይ', 'Full-Time Minister')
-                            : t('የአስተዳደር ሠራተኛ', 'Admin Staff')}
-                        </span>
-                        <span className="text-xs font-bold text-slate-600">{r.gender}</span>
+                          {r.name}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setProfileRecordId(r.id)}
-                        className="text-base font-extrabold text-slate-900 hover:text-teal-800 mt-1 text-left cursor-pointer"
-                      >
-                        {r.name}
-                      </button>
                     </div>
                     <button
                       type="button"
@@ -794,6 +833,9 @@ export const AdminPayrollPanel: React.FC<AdminPayrollPanelProps> = ({
           record={activeProfileRecord}
           resolvedPhone={activeProfileResolvedPhone}
           churchMembers={churchMembers}
+          churchChildren={churchChildren}
+          onUpdateChurchMember={onUpdateChurchMember}
+          onUpdateChurchChild={onUpdateChurchChild}
           onClose={() => setProfileRecordId(null)}
           onSaveRecord={(updated) => {
             onSaveRecords(records.map((r) => (r.id === updated.id ? updated : r)));

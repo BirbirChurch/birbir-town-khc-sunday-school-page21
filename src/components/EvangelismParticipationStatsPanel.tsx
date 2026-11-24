@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Users,
@@ -30,6 +30,7 @@ import {
   mapDeptEvangelismStatusToMaster,
   MemberMinistryProfile
 } from '../utils/memberMinistryProfile';
+import { ExportPhotoButton } from './ExportPhotoButton';
 
 export type EvangelismStatusKey =
   | 'paying'
@@ -552,6 +553,8 @@ export const EvangelismParticipationStatsPanel: React.FC<
   };
 
   const cardIcons = [Users, UserCheck, Wallet, UserX, UserMinus];
+  const evangPctSectionRef = useRef<HTMLElement | null>(null);
+  const evangChapelSectionRef = useRef<HTMLElement | null>(null);
 
   return (
     <div className="space-y-5">
@@ -567,7 +570,7 @@ export const EvangelismParticipationStatsPanel: React.FC<
       </div>
 
       {/* Header & Action Controls */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4">
+      <section ref={evangPctSectionRef} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-xs font-extrabold text-rose-700">
@@ -582,19 +585,27 @@ export const EvangelismParticipationStatsPanel: React.FC<
             </h3>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleExportExcel}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold cursor-pointer print:hidden"
             >
               <Download className="w-3.5 h-3.5" />
               <span>{t('Excel አውርድ', 'Export Excel')}</span>
             </button>
+            <ExportPhotoButton
+              targetRef={evangPctSectionRef}
+              fileName={`የወንጌል_አገልግሎት_ተሳትፎና_መቶኛ_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer print:hidden"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>{t('አትም', 'Print')}</span>
@@ -700,23 +711,33 @@ export const EvangelismParticipationStatsPanel: React.FC<
       </section>
 
       {/* Per-Chapel Evangelism Breakdown */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
-        <div>
-          <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-            <Church className="w-4 h-4 text-rose-700 shrink-0" />
-            <span>
+      <section ref={evangChapelSectionRef} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+              <Church className="w-4 h-4 text-rose-700 shrink-0" />
+              <span>
+                {t(
+                  'በ10ሩም ቻፕሎች ደረጃ የወንጌል አገልግሎት አባልነትና የክፍያ ሁኔታ',
+                  'Evangelism Membership & Payment Breakdown by Chapel'
+                )}
+              </span>
+            </h4>
+            <p className="text-[11px] text-slate-500 mt-0.5">
               {t(
-                'በ10ሩም ቻፕሎች ደረጃ የወንጌል አገልግሎት አባልነትና የክፍያ ሁኔታ',
-                'Evangelism Membership & Payment Breakdown by Chapel'
+                'አባል ሆኖ የሚከፍል / የማይከፍል / ያቋረጠ / አባል ያልሆነ በየቻፕሉ ተለይቶ የቀረበ',
+                'Paying / Not Paying / Discontinued / Non-Member breakdown across all 10 Chapels'
               )}
-            </span>
-          </h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            {t(
-              'አባል ሆኖ የሚከፍል / የማይከፍል / ያቋረጠ / አባል ያልሆነ በየቻፕሉ ተለይቶ የቀረበ',
-              'Paying / Not Paying / Discontinued / Non-Member breakdown across all 10 Chapels'
-            )}
-          </p>
+            </p>
+          </div>
+          <ExportPhotoButton
+            targetRef={evangChapelSectionRef}
+            fileName={`የቻፕሎች_ወንጌል_አገልግሎት_ተሳትፎ_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
         </div>
 
         <div className="border border-slate-200 rounded-xl overflow-hidden">

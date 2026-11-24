@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Shield,
   KeyRound,
@@ -20,7 +20,9 @@ import {
   DEFAULT_ORG_UNIT_PINS
 } from '../constants/churchStructure';
 import { countStudentsInData } from '../services/firebase';
+import { computeMemberAgeCohorts } from '../utils/chapelDemographics';
 import { useLanguage } from '../context/LanguageContext';
+import { ExportPhotoButton } from './ExportPhotoButton';
 
 interface SuperAdminDashboardProps {
   appData: AppData;
@@ -44,11 +46,17 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   onOpenSecurityMonitor
 }) => {
   const { t, unitName, unitDesc } = useLanguage();
+  const kpiSummaryRef = useRef<HTMLElement | null>(null);
+  const orgTableRef = useRef<HTMLElement | null>(null);
   const [unitSearch, setUnitSearch] = useState('');
 
   const churchMembers = appData.churchMembers || [];
   const churchChildren = appData.churchChildren || [];
   const totalSundayStudents = useMemo(() => countStudentsInData(appData), [appData]);
+  const memberAgeCohorts = useMemo(
+    () => computeMemberAgeCohorts(churchMembers, parseInt(currentYear, 10) || 2019),
+    [churchMembers, currentYear]
+  );
   const deptMap = appData.departmentData || {};
   const unitPins = appData.pins?.units || DEFAULT_ORG_UNIT_PINS;
 
@@ -137,26 +145,40 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
               <span>{t('ዳታቤዝ & JSON', 'Database & JSON')}</span>
             </button>
             {onOpenSecurityMonitor && (
-              <button
-                type="button"
-                onClick={onOpenSecurityMonitor}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-900 transition cursor-pointer whitespace-nowrap"
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-rose-700" />
-                <span>
-                  {t('የብራውዘር እገዳና ደህንነት', 'Browser Security')}
-                  {(appData.failedLoginAttempts?.length || 0) > 0
-                    ? ` (${appData.failedLoginAttempts?.length})`
-                    : ''}
-                </span>
-              </button>
+            <button
+              type="button"
+              onClick={onOpenSecurityMonitor}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-900 transition cursor-pointer whitespace-nowrap"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-700" />
+              <span>
+                {t('የብራውዘር እገዳና ደህንነት', 'Browser Security')}
+                {(appData.failedLoginAttempts?.length || 0) > 0
+                  ? ` (${appData.failedLoginAttempts?.length})`
+                  : ''}
+              </span>
+            </button>
             )}
           </div>
         </div>
       </section>
 
       {/* Top 4 KPIs */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section ref={kpiSummaryRef} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs sm:text-sm font-extrabold text-slate-800">
+            {t(`ዋና የቤተክርስቲያን አሃዞች ማጠቃለያ (${currentYear} ዓ/ም)`, `Church Key Figures Summary (${currentYear})`)}
+          </h3>
+          <ExportPhotoButton
+            targetRef={kpiSummaryRef}
+            fileName={`ዋና_የቤተክርስቲያን_አሃዞች_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between gap-2">
           <div className="flex items-center justify-between text-xs font-bold text-slate-500">
             <span>{t('የቤተክርስቲያን ዋና ቋት አባላት', 'Church Master Members')}</span>
@@ -164,6 +186,13 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
           </div>
           <div className="text-3xl font-extrabold text-slate-900 tabular-nums">
             {churchMembers.length.toLocaleString()}
+          </div>
+          <div className="text-[11px] font-semibold text-slate-600 tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span>{t('ወጣቶች (15-29)', 'Youth 15-29')}: <strong className="text-blue-900">{memberAgeCohorts.youth15to29.toLocaleString()}</strong></span>
+            <span className="text-slate-300">·</span>
+            <span>{t('ጎልማሶች (30-59)', 'Adults 30-59')}: <strong className="text-emerald-800">{memberAgeCohorts.adults30to59.toLocaleString()}</strong></span>
+            <span className="text-slate-300">·</span>
+            <span>{t('አዛውንቶች (60+)', 'Seniors 60+')}: <strong className="text-purple-800">{memberAgeCohorts.seniors60Plus.toLocaleString()}</strong></span>
           </div>
           <div className="text-xs text-slate-500 pt-2 border-t border-slate-100 flex items-center justify-between">
             <span>{t('በ10 ቻፕሎች የተደራጁ', 'Organized in 10 chapels')}</span>
@@ -236,10 +265,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             </button>
           </div>
         </div>
+        </div>
       </section>
 
       {/* Complete Organizational Hierarchy Control Table */}
-      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <section ref={orgTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
@@ -256,14 +286,24 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             </p>
           </div>
 
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={unitSearch}
-              onChange={(e) => setUnitSearch(e.target.value)}
-              placeholder={t('የክፍል ወይም የአገልግሎት ስም ፈልግ...', 'Search unit or ministry...')}
-              className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-64"
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative print:hidden">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={unitSearch}
+                onChange={(e) => setUnitSearch(e.target.value)}
+                placeholder={t('የክፍል ወይም የአገልግሎት ስም ፈልግ...', 'Search unit or ministry...')}
+                className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-64"
+              />
+            </div>
+            <ExportPhotoButton
+              targetRef={orgTableRef}
+              fileName={`የቤተክርስቲያን_መዋቅር_መቆጣጠሪያ_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
             />
           </div>
         </div>

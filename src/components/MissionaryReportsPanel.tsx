@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   BarChart3,
@@ -27,6 +27,7 @@ import {
 import { generateUniqueId } from '../utils/idGenerator';
 import { formatDualDateTimeText, getAdjustedNow } from '../utils/ethiopianDate';
 import { useLanguage } from '../context/LanguageContext';
+import { ExportPhotoButton } from './ExportPhotoButton';
 
 export type EvangelismActivityKey = keyof EvangelismActivityMetrics;
 export type QuarterKey = 'q1' | 'q2' | 'q3' | 'q4';
@@ -94,13 +95,13 @@ export const PERIOD_OPTIONS: readonly {
   labelEn: string;
   shortAm: string;
 }[] = [
-  { key: 'year', labelAm: 'ሙሉ 1 ዓመት (1ኛ–4ኛ ሩብ)', labelEn: 'Full Year (Q1–Q4)', shortAm: '1 ዓመት' },
-  { key: 'h1', labelAm: '1ኛ ግማሽ ዓመት (1ኛ + 2ኛ ሩብ)', labelEn: '1st Half-Year (Q1+Q2)', shortAm: '1ኛ ግማሽ ዓመት' },
-  { key: 'h2', labelAm: '2ኛ ግማሽ ዓመት (3ኛ + 4ኛ ሩብ)', labelEn: '2nd Half-Year (Q3+Q4)', shortAm: '2ኛ ግማሽ ዓመት' },
-  { key: 'q1', labelAm: '1ኛ ሩብ ዓመት', labelEn: '1st Quarter (Q1)', shortAm: '1ኛ ሩብ' },
-  { key: 'q2', labelAm: '2ኛ ሩብ ዓመት', labelEn: '2nd Quarter (Q2)', shortAm: '2ኛ ሩብ' },
-  { key: 'q3', labelAm: '3ኛ ሩብ ዓመት', labelEn: '3rd Quarter (Q3)', shortAm: '3ኛ ሩብ' },
-  { key: 'q4', labelAm: '4ኛ ሩብ ዓመት', labelEn: '4th Quarter (Q4)', shortAm: '4ኛ ሩብ' }
+  { key: 'year', labelAm: 'ሙሉ 1 ዓመት (ሐምሌ–ሰኔ / Q1–Q4)', labelEn: 'Full Year (Hamle–Sene / Q1–Q4)', shortAm: '1 ዓመት' },
+  { key: 'h1', labelAm: '1ኛ ግማሽ ዓመት (ሐምሌ–ታኅሣሥ)', labelEn: '1st Half-Year (Hamle–Tahsas)', shortAm: '1ኛ ግማሽ ዓመት' },
+  { key: 'h2', labelAm: '2ኛ ግማሽ ዓመት (ጥር–ሰኔ)', labelEn: '2nd Half-Year (Tir–Sene)', shortAm: '2ኛ ግማሽ ዓመት' },
+  { key: 'q1', labelAm: '1ኛ ሩብ ዓመት (ሐምሌ–መስከረም)', labelEn: '1st Quarter (Hamle–Meskerem)', shortAm: '1ኛ ሩብ' },
+  { key: 'q2', labelAm: '2ኛ ሩብ ዓመት (ጥቅምት–ታኅሣሥ)', labelEn: '2nd Quarter (Tikimt–Tahsas)', shortAm: '2ኛ ሩብ' },
+  { key: 'q3', labelAm: '3ኛ ሩብ ዓመት (ጥር–መጋቢት)', labelEn: '3rd Quarter (Tir–Megabit)', shortAm: '3ኛ ሩብ' },
+  { key: 'q4', labelAm: '4ኛ ሩብ ዓመት (ሚያዝያ–ሰኔ)', labelEn: '4th Quarter (Miyazya–Sene)', shortAm: '4ኛ ሩብ' }
 ];
 
 const SCOPE_LABELS: Record<MissionaryScope, { am: string; en: string }> = {
@@ -632,8 +633,10 @@ export const MissionaryReportsPanel: React.FC<MissionaryReportsPanelProps> = ({
     return lang === 'en' ? opt.labelEn : opt.labelAm;
   }, [selectedPeriod, lang]);
 
+  const missionaryReportsExportRef = useRef<HTMLDivElement | null>(null);
+
   return (
-    <div className="space-y-5">
+    <div ref={missionaryReportsExportRef} className="space-y-5">
       {/* Live Cross-Unit Sync Banner for Spiritual Council & Administration */}
       {readOnly && (
         <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 sm:px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -723,6 +726,10 @@ export const MissionaryReportsPanel: React.FC<MissionaryReportsPanelProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span>{t('Excel አውርድ', 'Export Excel')}</span>
             </button>
+            <ExportPhotoButton
+              targetRef={missionaryReportsExportRef}
+              fileName={`የሚሽነሪዎች_ሪፖርት_${selectedYear}_${selectedPeriod}`}
+            />
             <button
               type="button"
               onClick={() => window.print()}
@@ -932,26 +939,26 @@ export const MissionaryReportsPanel: React.FC<MissionaryReportsPanelProps> = ({
             <tbody className="divide-y divide-slate-100">
               {(
                 [
-                  { key: 'q1', labelAm: '1ኛ ሩብ ዓመት', labelEn: '1st Quarter (Q1)', tier: 'quarter' },
-                  { key: 'q2', labelAm: '2ኛ ሩብ ዓመት', labelEn: '2nd Quarter (Q2)', tier: 'quarter' },
+                  { key: 'q1', labelAm: '1ኛ ሩብ ዓመት (ሐምሌ–መስከረም)', labelEn: '1st Quarter (Hamle–Meskerem)', tier: 'quarter' },
+                  { key: 'q2', labelAm: '2ኛ ሩብ ዓመት (ጥቅምት–ታኅሣሥ)', labelEn: '2nd Quarter (Tikimt–Tahsas)', tier: 'quarter' },
                   {
                     key: 'h1',
-                    labelAm: '1ኛ ግማሽ ዓመት (1ኛ + 2ኛ ሩብ)',
-                    labelEn: '1st Half-Year (Q1 + Q2)',
+                    labelAm: '1ኛ ግማሽ ዓመት (ሐምሌ–ታኅሣሥ / Q1+Q2)',
+                    labelEn: '1st Half-Year (Hamle–Tahsas / Q1+Q2)',
                     tier: 'half'
                   },
-                  { key: 'q3', labelAm: '3ኛ ሩብ ዓመት', labelEn: '3rd Quarter (Q3)', tier: 'quarter' },
-                  { key: 'q4', labelAm: '4ኛ ሩብ ዓመት', labelEn: '4th Quarter (Q4)', tier: 'quarter' },
+                  { key: 'q3', labelAm: '3ኛ ሩብ ዓመት (ጥር–መጋቢት)', labelEn: '3rd Quarter (Tir–Megabit)', tier: 'quarter' },
+                  { key: 'q4', labelAm: '4ኛ ሩብ ዓመት (ሚያዝያ–ሰኔ)', labelEn: '4th Quarter (Miyazya–Sene)', tier: 'quarter' },
                   {
                     key: 'h2',
-                    labelAm: '2ኛ ግማሽ ዓመት (3ኛ + 4ኛ ሩብ)',
-                    labelEn: '2nd Half-Year (Q3 + Q4)',
+                    labelAm: '2ኛ ግማሽ ዓመት (ጥር–ሰኔ / Q3+Q4)',
+                    labelEn: '2nd Half-Year (Tir–Sene / Q3+Q4)',
                     tier: 'half'
                   },
                   {
                     key: 'year',
-                    labelAm: 'ሙሉ 1 ዓመት ድምር (1ኛ–4ኛ ሩብ)',
-                    labelEn: 'Full Year Total (Q1–Q4)',
+                    labelAm: 'ሙሉ 1 ዓመት ድምር (ሐምሌ–ሰኔ)',
+                    labelEn: 'Full Year Total (Hamle–Sene)',
                     tier: 'year'
                   }
                 ] as const

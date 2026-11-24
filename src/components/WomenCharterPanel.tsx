@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import {
   Users,
   ShieldCheck,
@@ -44,6 +45,7 @@ export const WomenCharterPanel: React.FC<WomenCharterPanelProps> = ({
     internalBylaws || DEFAULT_WOMEN_INTERNAL_BYLAWS_TEXT
   );
   const [bylawsSavedBanner, setBylawsSavedBanner] = useState(false);
+  const charterExportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setBylawsDraft(internalBylaws || DEFAULT_WOMEN_INTERNAL_BYLAWS_TEXT);
@@ -65,7 +67,7 @@ export const WomenCharterPanel: React.FC<WomenCharterPanelProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div ref={charterExportRef} className="space-y-5">
       {/* Header & Quick Navigation */}
       <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -88,6 +90,12 @@ export const WomenCharterPanel: React.FC<WomenCharterPanelProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <ExportPhotoButton
+              targetRef={charterExportRef}
+              fileName={`የሴቶች_አገልግሎት_አወቃቀርና_ደንብ_${currentYear}`}
+              variant="secondary"
+              compact
+            />
             <button
               type="button"
               onClick={() => onNavigateTab('members')}

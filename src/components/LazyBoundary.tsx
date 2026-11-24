@@ -69,6 +69,26 @@ export class LazyErrorBoundary extends Component<
     };
   }
 
+  componentDidCatch(error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error || '');
+    const isModuleFetchError =
+      /Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk/i.test(
+        msg
+      );
+    if (!isModuleFetchError || typeof window === 'undefined') return;
+    try {
+      const storageKey = 'khc_lazy_reload_ts';
+      const last = Number(window.sessionStorage.getItem(storageKey) || '0');
+      const now = Date.now();
+      if (!last || now - last > 15_000) {
+        window.sessionStorage.setItem(storageKey, String(now));
+        window.location.reload();
+      }
+    } catch {
+      // ignore storage access issues in restricted contexts
+    }
+  }
+
   handleRetry = () => {
     resetFailedLazyModules();
     this.setState((prev) => ({

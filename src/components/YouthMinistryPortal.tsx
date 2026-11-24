@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import { formatDualDateTimeText, getTodayIsoDateTime } from '../utils/ethiopianDate';
 import { DualDateBadge, DualDateInput } from './DualDate';
 import {
@@ -56,6 +57,8 @@ import { useLanguage } from '../context/LanguageContext';
 import { UnifiedPlanManager } from './UnifiedPlanManager';
 import { MinistrySubmissionsPanel } from './MinistrySubmissionsPanel';
 import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface YouthMinistryPortalProps {
   currentYear: string;
@@ -169,6 +172,13 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
     setTimeout(() => setStatusNotice(''), 5000);
   };
 
+  const choirTabRef = useRef<HTMLDivElement>(null);
+  const worshipTabRef = useRef<HTMLDivElement>(null);
+  const discipleshipTabRef = useRef<HTMLDivElement>(null);
+  const youthMembersTabRef = useRef<HTMLDivElement>(null);
+  const youthActivitiesTabRef = useRef<HTMLDivElement>(null);
+  const youthFinancesTabRef = useRef<HTMLDivElement>(null);
+
   // Coordinator PIN & Directives state
   const [coordPinInput, setCoordPinInput] = useState(youthCoordinatorPin);
   const [leaderPinInput, setLeaderPinInput] = useState(youthLeaderPin);
@@ -220,6 +230,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
   const [gRoleTitle, setGRoleTitle] = useState('');
   const [gStatus, setGStatus] = useState('ንቁ');
   const [gNotes, setGNotes] = useState('');
+  const [gPhoto, setGPhoto] = useState<PersonPhotoValue>({});
 
   // Quick-Pick from Youth Members modal
   const [pickContext, setPickContext] = useState<'choir' | 'worship' | 'discipleship' | null>(null);
@@ -238,6 +249,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
   const [mEducation, setMEducation] = useState('');
   const [mStatus, setMStatus] = useState('ንቁ');
   const [mNotes, setMNotes] = useState('');
+  const [mPhoto, setMPhoto] = useState<PersonPhotoValue>({});
 
   // Activities state
   const [activitySearch, setActivitySearch] = useState('');
@@ -280,21 +292,69 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
     });
   }, [churchMembers]);
 
+  const memberPhotoLookup = useMemo(() => {
+    const map = new Map<
+      string,
+      { photoDataUrl?: string; photoStorageKey?: string; photoName?: string; photoUpdatedAt?: string }
+    >();
+    churchMembers.forEach((cm) => {
+      const key = String(cm.name || '').trim().toLowerCase();
+      if (!key) return;
+      if (cm.photoDataUrl || cm.photoStorageKey) {
+        map.set(key, {
+          photoDataUrl: cm.photoDataUrl,
+          photoStorageKey: cm.photoStorageKey,
+          photoName: cm.photoName,
+          photoUpdatedAt: cm.photoUpdatedAt
+        });
+      }
+    });
+    ws.members.forEach((m) => {
+      const key = String(m.name || '').trim().toLowerCase();
+      if (!key) return;
+      if ((m.photoDataUrl || m.photoStorageKey) && !map.has(key)) {
+        map.set(key, {
+          photoDataUrl: m.photoDataUrl,
+          photoStorageKey: m.photoStorageKey,
+          photoName: m.photoName,
+          photoUpdatedAt: m.photoUpdatedAt
+        });
+      }
+    });
+    return map;
+  }, [churchMembers, ws.members]);
+
   // Combined pickable youth pool (ws.members + church youth)
   const pickPool = useMemo(() => {
     const map = new Map<
       string,
-      { key: string; name: string; gender: 'ወ' | 'ሴ'; age?: number | string; phone?: string; chapel?: string }
+      {
+        key: string;
+        name: string;
+        gender: 'ወ' | 'ሴ';
+        age?: number | string;
+        phone?: string;
+        chapel?: string;
+        photoDataUrl?: string;
+        photoStorageKey?: string;
+        photoName?: string;
+        photoUpdatedAt?: string;
+      }
     >();
     ws.members.forEach((m) => {
       const clean = m.name.trim();
       if (!clean) return;
+      const fallback = memberPhotoLookup.get(clean.toLowerCase());
       map.set(clean, {
         key: `ws_${m.id}`,
         name: clean,
         gender: m.gender === 'ሴ' ? 'ሴ' : 'ወ',
         age: m.age,
-        phone: m.phone
+        phone: m.phone,
+        photoDataUrl: m.photoDataUrl || fallback?.photoDataUrl,
+        photoStorageKey: m.photoStorageKey || fallback?.photoStorageKey,
+        photoName: m.photoName || fallback?.photoName,
+        photoUpdatedAt: m.photoUpdatedAt || fallback?.photoUpdatedAt
       });
     });
     youthChurchCandidates.forEach((cm) => {
@@ -306,11 +366,15 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
         gender: cm.gender === 'ሴ' || String(cm.gender).includes('ሴት') ? 'ሴ' : 'ወ',
         age: cm.age,
         phone: cm.phone,
-        chapel: cm.chapel
+        chapel: cm.chapel,
+        photoDataUrl: cm.photoDataUrl,
+        photoStorageKey: cm.photoStorageKey,
+        photoName: cm.photoName,
+        photoUpdatedAt: cm.photoUpdatedAt
       });
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'am'));
-  }, [ws.members, youthChurchCandidates]);
+  }, [ws.members, youthChurchCandidates, memberPhotoLookup]);
 
   // Finance totals
   const totalIncome = useMemo(
@@ -462,7 +526,11 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
         roleOrClass: cm.youthMinistryRole || 'አባል',
         educationOrLevel: cm.educationLevel,
         status: 'ንቁ',
-        notes: cm.chapel ? `ከ${cm.chapel} ቋት` : 'ከዋናው ቋት'
+        notes: cm.chapel ? `ከ${cm.chapel} ቋት` : 'ከዋናው ቋት',
+        photoDataUrl: cm.photoDataUrl,
+        photoStorageKey: cm.photoStorageKey,
+        photoName: cm.photoName,
+        photoUpdatedAt: cm.photoUpdatedAt
       });
     });
 
@@ -507,6 +575,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
     );
     setGStatus(ctx === 'discipleship' ? DISCIPLESHIP_STATUSES[0] : 'ንቁ');
     setGNotes('');
+    setGPhoto({});
   };
 
   const openEditGroupMember = (
@@ -524,6 +593,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
     setGRoleTitle(rec.roleTitle || '');
     setGStatus(rec.status || (ctx === 'discipleship' ? DISCIPLESHIP_STATUSES[0] : 'ንቁ'));
     setGNotes(rec.notes || '');
+    setGPhoto({
+      photoDataUrl: rec.photoDataUrl,
+      photoStorageKey: rec.photoStorageKey,
+      photoName: rec.photoName,
+      photoUpdatedAt: rec.photoUpdatedAt
+    });
   };
 
   const handleSaveGroupMember = (e: React.FormEvent) => {
@@ -546,7 +621,11 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
       roleTitle: gRoleTitle.trim() || undefined,
       status: gStatus.trim() || undefined,
       joinDate: new Date().toISOString().split('T')[0],
-      notes: gNotes.trim() || undefined
+      notes: gNotes.trim() || undefined,
+      photoDataUrl: gPhoto.photoDataUrl,
+      photoStorageKey: gPhoto.photoStorageKey,
+      photoName: gPhoto.photoName,
+      photoUpdatedAt: gPhoto.photoUpdatedAt
     };
 
     onUpdateDepartmentData('youth_ministry', (prev) => {
@@ -687,7 +766,11 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               ? 'መዘምር'
               : undefined,
           status: pickContext === 'discipleship' ? 'በመማር ላይ' : 'ንቁ',
-          joinDate: new Date().toISOString().split('T')[0]
+          joinDate: new Date().toISOString().split('T')[0],
+          photoDataUrl: p.photoDataUrl,
+          photoStorageKey: p.photoStorageKey,
+          photoName: p.photoName,
+          photoUpdatedAt: p.photoUpdatedAt
         });
       });
 
@@ -823,6 +906,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
     setMEducation('');
     setMStatus('ንቁ');
     setMNotes('');
+    setMPhoto({});
     setIsMemberModalOpen(true);
   };
 
@@ -836,6 +920,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
     setMEducation(rec.educationOrLevel || '');
     setMStatus(rec.status || 'ንቁ');
     setMNotes(rec.notes || '');
+    setMPhoto({
+      photoDataUrl: rec.photoDataUrl,
+      photoStorageKey: rec.photoStorageKey,
+      photoName: rec.photoName,
+      photoUpdatedAt: rec.photoUpdatedAt
+    });
     setIsMemberModalOpen(true);
   };
 
@@ -852,7 +942,11 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
       educationOrLevel: mEducation.trim() || undefined,
       status: mStatus,
       joinDate: new Date().toISOString().split('T')[0],
-      notes: mNotes.trim() || undefined
+      notes: mNotes.trim() || undefined,
+      photoDataUrl: mPhoto.photoDataUrl,
+      photoStorageKey: mPhoto.photoStorageKey,
+      photoName: mPhoto.photoName,
+      photoUpdatedAt: mPhoto.photoUpdatedAt
     };
     onUpdateDepartmentData('youth_ministry', (prev) => ({
       ...prev,
@@ -1573,7 +1667,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
 
       {/* 3. CHOIR FELLOWSHIP TAB */}
       {activeTab === 'choirsTab' && (
-        <div className="space-y-4">
+        <div ref={choirTabRef} className="space-y-4">
           <div className="hidden print:block text-center pb-4 mb-4 border-b border-slate-300">
             <h1 className="text-xl font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
             <h2 className="text-base font-semibold">
@@ -1582,12 +1676,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
             <p className="text-xs mt-1">ጠቅላላ አባላት፦ {filteredChoirMembers.length}</p>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 print:hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                   <Music className="w-5 h-5 text-indigo-700" />
-                  <span>{t('የመዘምራን ህብረት', 'Youth Choir Fellowship')}</span>
+                  <span>{t('የመዘምራን ህብረት', 'Youth Choir Fellowship')} — {selectedChoirGroup}</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {t(
@@ -1599,7 +1693,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowNewChoirGroupModal(true)}
-                className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer self-start"
+                className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer self-start print:hidden"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
                 <span>{t('+ አዲስ የመዘምራን ህብረት', '+ New Choir Group')}</span>
@@ -1607,7 +1701,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
             </div>
 
             {/* Choir Group Pills/Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 print:hidden">
               {choirGroups.map((grp) => {
                 const count = choirMembers.filter((m) => m.group === grp).length;
                 const active = selectedChoirGroup === grp;
@@ -1636,7 +1730,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
             </div>
 
             {/* Action Toolbar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100 print:hidden">
               <div className="relative flex-1 max-w-md">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -1674,6 +1768,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                   <Download className="w-3.5 h-3.5" />
                   <span>{t('አውርድ', 'Export')}</span>
                 </button>
+                <ExportPhotoButton
+                  targetRef={choirTabRef}
+                  fileName={`የወጣቶች_መዘምራን_${selectedChoirGroup}_${currentYear}`}
+                  variant="secondary"
+                  compact
+                />
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -1701,6 +1801,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               `No choir members registered in "${selectedChoirGroup}" yet.`
             )}
             roleColumnLabel={t('ድምጽ / ድርሻ', 'Voice / Role')}
+            memberPhotoLookup={memberPhotoLookup}
             onEdit={(m) => openEditGroupMember('choir', m)}
             onDelete={(id) => handleDeleteGroupMember('choir', id)}
             t={t}
@@ -1710,14 +1811,14 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
 
       {/* 4. WORSHIP LEADERS FELLOWSHIP TAB */}
       {activeTab === 'worshipLeadersTab' && (
-        <div className="space-y-4">
+        <div ref={worshipTabRef} className="space-y-4">
           <div className="hidden print:block text-center pb-4 mb-4 border-b border-slate-300">
             <h1 className="text-xl font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
             <h2 className="text-base font-semibold">የወጣቶች አገልግሎት — የመዝሙር መሪዎች ህብረት</h2>
             <p className="text-xs mt-1">ጠቅላላ አባላት፦ {filteredWorshipLeaders.length}</p>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 print:hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1733,7 +1834,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100 print:hidden">
               <div className="flex flex-wrap items-center gap-2 flex-1">
                 <div className="relative flex-1 min-w-[200px] max-w-sm">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1786,6 +1887,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                   <Download className="w-3.5 h-3.5" />
                   <span>{t('አውርድ', 'Export')}</span>
                 </button>
+                <ExportPhotoButton
+                  targetRef={worshipTabRef}
+                  fileName={`የወጣቶች_የመዝሙር_መሪዎች_${currentYear}`}
+                  variant="secondary"
+                  compact
+                />
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -1813,6 +1920,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               'No worship leaders registered yet.'
             )}
             roleColumnLabel={t('የአገልግሎት ድርሻ', 'Role / Instrument')}
+            memberPhotoLookup={memberPhotoLookup}
             onEdit={(m) => openEditGroupMember('worship', m)}
             onDelete={(id) => handleDeleteGroupMember('worship', id)}
             t={t}
@@ -1822,7 +1930,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
 
       {/* 5. DISCIPLESHIP TRAININGS TAB (መቅህማ, ቢቲሲፒ, etc.) */}
       {activeTab === 'discipleshipTab' && (
-        <div className="space-y-4">
+        <div ref={discipleshipTabRef} className="space-y-4">
           <div className="hidden print:block text-center pb-4 mb-4 border-b border-slate-300">
             <h1 className="text-xl font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
             <h2 className="text-base font-semibold">
@@ -1831,12 +1939,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
             <p className="text-xs mt-1">ጠቅላላ ተማሪዎች፦ {filteredDiscipleshipMembers.length}</p>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 print:hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                   <BookOpen className="w-5 h-5 text-teal-700" />
-                  <span>{t('የተለያዩ የደቀ መዝሙርነት ትምህርቶች', 'Youth Discipleship Trainings')}</span>
+                  <span>{t('የተለያዩ የደቀ መዝሙርነት ትምህርቶች', 'Youth Discipleship Trainings')} — {selectedDiscipleshipGroup}</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {t(
@@ -1848,7 +1956,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowNewDiscipleshipModal(true)}
-                className="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer self-start"
+                className="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer self-start print:hidden"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
                 <span>{t('+ አዲስ ትምህርት ፍጠር', '+ New Discipleship Track')}</span>
@@ -1856,7 +1964,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
             </div>
 
             {/* Course Track Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 print:hidden">
               {discipleshipGroups.map((dg) => {
                 const count = discipleshipMembers.filter((m) => m.group === dg).length;
                 const active = selectedDiscipleshipGroup === dg;
@@ -1885,7 +1993,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
             </div>
 
             {/* Toolbar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100 print:hidden">
               <div className="relative flex-1 max-w-md">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -1924,6 +2032,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                   <Download className="w-3.5 h-3.5" />
                   <span>{t('አውርድ', 'Export')}</span>
                 </button>
+                <ExportPhotoButton
+                  targetRef={discipleshipTabRef}
+                  fileName={`የወጣቶች_ደቀመዝሙርነት_${selectedDiscipleshipGroup}_${currentYear}`}
+                  variant="secondary"
+                  compact
+                />
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -1952,6 +2066,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
             )}
             roleColumnLabel={t('የትምህርት ሁኔታ', 'Status')}
             showStatusInsteadOfRole
+            memberPhotoLookup={memberPhotoLookup}
             onEdit={(m) => openEditGroupMember('discipleship', m)}
             onDelete={(id) => handleDeleteGroupMember('discipleship', id)}
             t={t}
@@ -1961,8 +2076,8 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
 
       {/* 6. YOUTH MEMBERS REGISTRY TAB */}
       {activeTab === 'membersTab' && (
-        <div className="space-y-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div ref={youthMembersTabRef} className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 print:hidden">
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -1991,6 +2106,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                 <Download className="w-3.5 h-3.5" />
                 <span>{t('Excel አውርድ', 'Export Excel')}</span>
               </button>
+              <ExportPhotoButton
+                targetRef={youthMembersTabRef}
+                fileName={`የወጣቶች_አባላት_መዝገብ_${currentYear}`}
+                variant="secondary"
+                compact
+              />
               <button
                 type="button"
                 onClick={() => window.print()}
@@ -2011,6 +2132,12 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+              <h3 className="text-sm font-extrabold text-slate-900">
+                {t('የወጣቶች አገልግሎት — የአባላት መዝገብ', 'Youth Ministry Members Registry')} ({filteredMembers.length})
+              </h3>
+              <span className="text-xs text-slate-500 font-semibold">{currentYear} ዓ/ም</span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
@@ -2040,8 +2167,21 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                       <tr key={m.id} className="hover:bg-slate-50/70">
                         <td className="py-2.5 px-3 text-slate-400 font-bold tabular-nums">{idx + 1}</td>
                         <td className="py-2.5 px-3 font-bold text-slate-900">
-                          <div>{m.name}</div>
-                          {m.notes && <div className="text-[11px] text-slate-500 font-normal">{m.notes}</div>}
+                          <div className="flex items-center gap-2.5">
+                            <PersonAvatarBadge
+                              name={m.name}
+                              gender={m.gender}
+                              photoDataUrl={m.photoDataUrl}
+                              photoStorageKey={m.photoStorageKey}
+                              fallbackPhotoDataUrl={memberPhotoLookup.get(m.name.trim().toLowerCase())?.photoDataUrl}
+                              fallbackPhotoStorageKey={memberPhotoLookup.get(m.name.trim().toLowerCase())?.photoStorageKey}
+                              size="sm"
+                            />
+                            <div>
+                              <div>{m.name}</div>
+                              {m.notes && <div className="text-[11px] text-slate-500 font-normal">{m.notes}</div>}
+                            </div>
+                          </div>
                         </td>
                         <td className="py-2.5 px-3 text-center font-bold">
                           <span
@@ -2093,26 +2233,40 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
 
       {/* 7. ACTIVITIES TAB */}
       {activeTab === 'activitiesTab' && (
-        <div className="space-y-4">
+        <div ref={youthActivitiesTabRef} className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={activitySearch}
-                onChange={(e) => setActivitySearch(e.target.value)}
-                placeholder={t('ተግባር ወይም ምድብ ፈልግ...', 'Search activity...')}
-                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-600"
-              />
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900">
+                {t('የወጣቶች አገልግሎት ተግባራት መዝገብ', 'Youth Ministry Activities Log')} ({filteredActivities.length})
+              </h3>
+              <p className="text-[11px] text-slate-500">{currentYear} ዓ/ም</p>
             </div>
-            <button
-              type="button"
-              onClick={openAddActivity}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-800 hover:bg-purple-700 text-white text-xs font-bold cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{t('አዲስ ተግባር መዝግብ', 'Add Activity')}</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={activitySearch}
+                  onChange={(e) => setActivitySearch(e.target.value)}
+                  placeholder={t('ተግባር ወይም ምድብ ፈልግ...', 'Search activity...')}
+                  className="w-full sm:w-56 pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-600"
+                />
+              </div>
+              <ExportPhotoButton
+                targetRef={youthActivitiesTabRef}
+                fileName={`የወጣቶች_አገልግሎት_ተግባራት_${currentYear}`}
+                variant="secondary"
+                compact
+              />
+              <button
+                type="button"
+                onClick={openAddActivity}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-800 hover:bg-purple-700 text-white text-xs font-bold cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t('አዲስ ተግባር መዝግብ', 'Add Activity')}</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2176,7 +2330,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
 
       {/* 8. FINANCES TAB */}
       {activeTab === 'financesTab' && (
-        <div className="space-y-4">
+        <div ref={youthFinancesTabRef} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
               <div className="text-xs font-bold text-emerald-800">{t('ጠቅላላ ገቢ (ብር)', 'Total Income (ETB)')}</div>
@@ -2198,7 +2352,7 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
             <div className="flex flex-wrap items-center gap-2 flex-1">
               <div className="relative flex-1 min-w-[180px] max-w-sm">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -2220,17 +2374,31 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                 <option value="ወጪ">{t('ወጪ ብቻ', 'Expense')}</option>
               </select>
             </div>
-            <button
-              type="button"
-              onClick={openAddFinance}
-              className="px-3.5 py-2 rounded-xl bg-purple-800 hover:bg-purple-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{t('ገቢ / ወጪ መዝግብ', 'Add Finance Record')}</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <ExportPhotoButton
+                targetRef={youthFinancesTabRef}
+                fileName={`የወጣቶች_ፋይናንስ_መዝገብ_${currentYear}`}
+                variant="secondary"
+                compact
+              />
+              <button
+                type="button"
+                onClick={openAddFinance}
+                className="px-3.5 py-2 rounded-xl bg-purple-800 hover:bg-purple-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t('ገቢ / ወጪ መዝግብ', 'Add Finance Record')}</span>
+              </button>
+            </div>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+              <h3 className="text-sm font-extrabold text-slate-900">
+                {t('የወጣቶች አገልግሎት — የገቢና ወጪ ሂሳብ መዝገብ', 'Youth Ministry Financial Ledger')} ({filteredFinances.length})
+              </h3>
+              <span className="text-xs text-slate-500 font-semibold">{currentYear} ዓ/ም</span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
@@ -2361,6 +2529,14 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               </button>
             </div>
             <form onSubmit={handleSaveGroupMember} className="space-y-3 mt-4 text-xs">
+              <PersonPhotoField
+                compact
+                storagePrefix={`youth_${groupModalContext}`}
+                personId={editingGroupMemberId ?? undefined}
+                name={gName}
+                value={gPhoto}
+                onChange={setGPhoto}
+              />
               <div>
                 <label className="block font-bold text-slate-700 mb-1">{t('ሙሉ ስም *', 'Full Name *')}</label>
                 <input
@@ -2668,6 +2844,13 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
                           }}
                           className="rounded border-slate-300"
                         />
+                        <PersonAvatarBadge
+                          name={p.name}
+                          gender={p.gender}
+                          photoDataUrl={p.photoDataUrl}
+                          photoStorageKey={p.photoStorageKey}
+                          size="xs"
+                        />
                         <span className="font-bold text-slate-900">{p.name}</span>
                       </div>
                       <span className="text-[11px] text-slate-500">
@@ -2725,6 +2908,14 @@ export const YouthMinistryPortal: React.FC<YouthMinistryPortalProps> = ({
               </button>
             </div>
             <form onSubmit={handleSaveMember} className="space-y-3 mt-4 text-xs">
+              <PersonPhotoField
+                compact
+                storagePrefix="youth_member"
+                personId={editingMemberId ?? undefined}
+                name={mName}
+                value={mPhoto}
+                onChange={setMPhoto}
+              />
               <div>
                 <label className="block font-bold text-slate-700 mb-1">{t('ሙሉ ስም *', 'Full Name *')}</label>
                 <input
@@ -3052,6 +3243,7 @@ interface GroupMembersTableProps {
   emptyText: string;
   roleColumnLabel: string;
   showStatusInsteadOfRole?: boolean;
+  memberPhotoLookup?: Map<string, { photoDataUrl?: string; photoStorageKey?: string }>;
   onEdit: (m: YouthGroupMemberRecord) => void;
   onDelete: (id: number) => void;
   t: (am: string, en: string) => string;
@@ -3062,6 +3254,7 @@ const GroupMembersTable: React.FC<GroupMembersTableProps> = ({
   emptyText,
   roleColumnLabel,
   showStatusInsteadOfRole = false,
+  memberPhotoLookup,
   onEdit,
   onDelete,
   t
@@ -3094,8 +3287,21 @@ const GroupMembersTable: React.FC<GroupMembersTableProps> = ({
                 <tr key={m.id} className="hover:bg-slate-50/70">
                   <td className="py-2.5 px-3 text-slate-400 font-bold tabular-nums">{idx + 1}</td>
                   <td className="py-2.5 px-3 font-bold text-slate-900">
-                    <div>{m.name}</div>
-                    {m.notes && <div className="text-[11px] text-slate-500 font-normal">{m.notes}</div>}
+                    <div className="flex items-center gap-2.5">
+                      <PersonAvatarBadge
+                        name={m.name}
+                        gender={m.gender}
+                        photoDataUrl={m.photoDataUrl}
+                        photoStorageKey={m.photoStorageKey}
+                        fallbackPhotoDataUrl={memberPhotoLookup?.get(m.name.trim().toLowerCase())?.photoDataUrl}
+                        fallbackPhotoStorageKey={memberPhotoLookup?.get(m.name.trim().toLowerCase())?.photoStorageKey}
+                        size="sm"
+                      />
+                      <div>
+                        <div>{m.name}</div>
+                        {m.notes && <div className="text-[11px] text-slate-500 font-normal">{m.notes}</div>}
+                      </div>
+                    </div>
                   </td>
                   <td className="py-2.5 px-3 text-center font-bold">
                     <span

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import { BookOpen, Plus, Trash2, CheckCircle2, CheckSquare, Square, Layers, Sparkles, Printer, Download, Upload } from 'lucide-react';
 import { Role } from '../types';
 import { downloadCSV, readCSVFile } from '../utils/csv';
@@ -27,6 +28,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({
   const [assigningSubject, setAssigningSubject] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'subjects' | 'byClass'>('subjects');
   const [selectedClassForView, setSelectedClassForView] = useState<string>(classList[0]);
+  const subjectsExportRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = currentUserRole === 'admin' || currentUserRole === 'children_coordinator';
 
@@ -130,7 +132,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div ref={subjectsExportRef} className="space-y-6 max-w-4xl">
       {/* Printable Sheet Header */}
       <div className="hidden print:block text-center pb-4 mb-4 border-b border-slate-300">
         <h1 className="text-xl font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
@@ -141,7 +143,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({
       </div>
 
       {/* Top Controls Card */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm print:hidden">
+      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-5 mb-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center">
@@ -157,7 +159,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap print:hidden">
             <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold">
               <button
                 type="button"
@@ -178,6 +180,13 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({
                 በክፍል ደረጃ ምረጥ
               </button>
             </div>
+
+            <ExportPhotoButton
+              targetRef={subjectsExportRef}
+              fileName="የትምህርት_ዓይነቶችና_ምደባ"
+              variant="secondary"
+              compact
+            />
 
             <button
               onClick={() => window.print()}

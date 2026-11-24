@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { Music, UserPlus, FolderPlus, Trash2, Download, Upload, Printer } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { Music, UserPlus, FolderPlus, Trash2, Download, Upload, Printer, Edit2 } from 'lucide-react';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 import { ChoirMember, Role } from '../types';
 import { downloadCSV, readCSVFile } from '../utils/csv';
 
@@ -8,6 +11,7 @@ interface ChoirTabProps {
   members: ChoirMember[];
   onAddMember: (member: Omit<ChoirMember, 'id'>) => void;
   onAddMembersBatch?: (members: Omit<ChoirMember, 'id'>[]) => void;
+  onUpdateMember?: (member: ChoirMember) => void;
   onDeleteMember: (id: number) => void;
   onAddGroup: (groupName: string) => void;
   currentUserRole: Role | null;
@@ -18,6 +22,7 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
   members,
   onAddMember,
   onAddMembersBatch,
+  onUpdateMember,
   onDeleteMember,
   onAddGroup,
   currentUserRole
@@ -25,32 +30,77 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
   const [selectedGroup, setSelectedGroup] = useState<string>(groups[0] || 'ሀ መዘምራን');
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [editingMember, setEditingMember] = useState<ChoirMember | null>(null);
 
   // Form states
   const [name, setName] = useState('');
   const [age, setAge] = useState('10');
   const [gender, setGender] = useState('ሴ');
   const [phone, setPhone] = useState('');
+  const [photoValue, setPhotoValue] = useState<PersonPhotoValue>({});
   const [newGroupName, setNewGroupName] = useState('');
 
   const filteredMembers = members.filter((m) => m.group === selectedGroup);
+  const choirExportRef = useRef<HTMLDivElement>(null);
 
-  const handleAddMember = (e: React.FormEvent) => {
+  const openAddModal = () => {
+    setEditingMember(null);
+    setName('');
+    setAge('10');
+    setGender('ሴ');
+    setPhone('');
+    setPhotoValue({});
+    setShowMemberModal(true);
+  };
+
+  const openEditModal = (m: ChoirMember) => {
+    setEditingMember(m);
+    setName(m.name);
+    setAge(String(m.age || '10'));
+    setGender(m.gender || 'ሴ');
+    setPhone(m.phone || '');
+    setPhotoValue({
+      photoDataUrl: m.photoDataUrl,
+      photoStorageKey: m.photoStorageKey,
+      photoName: m.photoName,
+      photoUpdatedAt: m.photoUpdatedAt
+    });
+    setShowMemberModal(true);
+  };
+
+  const handleSaveMember = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       alert('እባክዎን የአባሉን ሙሉ ስም ያስገቡ!');
       return;
     }
-    onAddMember({
-      name: name.trim(),
-      age: age.trim() || '10',
-      gender,
-      group: selectedGroup,
-      phone: phone.trim()
-    });
+    if (editingMember && onUpdateMember) {
+      onUpdateMember({
+        ...editingMember,
+        name: name.trim(),
+        age: age.trim() || '10',
+        gender,
+        phone: phone.trim(),
+        photoDataUrl: photoValue.photoDataUrl,
+        photoStorageKey: photoValue.photoStorageKey,
+        photoName: photoValue.photoName,
+        photoUpdatedAt: photoValue.photoUpdatedAt
+      });
+    } else {
+      onAddMember({
+        name: name.trim(),
+        age: age.trim() || '10',
+        gender,
+        group: selectedGroup,
+        phone: phone.trim(),
+        ...photoValue
+      });
+    }
+    setEditingMember(null);
     setName('');
     setAge('10');
     setPhone('');
+    setPhotoValue({});
     setShowMemberModal(false);
   };
 
@@ -125,7 +175,7 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div ref={choirExportRef} className="space-y-6">
       {/* Printable Sheet Header */}
       <div className="hidden print:block text-center pb-4 mb-4 border-b border-slate-300">
         <h1 className="text-xl font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
@@ -137,7 +187,7 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
       </div>
 
       {/* Controls */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm print:hidden">
+      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <Music className="w-5 h-5 text-indigo-600" />
@@ -164,9 +214,9 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
             <button
-              onClick={() => setShowMemberModal(true)}
+              onClick={openAddModal}
               className="bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
             >
               <UserPlus className="w-3.5 h-3.5" />
@@ -182,6 +232,13 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
                 + አዲስ ቡድን ፍጠር
               </button>
             )}
+
+            <ExportPhotoButton
+              targetRef={choirExportRef}
+              fileName={`የመዘምራን_ዝርዝር_${selectedGroup}`}
+              variant="secondary"
+              compact
+            />
 
             <button
               onClick={() => window.print()}
@@ -242,7 +299,16 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
                       {idx + 1}
                     </td>
                     <td className="py-2.5 px-4 border-r border-slate-200 text-left font-bold text-slate-900">
-                      {m.name}
+                      <div className="flex items-center gap-2">
+                        <PersonAvatarBadge
+                          name={m.name}
+                          gender={m.gender}
+                          photoDataUrl={m.photoDataUrl}
+                          photoStorageKey={m.photoStorageKey}
+                          size="sm"
+                        />
+                        <span>{m.name}</span>
+                      </div>
                     </td>
                     <td className="py-2.5 px-3 border-r border-slate-200">{m.age}</td>
                     <td className="py-2.5 px-3 border-r border-slate-200">
@@ -265,17 +331,29 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
                       {m.phone || '-'}
                     </td>
                     <td className="py-2.5 px-3 print:hidden">
-                      <button
-                        onClick={() => {
-                          if (confirm(`${m.name} የተባለውን አባል መሰረዝ ይፈልጋሉ?`)) {
-                            onDeleteMember(m.id);
-                          }
-                        }}
-                        className="text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 transition"
-                        title="አባል ሰርዝ"
-                      >
-                        <Trash2 className="w-4 h-4 mx-auto" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        {onUpdateMember && (
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(m)}
+                            className="text-indigo-600 hover:text-indigo-800 p-1 rounded hover:bg-indigo-50 transition cursor-pointer"
+                            title="አባል / ፎቶ አርትዕ"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (confirm(`${m.name} የተባለውን አባል መሰረዝ ይፈልጋሉ?`)) {
+                              onDeleteMember(m.id);
+                            }
+                          }}
+                          className="text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 transition"
+                          title="አባል ሰርዝ"
+                        >
+                          <Trash2 className="w-4 h-4 mx-auto" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -285,14 +363,16 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
         </div>
       </div>
 
-      {/* Add Member Modal */}
+      {/* Add / Edit Member Modal */}
       {showMemberModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900 mb-1">አዲስ አባል አስገባ</h3>
-            <p className="text-xs text-slate-500 mb-4">ቡድን፦ {selectedGroup}</p>
+            <h3 className="text-lg font-bold text-slate-900 mb-1">
+              {editingMember ? 'የአባል መረጃ አርትዕ' : 'አዲስ አባል አስገባ'}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">ቡድን፦ {editingMember?.group || selectedGroup}</p>
 
-            <form onSubmit={handleAddMember} className="space-y-4">
+            <form onSubmit={handleSaveMember} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   የአባሉ ሙሉ ስም፦
@@ -354,6 +434,15 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
                 />
               </div>
 
+              <PersonPhotoField
+                compact
+                storagePrefix="choir_member"
+                personId={editingMember?.id}
+                name={name}
+                value={photoValue}
+                onChange={setPhotoValue}
+              />
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -366,7 +455,7 @@ export const ChoirTab: React.FC<ChoirTabProps> = ({
                   type="submit"
                   className="px-4 py-2 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded-xl font-semibold shadow"
                 >
-                  መዝግብ
+                  {editingMember ? 'አስቀምጥ' : 'መዝግብ'}
                 </button>
               </div>
             </form>

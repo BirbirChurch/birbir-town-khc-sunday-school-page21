@@ -5,6 +5,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { AnnualPlanItem } from '../types';
 import { generateUniqueId } from './idGenerator';
 import { AppLanguage } from './i18n';
+import { getPlanYearSpanLabel } from './planExecutionRollup';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -15,50 +16,50 @@ export const PLAN_PERIOD_META: Record<
   { am: string; en: string; shortAm: string; shortEn: string }
 > = {
   year: {
-    am: 'የዓመት ዕቅድ (ሙሉ ዓመት)',
-    en: 'Full Year (Annual)',
+    am: 'የዓመት ዕቅድ (ሐምሌ–ሰኔ)',
+    en: 'Full Plan Year (Hamle–Sene)',
     shortAm: 'ሙሉ ዓመት',
     shortEn: 'Annual'
   },
   half: {
-    am: 'ግማሽ ዓመት (1ኛ + 2ኛ ሩብ ዓመት)',
-    en: 'Half Year (H1)',
+    am: '1ኛ ግማሽ ዓመት (ሐምሌ–ታኅሣሥ)',
+    en: 'Half Year (Hamle–Tahsas)',
     shortAm: 'ግማሽ ዓመት',
     shortEn: 'Half Year'
   },
   h1: {
-    am: '1ኛ ግማሽ ዓመት (Q1 + Q2)',
-    en: '1st Half-Year (Q1 + Q2)',
+    am: '1ኛ ግማሽ ዓመት (ሐምሌ–ታኅሣሥ / Q1+Q2)',
+    en: '1st Half-Year (Hamle–Tahsas / Q1+Q2)',
     shortAm: '1ኛ ግማሽ',
     shortEn: 'H1 (Q1–Q2)'
   },
   h2: {
-    am: '2ኛ ግማሽ ዓመት (Q3 + Q4)',
-    en: '2nd Half-Year (Q3 + Q4)',
+    am: '2ኛ ግማሽ ዓመት (ጥር–ሰኔ / Q3+Q4)',
+    en: '2nd Half-Year (Tir–Sene / Q3+Q4)',
     shortAm: '2ኛ ግማሽ',
     shortEn: 'H2 (Q3–Q4)'
   },
   q1: {
     am: '1ኛ ሩብ ዓመት (ሐምሌ–መስከረም)',
-    en: '1st Quarter (Q1)',
+    en: '1st Quarter (Hamle–Meskerem)',
     shortAm: '1ኛ ሩብ',
     shortEn: 'Q1'
   },
   q2: {
-    am: '2ኛ ሩብ ዓመት (ጥቅምት–ታህሳስ)',
-    en: '2nd Quarter (Q2)',
+    am: '2ኛ ሩብ ዓመት (ጥቅምት–ታኅሣሥ)',
+    en: '2nd Quarter (Tikimt–Tahsas)',
     shortAm: '2ኛ ሩብ',
     shortEn: 'Q2'
   },
   q3: {
     am: '3ኛ ሩብ ዓመት (ጥር–መጋቢት)',
-    en: '3rd Quarter (Q3)',
+    en: '3rd Quarter (Tir–Megabit)',
     shortAm: '3ኛ ሩብ',
     shortEn: 'Q3'
   },
   q4: {
     am: '4ኛ ሩብ ዓመት (ሚያዝያ–ሰኔ)',
-    en: '4th Quarter (Q4)',
+    en: '4th Quarter (Miyazya–Sene)',
     shortAm: '4ኛ ሩብ',
     shortEn: 'Q4'
   }
@@ -207,10 +208,11 @@ export const buildPlanPeriodSummaryText = (
   const totalDone = items.reduce((s, it) => s + getPlanDoneForPeriod(it, period), 0);
   const pct = totalTarget > 0 ? Math.round((totalDone / totalTarget) * 100) : 0;
 
+  const yearSpanLabel = getPlanYearSpanLabel(year, lang);
   const header =
     lang === 'en'
-      ? `${unitName} — ${mode === 'execution' ? 'Execution Report' : 'Action Plan'} (${year} E.C.) · Period: ${pLabel}`
-      : `${unitName} — ${mode === 'execution' ? 'የክንውን ሪፖርት' : 'የአገልግሎት ዕቅድ'} (${year} ዓ/ም) · ወቅት፦ ${pLabel}`;
+      ? `${unitName} — ${mode === 'execution' ? 'Execution Report' : 'Action Plan'} (${yearSpanLabel}) · Period: ${pLabel}`
+      : `${unitName} — ${mode === 'execution' ? 'የክንውን ሪፖርት' : 'የአገልግሎት ዕቅድ'} (${yearSpanLabel}) · ወቅት፦ ${pLabel}`;
 
   const totalsLine =
     mode === 'execution'
@@ -226,7 +228,19 @@ export const buildPlanPeriodSummaryText = (
     const done = getPlanDoneForPeriod(it, period);
     if (mode === 'execution') {
       const rowPct = target > 0 ? Math.round((done / target) * 100) : 0;
-      return `${idx + 1}. ${it.task} (${it.unit}) — ${lang === 'en' ? 'Plan' : 'ዕቅድ'}: ${target}, ${lang === 'en' ? 'Done' : 'ክንውን'}: ${done} (${rowPct}%)`;
+      const h1Done = (Number(it.q1Done) || 0) + (Number(it.q2Done) || 0);
+      const h2Done = (Number(it.q3Done) || 0) + (Number(it.q4Done) || 0);
+      const logCount = (it.executionLogs || []).length;
+      const extraInfo =
+        period === 'year'
+          ? ` [Q1:${it.q1Done || 0} Q2:${it.q2Done || 0} → H1:${h1Done} | Q3:${it.q3Done || 0} Q4:${it.q4Done || 0} → H2:${h2Done}]`
+          : period === 'h1'
+          ? ` [Q1:${it.q1Done || 0} + Q2:${it.q2Done || 0}]`
+          : period === 'h2'
+          ? ` [Q3:${it.q3Done || 0} + Q4:${it.q4Done || 0}]`
+          : '';
+      const logBadge = logCount > 0 ? ` · ${logCount} ${lang === 'en' ? 'logs' : 'መዝገቦች'}` : '';
+      return `${idx + 1}. ${it.task} (${it.unit}) — ${lang === 'en' ? 'Plan' : 'ዕቅድ'}: ${target}, ${lang === 'en' ? 'Done' : 'ክንውን'}: ${done} (${rowPct}%)${extraInfo}${logBadge}`;
     }
     return `${idx + 1}. ${it.task} (${it.unit}) — ${lang === 'en' ? 'Target' : 'ዕቅድ'}: ${target}${it.role ? ` [${it.role}]` : ''}`;
   });

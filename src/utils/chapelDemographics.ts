@@ -298,3 +298,53 @@ export const computeChapelYouthWomenStats = (
 
   return result;
 };
+
+export interface MemberAgeCohortCounts {
+  children0to14: number;
+  youth15to29: number;
+  adults30to59: number;
+  seniors60Plus: number;
+  total: number;
+}
+
+const parseMemberAgeWithFallback = (rawAge: unknown, refYear: number): number => {
+  let numAge = parseMemberNumericAge(rawAge as number | string | undefined, refYear);
+  if (numAge === null && rawAge !== undefined && rawAge !== null) {
+    const str = String(rawAge).trim();
+    const dateMatch = str.match(/\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.](\d{2})\b/);
+    if (dateMatch) {
+      const yy = parseInt(dateMatch[1], 10);
+      const y = yy <= 30 ? 2000 + yy : 1900 + yy;
+      const currentGregYear = new Date().getFullYear();
+      numAge = y <= refYear ? Math.max(0, refYear - y) : Math.max(0, currentGregYear - y);
+    }
+  }
+  return numAge === null ? 35 : numAge;
+};
+
+export const computeMemberAgeCohorts = (
+  churchMembers: ChurchMember[],
+  refYear: number = 2018
+): MemberAgeCohortCounts => {
+  let children0to14 = 0;
+  let youth15to29 = 0;
+  let adults30to59 = 0;
+  let seniors60Plus = 0;
+
+  (churchMembers || []).forEach((m) => {
+    const numAge = parseMemberAgeWithFallback(m.age, refYear);
+    if (numAge <= 14) children0to14 += 1;
+    else if (numAge <= 29) youth15to29 += 1;
+    else if (numAge <= 59) adults30to59 += 1;
+    else seniors60Plus += 1;
+  });
+
+  return {
+    children0to14,
+    youth15to29,
+    adults30to59,
+    seniors60Plus,
+    total: (churchMembers || []).length
+  };
+};
+

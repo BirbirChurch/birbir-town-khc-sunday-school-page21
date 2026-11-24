@@ -1,5 +1,6 @@
-import { ChurchHRRecord, ChurchMember } from '../types';
+import { ChurchChild, ChurchHRRecord, ChurchMember } from '../types';
 import { normalizeAmharicSearchText } from './amharicSearchAndChapel';
+import { getRootFamilyBaseCode, normalizeCodeForLookup } from './memberCodeGenerator';
 
 const HONORIFIC_PREFIXES = [
   'ወንጌላዊት',
@@ -232,4 +233,256 @@ export function getHRRoleTitles(
         .filter((r) => r && r !== placeholderText)
     )
   );
+}
+
+export interface ServantChurchFamilyResolution {
+  selfMember?: ChurchMember;
+  familyCode?: string;
+  chapel?: string;
+  isManuallyLinked: boolean;
+  familyMembers: ChurchMember[];
+  familyChildren: ChurchChild[];
+  detectedSpouse?: ChurchMember;
+  detectedChildren: {
+    key: string;
+    name: string;
+    gender: 'ወ' | 'ሴ';
+    ageOrBirthDate?: string;
+    memberCode?: string;
+    linkedMemberId?: number;
+    linkedChildId?: number;
+    photoDataUrl?: string;
+    photoStorageKey?: string;
+    photoName?: string;
+    photoUpdatedAt?: string;
+    source: 'members' | 'children';
+  }[];
+}
+
+const isSpouseRelation = (relation?: string, selfGender?: string, candidateGender?: string): boolean => {
+  const rel = normalizeAmharicSearchText(relation);
+  if (!rel) return false;
+  if (
+    rel.includes('ሚስት') ||
+    rel.includes('ባል') ||
+    rel.includes('ባለቤት') ||
+    rel.includes('የትዳር') ||
+    rel.includes('spouse') ||
+    rel.includes('wife') ||
+    rel.includes('husband')
+  ) {
+    return true;
+  }
+  if ((rel.includes('አባወራ') || rel.includes('እማወራ')) && selfGender && candidateGender && selfGender !== candidateGender) {
+    return true;
+  }
+  return false;
+};
+
+const isChildRelationOrAge = (member: ChurchMember): boolean => {
+  const rel = normalizeAmharicSearchText(member.relationToHead);
+  if (rel.includes('ልጅ') || rel.includes('child') || rel.includes('son') || rel.includes('daughter')) {
+    return true;
+  }
+  const ageNum = Number(member.age);
+  if (Number.isFinite(ageNum) && ageNum >= 0 && ageNum <= 25 && !isSpouseRelation(member.relationToHead)) {
+    return true;
+  }
+  return false;
+};
+
+export function resolveServantChurchFamily(
+  record: Pick<ChurchHRRecord, 'name' | 'gender' | 'spouseName' | 'linkedMemberId' | 'linkedMemberCode' | 'linkedFamilyCode'>,
+  churchMembers: ChurchMember[] = [],
+  churchChildren: ChurchChild[] = []
+): ServantChurchFamilyResolution {
+  let selfMember: ChurchMember | undefined;
+  let isManuallyLinked = false;
+
+  if (record.linkedMemberId !== undefined) {
+    selfMember = churchMembers.find((m) => m.id === record.linkedMemberId);
+    if (selfMember) isManuallyLinked = true;
+  }
+  if (!selfMember && record.linkedMemberCode) {
+    const targetCode = normalizeCodeForLookup(record.linkedMemberCode);
+    if (targetCode) {
+      selfMember = churchMembers.find((m) => normalizeCodeForLookup(m.memberCode) === targetCode);
+      if (selfMember) isManuallyLinked = true;
+    }
+  }
+  if (!selfMember) {
+    selfMember = findMatchingChurchMemberForHR(record.name, churchMembers).member;
+  }
+
+  const rawFamilyBase =
+    record.linkedFamilyCode ||
+    selfMember?.familyCode ||
+    getRootFamilyBaseCode(selfMember?.memberCode) ||
+    '';
+  const normFamilyBase = normalizeCodeForLookup(rawFamilyBase);
+
+  const servantStripped = stripEthiopianHonorificTitles(record.name);
+  const spouseStripped = stripEthiopianHonorificTitles(record.spouseName);
+
+  const memberMatchesFamily = (m: ChurchMember): boolean => {
+    if (selfMember && m.id === selfMember.id) return false;
+    if (normFamilyBase) {
+      const mFamilyNorm = normalizeCodeForLookup(m.familyCode || getRootFamilyBaseCode(m.memberCode));
+      if (mFamilyNorm && mFamilyNorm === normFamilyBase) return true;
+    }
+    if (servantStripped && servantStripped.split(' ').length >= 2) {
+      const parentStripped = stripEthiopianHonorificTitles(m.parentName);
+      if (parentStripped && parentStripped === servantStripped) return true;
+    }
+    return false;
+  };
+
+  const familyMembersRaw = churchMembers.filter(memberMatchesFamily);
+
+  // Deduplicate by member id and sort spouse -> children -> others
+  const selfGender = selfMember?.gender || record.gender;
+  const familyMembers = [...familyMembersRaw].sort((a, b) => {
+    const aSpouse = isSpouseRelation(a.relationToHead, selfGender, a.gender) ? 0 : 1;
+    const bSpouse = isSpouseRelation(b.relationToHead, selfGender, b.gender) ? 0 : 1;
+    if (aSpouse !== bSpouse) return aSpouse - bSpouse;
+    const ageA = Number(a.age) || 0;
+    const ageB = Number(b.age) || 0;
+    return ageB - ageA;
+  });
+
+  const detectedSpouse =
+    familyMembers.find((m) => isSpouseRelation(m.relationToHead, selfGender, m.gender)) ||
+    (spouseStripped
+      ? familyMembers.find((m) => stripEthiopianHonorificTitles(m.name) === spouseStripped)
+      : undefined) ||
+    familyMembers.find((m) => {
+      const ageNum = Number(m.age);
+      return Number.isFinite(ageNum) && ageNum >= 18 && m.gender && selfGender && m.gender !== selfGender;
+    });
+
+  // Match children from churchChildren database
+  const matchingChurchChildren = churchChildren.filter((c) => {
+    if (normFamilyBase) {
+      const cFamilyNorm = normalizeCodeForLookup(c.familyCode || getRootFamilyBaseCode(c.memberCode));
+      if (cFamilyNorm && cFamilyNorm === normFamilyBase) return true;
+    }
+    const cParentStripped = stripEthiopianHonorificTitles(c.parentName);
+    if (cParentStripped && servantStripped && servantStripped.split(' ').length >= 2) {
+      if (cParentStripped === servantStripped) return true;
+    }
+    if (cParentStripped && spouseStripped && spouseStripped.split(' ').length >= 2) {
+      if (cParentStripped === spouseStripped) return true;
+    }
+    return false;
+  });
+
+  // Deduplicate children shown inside churchChildren vs already listed in churchMembers
+  const existingMemberChildKeys = new Set<string>();
+  familyMembers.forEach((m) => {
+    const codeKey = normalizeCodeForLookup(m.memberCode);
+    if (codeKey) existingMemberChildKeys.add(`code:${codeKey}`);
+    const nKey = stripEthiopianHonorificTitles(m.name);
+    if (nKey) existingMemberChildKeys.add(`name:${nKey}`);
+  });
+
+  const familyChildren = matchingChurchChildren.filter((c) => {
+    const codeKey = normalizeCodeForLookup(c.memberCode);
+    if (codeKey && existingMemberChildKeys.has(`code:${codeKey}`)) return false;
+    const nKey = stripEthiopianHonorificTitles(c.name);
+    if (nKey && existingMemberChildKeys.has(`name:${nKey}`)) return false;
+    return true;
+  });
+
+  const detectedChildren: ServantChurchFamilyResolution['detectedChildren'] = [];
+  const seenChildNames = new Set<string>();
+
+  familyMembers.forEach((m) => {
+    if (detectedSpouse && m.id === detectedSpouse.id) return;
+    if (!isChildRelationOrAge(m) && isSpouseRelation(m.relationToHead)) return;
+    if (!isChildRelationOrAge(m) && Number(m.age) >= 35) return;
+    const nKey = stripEthiopianHonorificTitles(m.name) || String(m.id);
+    if (seenChildNames.has(nKey)) return;
+    seenChildNames.add(nKey);
+    detectedChildren.push({
+      key: `m_${m.id}`,
+      name: m.name,
+      gender: m.gender === 'ሴ' ? 'ሴ' : 'ወ',
+      ageOrBirthDate: m.age !== undefined && String(m.age).trim() !== '' ? `${m.age} ዓመት` : undefined,
+      memberCode: m.memberCode,
+      linkedMemberId: m.id,
+      photoDataUrl: m.photoDataUrl,
+      photoStorageKey: m.photoStorageKey,
+      photoName: m.photoName,
+      photoUpdatedAt: m.photoUpdatedAt,
+      source: 'members'
+    });
+  });
+
+  matchingChurchChildren.forEach((c) => {
+    const nKey = stripEthiopianHonorificTitles(c.name) || String(c.id);
+    if (seenChildNames.has(nKey)) return;
+    seenChildNames.add(nKey);
+    detectedChildren.push({
+      key: `c_${c.id}`,
+      name: c.name,
+      gender: c.gender === 'ሴ' ? 'ሴ' : 'ወ',
+      ageOrBirthDate: c.age !== undefined && String(c.age).trim() !== '' ? `${c.age} ዓመት` : undefined,
+      memberCode: c.memberCode,
+      linkedChildId: c.id,
+      photoDataUrl: c.photoDataUrl,
+      photoStorageKey: c.photoStorageKey,
+      photoName: c.photoName,
+      photoUpdatedAt: c.photoUpdatedAt,
+      source: 'children'
+    });
+  });
+
+  return {
+    selfMember,
+    familyCode: rawFamilyBase || undefined,
+    chapel: selfMember?.chapel || familyMembers[0]?.chapel || familyChildren[0]?.chapel,
+    isManuallyLinked,
+    familyMembers,
+    familyChildren,
+    detectedSpouse,
+    detectedChildren
+  };
+}
+
+export function searchChurchMembersForServantLink(
+  query: string,
+  churchMembers: ChurchMember[] = []
+): { member: ChurchMember; familyCount: number }[] {
+  const qNorm = normalizeAmharicSearchText(query);
+  const qRaw = String(query || '').trim().toLowerCase();
+  if (!qNorm && !qRaw) return [];
+
+  // Precompute family counts per base code
+  const familyCounts = new Map<string, number>();
+  churchMembers.forEach((m) => {
+    const base = normalizeCodeForLookup(m.familyCode || getRootFamilyBaseCode(m.memberCode));
+    if (base) {
+      familyCounts.set(base, (familyCounts.get(base) || 0) + 1);
+    }
+  });
+
+  return churchMembers
+    .filter((m) => {
+      const nNorm = normalizeAmharicSearchText(m.name);
+      const codeNorm = normalizeCodeForLookup(m.memberCode);
+      const famNorm = normalizeCodeForLookup(m.familyCode);
+      const phoneStr = String(m.phone || '').toLowerCase();
+      return (
+        (qNorm && nNorm.includes(qNorm)) ||
+        (qRaw && (codeNorm.includes(qRaw.replace(/\s+/g, '')) || famNorm.includes(qRaw.replace(/\s+/g, '')) || phoneStr.includes(qRaw)))
+      );
+    })
+    .slice(0, 15)
+    .map((member) => {
+      const base = normalizeCodeForLookup(member.familyCode || getRootFamilyBaseCode(member.memberCode));
+      return {
+        member,
+        familyCount: base ? familyCounts.get(base) || 1 : 1
+      };
+    });
 }

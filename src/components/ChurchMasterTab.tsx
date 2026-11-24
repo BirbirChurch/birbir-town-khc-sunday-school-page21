@@ -75,6 +75,7 @@ import {
   ChurchMemberBreakdownSection,
   SpiritualFilterValue
 } from './ChurchMemberBreakdownSection';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import {
   canonicalizeEducationLevel,
   canonicalizeOccupation,
@@ -90,6 +91,8 @@ import {
   SUGGESTED_SERVICE_ROLES,
   SUGGESTED_SPIRITUAL_COURSES
 } from '../utils/memberMinistryProfile';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface ChurchMasterTabProps {
   currentYear: string;
@@ -145,6 +148,10 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   onOpenTransliterator
 }) => {
   const [localScriptMode, setLocalScriptMode] = useState<NameScriptMode>('am');
+  const ageStatsCardRef = useRef<HTMLDivElement | null>(null);
+  const chapelSummaryCardRef = useRef<HTMLDivElement | null>(null);
+  const evangChapelCardRef = useRef<HTMLDivElement | null>(null);
+  const membersTableRef = useRef<HTMLDivElement | null>(null);
   const activeNameMode: NameScriptMode = nameScriptMode ?? localScriptMode;
   const setActiveNameMode = (mode: NameScriptMode) => {
     setLocalScriptMode(mode);
@@ -212,6 +219,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
   const [formRelation, setFormRelation] = useState<string>('');
   const [formWomenCategory, setFormWomenCategory] = useState<'auto' | 'married' | 'female_head' | 'other'>('auto');
   const [formFamilyCode, setFormFamilyCode] = useState<string>('');
+  const [formPhoto, setFormPhoto] = useState<PersonPhotoValue>({});
   const [copiedCodeId, setCopiedCodeId] = useState<number | null>(null);
 
   React.useEffect(() => {
@@ -1108,6 +1116,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormRelation('');
     setFormWomenCategory('auto');
     setFormFamilyCode('');
+    setFormPhoto({});
     setIsAddModalOpen(true);
   };
 
@@ -1137,6 +1146,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormRelation('የቤተሰብ አባል');
     setFormWomenCategory('auto');
     setFormFamilyCode('');
+    setFormPhoto({});
     if (codeStr) {
       const matches = findAllMatchingMembersByCode(effectiveMembers, codeStr, officialLoggedInChapel);
       if (matches.length === 1) {
@@ -1182,6 +1192,12 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
     setFormRelation(cleanMember.relationToHead || '');
     setFormWomenCategory(cleanMember.womenCategory || 'auto');
     setFormFamilyCode(cleanMember.familyCode || '');
+    setFormPhoto({
+      photoDataUrl: cleanMember.photoDataUrl,
+      photoStorageKey: cleanMember.photoStorageKey,
+      photoName: cleanMember.photoName,
+      photoUpdatedAt: cleanMember.photoUpdatedAt
+    });
     setIsAddModalOpen(true);
   };
 
@@ -1306,7 +1322,11 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       youthMinistryRole: editingMember?.youthMinistryRole,
       familyCode: resolvedFamilyCode,
       memberCode: shouldReassignCodeOnEdit ? undefined : editingMember?.memberCode,
-      registeredDate: editingMember?.registeredDate || new Date().toISOString().split('T')[0]
+      registeredDate: editingMember?.registeredDate || new Date().toISOString().split('T')[0],
+      photoDataUrl: formPhoto.photoDataUrl,
+      photoStorageKey: formPhoto.photoStorageKey,
+      photoName: formPhoto.photoName,
+      photoUpdatedAt: formPhoto.photoUpdatedAt
     };
 
     if (editingMember) {
@@ -1505,7 +1525,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       </div>
 
       {/* Demographics Matrix Table: 4 Cohorts (ከ0-14፣ ከ15-29፣ ከ30-59 እና 60+) */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+      <div ref={ageStatsCardRef} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100 gap-2">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1516,15 +1536,25 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               በአራቱ የዕድሜ ምድቦች፣ በጾታ (ወንድ/ሴት) እና በመቶኛ ድርሻ የተተነተነ ማጠቃለያ
             </p>
           </div>
-          {selectedAgeCohort !== 'all' && (
-            <button
-              type="button"
-              onClick={() => setSelectedAgeCohort('all')}
-              className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 px-3 py-1 rounded-lg transition self-start cursor-pointer"
-            >
-              ✕ የዕድሜ ማጣሪያ አጽዳ
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+            {selectedAgeCohort !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSelectedAgeCohort('all')}
+                className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 px-3 py-1 rounded-lg transition cursor-pointer print:hidden"
+              >
+                ✕ የዕድሜ ማጣሪያ አጽዳ
+              </button>
+            )}
+            <ExportPhotoButton
+              targetRef={ageStatsCardRef}
+              fileName={`የአባላት_የዕድሜና_ጾታ_ስታቲስቲክስ${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -1637,7 +1667,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       />
 
       {/* Official 10 Chapels Breakdown Cards Strip */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+      <div ref={chapelSummaryCardRef} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100 gap-2">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1661,14 +1691,14 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                   setSelectedChapels(chapelStats.chapels);
                   setSelectedChapelFilter('all');
                 }}
-                className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs"
+                className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs print:hidden"
               >
                 <CheckCircle2 className="w-3.5 h-3.5 text-blue-800" />
                 <span>✓ ሁሉንም 10 ቻፕሎች ምረጥ</span>
               </button>
             )}
 
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 print:hidden">
               <button
                 type="button"
                 onClick={() => setDisplayLayoutMode('table')}
@@ -1690,6 +1720,15 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                 <span>🏛️ በየቻፕሉ የተከፋፈለ</span>
               </button>
             </div>
+
+            <ExportPhotoButton
+              targetRef={chapelSummaryCardRef}
+              fileName={`የቻፕሎች_ምዕመናን_ማጠቃለያ${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
           </div>
         </div>
 
@@ -1740,7 +1779,7 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
       </div>
 
       {/* Chapel-level Evangelism Membership & Payment Breakdown (Paying / Unpaid / Discontinued / Not a Member) */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm space-y-3">
+      <div ref={evangChapelCardRef} className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1755,15 +1794,25 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               አባል ሆነው የሚከፍል / የማይከፍል / ያቋረጠ / አባል ያልሆነ — በቻፕል ደረጃ ለመለየትና ለማጣራት የቁጥር ቁልፎቹን ይጫኑ
             </p>
           </div>
-          {selectedEvangelismFilter !== 'all' && (
-            <button
-              type="button"
-              onClick={() => setSelectedEvangelismFilter('all')}
-              className="text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1 rounded-lg self-start cursor-pointer"
-            >
-              ✕ የወንጌል አገልግሎት ማጣሪያ አጽዳ
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+            {selectedEvangelismFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSelectedEvangelismFilter('all')}
+                className="text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1 rounded-lg cursor-pointer print:hidden"
+              >
+                ✕ የወንጌል አገልግሎት ማጣሪያ አጽዳ
+              </button>
+            )}
+            <ExportPhotoButton
+              targetRef={evangChapelCardRef}
+              fileName={`የወንጌል_አገልግሎት_አባልነት_ማጠቃለያ${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -2139,7 +2188,22 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
 
       {/* Data Table / Grouped Layout */}
       {displayLayoutMode === 'grouped_chapels' ? (
-        <div className="space-y-6">
+        <div ref={membersTableRef} className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/80 px-4 py-3 flex items-center justify-between gap-2 shadow-sm">
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 flex items-center gap-2">
+              <Users className="w-4 h-4 text-blue-900" />
+              <span>የአባላት ዝርዝር ሰንጠረዥ — በየቻፕሉ የተከፋፈለ ({filteredMembers.length.toLocaleString('am-ET')} አባላት)</span>
+            </h3>
+            <ExportPhotoButton
+              targetRef={membersTableRef}
+              fileName={`የአባላት_ዝርዝር_በቻፕል${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
+          <div className="space-y-6">
           {chapelStats.chapels.map((chName) => {
             const chMembers = membersGroupedByChapel[chName] || [];
             const st = chapelStats.statsMap[chName] || { total: 0, childrenCount: 0, adultCount: 0, male: 0, female: 0 };
@@ -2227,24 +2291,35 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                                 )}
                               </td>
                               <td className="py-2 px-4 font-bold text-[12pt] text-slate-900">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span>{activeNameMode === 'en' ? transliterateAmharicToEnglish(m.name) : m.name}</span>
-                                  {isChild && (
-                                    <span className="bg-amber-100 text-amber-900 font-black text-[9px] px-1.5 py-0.2 rounded-full border border-amber-300">
-                                      ልጅ (0-14)
-                                    </span>
-                                  )}
-                                  {m.relationToHead && (
-                                    <span className="bg-slate-100 text-slate-700 font-semibold text-[9px] px-1.5 py-0.2 rounded border border-slate-200">
-                                      {m.relationToHead}
-                                    </span>
-                                  )}
-                                </div>
-                                {activeNameMode === 'both' && (
-                                  <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
-                                    {transliterateAmharicToEnglish(m.name)}
+                                <div className="flex items-center gap-2">
+                                  <PersonAvatarBadge
+                                    name={m.name}
+                                    gender={m.gender}
+                                    photoDataUrl={m.photoDataUrl}
+                                    photoStorageKey={m.photoStorageKey}
+                                    size="sm"
+                                  />
+                                  <div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span>{activeNameMode === 'en' ? transliterateAmharicToEnglish(m.name) : m.name}</span>
+                                      {isChild && (
+                                        <span className="bg-amber-100 text-amber-900 font-black text-[9px] px-1.5 py-0.2 rounded-full border border-amber-300">
+                                          ልጅ (0-14)
+                                        </span>
+                                      )}
+                                      {m.relationToHead && (
+                                        <span className="bg-slate-100 text-slate-700 font-semibold text-[9px] px-1.5 py-0.2 rounded border border-slate-200">
+                                          {m.relationToHead}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {activeNameMode === 'both' && (
+                                      <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                        {transliterateAmharicToEnglish(m.name)}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
+                                </div>
                               </td>
                               <td className="py-2 px-3 text-center font-bold">{m.gender || '-'}</td>
                               <td className="py-2 px-3 text-center font-bold text-slate-800">
@@ -2403,9 +2478,28 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
               </div>
             );
           })}
+          </div>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div ref={membersTableRef} className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 flex items-center gap-2">
+              <Users className="w-4 h-4 text-blue-900" />
+              <span>
+                {officialLoggedInChapel
+                  ? `የ${officialLoggedInChapel} አባላት ዝርዝር ሰንጠረዥ`
+                  : 'የአባላት ዝርዝር ሰንጠረዥ'} ({filteredMembers.length.toLocaleString('am-ET')} አባላት)
+              </span>
+            </h3>
+            <ExportPhotoButton
+              targetRef={membersTableRef}
+              fileName={`የአባላት_ዝርዝር_ሰንጠረዥ${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
@@ -2474,24 +2568,35 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                           )}
                         </td>
                         <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span>{activeNameMode === 'en' ? transliterateAmharicToEnglish(m.name) : m.name}</span>
-                            {isChild && (
-                              <span className="bg-amber-100 text-amber-900 font-black text-[9px] px-2 py-0.5 rounded-full border border-amber-300">
-                                ልጅ (0-14)
-                              </span>
-                            )}
-                            {m.relationToHead && (
-                              <span className="bg-slate-100 text-slate-700 font-semibold text-[10px] px-1.5 py-0.5 rounded border border-slate-200">
-                                {m.relationToHead}
-                              </span>
-                            )}
-                          </div>
-                          {activeNameMode === 'both' && (
-                            <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
-                              {transliterateAmharicToEnglish(m.name)}
+                          <div className="flex items-center gap-2.5">
+                            <PersonAvatarBadge
+                              name={m.name}
+                              gender={m.gender}
+                              photoDataUrl={m.photoDataUrl}
+                              photoStorageKey={m.photoStorageKey}
+                              size="sm"
+                            />
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span>{activeNameMode === 'en' ? transliterateAmharicToEnglish(m.name) : m.name}</span>
+                                {isChild && (
+                                  <span className="bg-amber-100 text-amber-900 font-black text-[9px] px-2 py-0.5 rounded-full border border-amber-300">
+                                    ልጅ (0-14)
+                                  </span>
+                                )}
+                                {m.relationToHead && (
+                                  <span className="bg-slate-100 text-slate-700 font-semibold text-[10px] px-1.5 py-0.5 rounded border border-slate-200">
+                                    {m.relationToHead}
+                                  </span>
+                                )}
+                              </div>
+                              {activeNameMode === 'both' && (
+                                <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                  {transliterateAmharicToEnglish(m.name)}
+                                </div>
+                              )}
                             </div>
-                          )}
+                          </div>
                         </td>
                         <td className="py-2.5 px-3 font-bold text-blue-900">{m.chapel || '-'}</td>
                         <td className="py-2.5 px-3 text-center font-bold">{m.gender || '-'}</td>
@@ -3008,6 +3113,16 @@ export const ChurchMasterTab: React.FC<ChurchMasterTabProps> = ({
                   {nextAutoCodePreview}
                 </span>
               </div>
+
+              <PersonPhotoField
+                storagePrefix="member"
+                personId={editingMember?.id || formName || 'new'}
+                name={formName}
+                value={formPhoto}
+                onChange={setFormPhoto}
+                labelAm="የአባሉ ፎቶ (Profile Photo)"
+                labelEn="Member Photo"
+              />
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">ሙሉ ስም *</label>

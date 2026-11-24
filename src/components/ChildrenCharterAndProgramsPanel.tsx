@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   BookOpen,
@@ -34,6 +34,7 @@ import { generateUniqueId } from '../utils/idGenerator';
 import { useLanguage } from '../context/LanguageContext';
 import { formatDualDateTimeText, getTodayIsoDateTime } from '../utils/ethiopianDate';
 import { DualDateBadge, DualDateInput } from './DualDate';
+import { ExportPhotoButton } from './ExportPhotoButton';
 
 interface ChildrenCharterAndProgramsPanelProps {
   currentYear: string;
@@ -53,6 +54,7 @@ export const ChildrenCharterAndProgramsPanel: React.FC<ChildrenCharterAndProgram
   onNavigateSubTab
 }) => {
   const { t } = useLanguage();
+  const childrenPanelExportRef = useRef<HTMLDivElement | null>(null);
   const canEdit =
     currentUserRole === 'admin' ||
     currentUserRole === 'children_coordinator' ||
@@ -272,7 +274,7 @@ export const ChildrenCharterAndProgramsPanel: React.FC<ChildrenCharterAndProgram
   };
 
   return (
-    <div className="space-y-5">
+    <div ref={childrenPanelExportRef} className="space-y-5">
       {/* Header & View Switcher */}
       <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -297,6 +299,10 @@ export const ChildrenCharterAndProgramsPanel: React.FC<ChildrenCharterAndProgram
               <Download className="w-3.5 h-3.5" />
               <span>{t('Excel አውርድ', 'Export Excel')}</span>
             </button>
+            <ExportPhotoButton
+              targetRef={childrenPanelExportRef}
+              fileName={`የልጆች_አገልግሎት_መርኃግብር_${currentYear}`}
+            />
             <button
               type="button"
               onClick={() => window.print()}

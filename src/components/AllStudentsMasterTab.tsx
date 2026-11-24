@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import {
   Users,
   Search,
@@ -24,6 +25,8 @@ import {
   PhoneCall,
   Copy
 } from 'lucide-react';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 import { Student, Teacher, ChoirMember, SpiritualMember, Role, ChurchChild, ChurchMember } from '../types';
 import { downloadCSV, downloadMultiSheetXLSX } from '../utils/csv';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
@@ -72,6 +75,8 @@ interface EnrichedStudent extends Student {
   chapel?: string;
   parentName?: string;
   parentPhone?: string;
+  fallbackPhotoDataUrl?: string;
+  fallbackPhotoStorageKey?: string;
 }
 
 export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
@@ -102,6 +107,8 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [isPrinting, setIsPrinting] = useState(false);
   const [copiedPhoneId, setCopiedPhoneId] = useState<string | number | null>(null);
+  const kpiSummaryRef = useRef<HTMLDivElement>(null);
+  const studentsTableRef = useRef<HTMLDivElement>(null);
 
   const handleCopyPhone = (id: string | number, phone: string) => {
     if (!phone || phone === '-') return;
@@ -123,11 +130,13 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
   const [newClass, setNewClass] = useState(classList[1] || classList[0] || '');
   const [newGender, setNewGender] = useState<string>('ወ');
   const [newAge, setNewAge] = useState<string>('8');
+  const [newPhoto, setNewPhoto] = useState<PersonPhotoValue>({});
 
   // Edit form state
   const [editName, setEditName] = useState('');
   const [editGender, setEditGender] = useState('');
   const [editAge, setEditAge] = useState('');
+  const [editPhoto, setEditPhoto] = useState<PersonPhotoValue>({});
 
   // Handle window beforeprint/afterprint
   useEffect(() => {
@@ -401,9 +410,11 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
       m4: 0,
       m5: 0,
       m6: 0,
-      m7: 0
+      m7: 0,
+      ...newPhoto
     });
     setNewName('');
+    setNewPhoto({});
     setShowAddModal(false);
   };
 
@@ -413,6 +424,12 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
     setEditName(student.name);
     setEditGender(student.gender || '');
     setEditAge(String(student.age || ''));
+    setEditPhoto({
+      photoDataUrl: student.photoDataUrl,
+      photoStorageKey: student.photoStorageKey,
+      photoName: student.photoName,
+      photoUpdatedAt: student.photoUpdatedAt
+    });
   };
 
   const handleEditSave = (e: React.FormEvent) => {
@@ -423,7 +440,11 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
       ...editingStudent,
       name: editName.trim(),
       gender: editGender,
-      age: editAge || editingStudent.age
+      age: editAge || editingStudent.age,
+      photoDataUrl: editPhoto.photoDataUrl,
+      photoStorageKey: editPhoto.photoStorageKey,
+      photoName: editPhoto.photoName,
+      photoUpdatedAt: editPhoto.photoUpdatedAt
     });
 
     setEditingStudent(null);
@@ -579,8 +600,8 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
         </div>
       </div>
 
-      {/* Top Banner & Title (Screen only) */}
-      <div className="bg-gradient-to-r from-blue-950 via-indigo-900 to-slate-900 rounded-3xl p-6 sm:p-7 text-white shadow-lg border border-blue-800/50 print:hidden">
+      {/* Top Banner & Title */}
+      <div className="bg-gradient-to-r from-blue-950 via-indigo-900 to-slate-900 rounded-3xl p-6 sm:p-7 text-white shadow-lg border border-blue-800/50">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-amber-400/20 border border-amber-300/40 flex items-center justify-center text-amber-300 shadow-inner shrink-0">
@@ -604,7 +625,7 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="flex items-center gap-2.5 flex-wrap self-stretch md:self-auto justify-end">
+          <div className="flex items-center gap-2.5 flex-wrap self-stretch md:self-auto justify-end print:hidden">
             <button
               type="button"
               onClick={() => setShowAddModal(true)}
@@ -644,7 +665,21 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
         </div>
 
         {/* High-Level KPI Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-6 border-t border-blue-800/50">
+        <div ref={kpiSummaryRef} className="mt-6 pt-5 border-t border-blue-800/50 bg-gradient-to-r from-blue-950 via-indigo-900 to-slate-900 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs sm:text-sm font-extrabold text-blue-100">
+              የሰንበት ት/ቤት ተማሪዎች ዋና አሃዞች ({currentYear} ዓ.ም)
+            </h3>
+            <ExportPhotoButton
+              targetRef={kpiSummaryRef}
+              fileName={`የሰንበት_ተማሪዎች_ዋና_አሃዞች_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {/* Card 1: Total */}
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3.5 border border-white/15 flex flex-col justify-between">
             <span className="text-[11px] font-semibold text-blue-200">ጠቅላላ ተማሪዎች</span>
@@ -715,6 +750,7 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
                 {stats.total > 0 ? ((stats.inSpiritual / stats.total) * 100).toFixed(0) : 0}%
               </span>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -986,7 +1022,21 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
       </div>
 
       {/* Master Students Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden print:border-none print:shadow-none print:rounded-none">
+      <div ref={studentsTableRef} className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden print:border-none print:shadow-none print:rounded-none">
+        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2 print:hidden">
+          <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 flex items-center gap-2">
+            <Users className="w-4 h-4 text-blue-900" />
+            <span>የተመዘገቡ ተማሪዎች ዝርዝር ሰንጠረዥ ({studentsToRender.length.toLocaleString('am-ET')} ተማሪዎች)</span>
+          </h3>
+          <ExportPhotoButton
+            targetRef={studentsTableRef}
+            fileName={`የተማሪዎች_ዝርዝር_ሰንጠረዥ_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
+        </div>
         <div className="overflow-x-auto print:overflow-visible">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
@@ -1031,13 +1081,26 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
                       </td>
 
                       {/* Student Name */}
-                      <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[200px] leading-normal">
-                        <div>{nameScriptMode === 'en' ? transliterateAmharicToEnglish(student.name) : student.name}</div>
-                        {nameScriptMode === 'both' && (
-                          <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
-                            {transliterateAmharicToEnglish(student.name)}
+                      <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[220px] leading-normal">
+                        <div className="flex items-center gap-2.5">
+                          <PersonAvatarBadge
+                            name={student.name}
+                            gender={student.gender}
+                            photoDataUrl={student.photoDataUrl}
+                            photoStorageKey={student.photoStorageKey}
+                            fallbackPhotoDataUrl={student.fallbackPhotoDataUrl}
+                            fallbackPhotoStorageKey={student.fallbackPhotoStorageKey}
+                            size="sm"
+                          />
+                          <div className="min-w-0">
+                            <div>{nameScriptMode === 'en' ? transliterateAmharicToEnglish(student.name) : student.name}</div>
+                            {nameScriptMode === 'both' && (
+                              <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                {transliterateAmharicToEnglish(student.name)}
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </td>
 
                       {/* Class */}
@@ -1310,10 +1373,21 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
                 </div>
               </div>
 
+              <PersonPhotoField
+                compact
+                storagePrefix="student"
+                name={newName}
+                value={newPhoto}
+                onChange={setNewPhoto}
+              />
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => {
+                    setNewPhoto({});
+                    setShowAddModal(false);
+                  }}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
                   ይቅር
@@ -1383,6 +1457,15 @@ export const AllStudentsMasterTab: React.FC<AllStudentsMasterTabProps> = ({
                   />
                 </div>
               </div>
+
+              <PersonPhotoField
+                compact
+                storagePrefix="student"
+                personId={editingStudent.id}
+                name={editName || editingStudent.name}
+                value={editPhoto}
+                onChange={setEditPhoto}
+              />
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button

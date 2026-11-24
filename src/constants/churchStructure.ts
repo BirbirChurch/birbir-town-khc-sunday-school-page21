@@ -36,13 +36,24 @@ export interface OrgUnitDefinition {
   churchMemberSyncFilter?: 'women' | 'women_ministry' | 'youth' | 'men';
 }
 
+export const DEFAULT_LEADERSHIP_ROLE_OPTIONS: string[] = [
+  'ሰብሳቢ',
+  'ምክትል ሰብሳቢ',
+  'ፀሐፊ',
+  'ሂሳብ ሹም',
+  'ገንዘብ ያዥ',
+  'ንብረት ክፍል',
+  'የሰው ኃይል',
+  'አባል/ምክትል ፀሐፊ',
+  'አባል/ምክትል ልማት'
+];
+
 export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
   {
     id: 'elders_council',
     code: '1',
     name: 'የሽማግሌዎች ጉባኤ (ስራ አስፈጻሚዎች)',
-    shortDesc:
-      'የአጥቢያ ቤተ ክርስቲያን ከፍተኛ የአመራርና ስራ አስፈጻሚ ጉባኤ · 12 አባላት (11 ወንድ፣ 1 ሴት · 9 አባት መሪዎች፣ 1 ከሴቶች አገልግሎት፣ 1 ከወጣቶች አገልግሎት፣ 1 ከመንፈሳዊ ዘርፍ) · ቋሚ ስብሰባ፦ ሐሙስ ምሽት',
+    shortDesc: '',
     parentId: null,
     level: 1,
     defaultPin: '3001',
@@ -67,25 +78,25 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
   {
     id: 'office',
     code: '1.1',
-    name: 'ጽ/ቤት',
-    shortDesc: 'የቤተክርስቲያን መረጃ ቋት፣ የጽ/ቤት መዝገብ፣ የአስተዳደርና የማሕበረሰብ አገልግሎት ማዕከል',
+    name: 'ጽሕፈት ቤት',
+    shortDesc: '',
     parentId: 'elders_council',
     level: 2,
     defaultPin: '3100',
     kind: 'council_registry',
     hasChurchRegistry: true,
     supportsFinance: true,
-    memberNoun: 'የጽ/ቤት ሠራተኛ / አባል',
+    memberNoun: 'የጽሕፈት ቤት ሠራተኛ / አባል',
     roleColumnLabel: 'የስራ ድርሻ',
-    roleOptions: ['ዋና ጸሐፊ', 'የጽ/ቤት ኃላፊ', 'የመረጃ ቋት ባለሙያ', 'መዝገብ ቤት', 'ረዳት ጸሐፊ'],
-    activityCategories: ['ደብዳቤና ሰነድ', 'የመረጃ ማደራጀት', 'የጽ/ቤት ስብሰባ', 'ሪፖርት ማዘጋጀት'],
-    financeCategories: ['የጽ/ቤት ወጪ', 'የሰነድና ህትመት', 'መገልገያ ዕቃ', 'ልዩ ገቢ']
+    roleOptions: ['ዋና ጸሐፊ', 'የጽሕፈት ቤት ኃላፊ', 'የመረጃ ቋት ባለሙያ', 'መዝገብ ቤት', 'ረዳት ጸሐፊ'],
+    activityCategories: ['ደብዳቤና ሰነድ', 'የመረጃ ማደራጀት', 'የጽሕፈት ቤት ስብሰባ', 'ሪፖርት ማዘጋጀት'],
+    financeCategories: ['የጽሕፈት ቤት ወጪ', 'የሰነድና ህትመት', 'መገልገያ ዕቃ', 'ልዩ ገቢ']
   },
   {
     id: 'holistic_community',
     code: '1.1.1',
     name: 'ሁለንተናዊ ማሕበረሰብ አገልግሎት',
-    shortDesc: 'የማሕበረሰብ ልማት፣ የጤና፣ የትምህርት ድጋፍና የማሕበራዊ አገልግሎት ዘርፍ',
+    shortDesc: '',
     parentId: 'office',
     level: 3,
     defaultPin: '3101',
@@ -99,10 +110,39 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     financeCategories: ['የድጋፍ በጀት', 'የበጎ አድራጎት መዋጮ', 'ቁሳቁስ ግዢ', 'የስልጠና ወጪ']
   },
   {
+    id: 'development',
+    code: '1.1.1.1',
+    name: 'የልማት ዘርፍ',
+    shortDesc: '',
+    parentId: 'holistic_community',
+    level: 4,
+    defaultPin: '3272',
+    kind: 'ministry',
+    hasChurchRegistry: false,
+    supportsFinance: true,
+    memberNoun: 'የልማት ኮሚቴ / ባለሙያ',
+    roleColumnLabel: 'የስራ ክፍል',
+    roleOptions: [
+      'ሰብሳቢ',
+      'ምክትል ሰብሳቢ',
+      'ፀሐፊ',
+      'ሂሳብ ሹም',
+      'ገንዘብ ያዥ',
+      'ንብረት ክፍል',
+      'የሰው ኃይል',
+      'አባል/ምክትል ፀሐፊ',
+      'አባል/ምክትል ልማት',
+      'የፕሮጀክት መሪ',
+      'ቴክኒክ/ምህንድስና'
+    ],
+    activityCategories: ['ግንባታና ማሻሻያ', 'የገቢ ማስገኛ ፕሮጀክት', 'የመስክ ምልከታ', 'የልማት ኮሚቴ ስብሰባ'],
+    financeCategories: ['የልማት ፈንድ ገቢ', 'የግንባታ ዕቃ ወጪ', 'የጉልበት/ባለሙያ ክፍያ', 'የፕሮጀክት ገቢ']
+  },
+  {
     id: 'admin_finance',
     code: '1.1.2',
     name: 'አስተዳደርና ፋይናንስ',
-    shortDesc: 'የቤተ ክርስቲያን ገቢ (አስራት/መባ)፣ ወጪ፣ በጀት፣ ንብረትና የሰው ኃይል አስተዳደር',
+    shortDesc: '',
     parentId: 'office',
     level: 3,
     defaultPin: '3102',
@@ -119,7 +159,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'spiritual_council',
     code: '1.2',
     name: 'የመንፈሳዊ ዘርፍ ጉባኤ',
-    shortDesc: 'የቤተክርስቲያን መረጃ ቋት እና የሁሉም መንፈሳዊ አገልግሎት ዘርፎች መሪ ጉባኤ',
+    shortDesc: '',
     parentId: 'elders_council',
     level: 2,
     defaultPin: '3200',
@@ -136,7 +176,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'evangelism',
     code: '1.2.1',
     name: 'የወንጌል አገልግሎት',
-    shortDesc: 'የወንጌል ስርጭት፣ አለም አቀፋዊ/አገር አቀፋዊ/ክልላዊ/አከባቢያዊ ሚሽነሪዎች፣ አዳዲስ አማኞች ክትትልና የጥምቀት ዝግጅት',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3201',
@@ -163,7 +203,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'deacons',
     code: '1.2.2',
     name: 'የዲያቆናት አገልግሎት',
-    shortDesc: 'የዲያቆናት ዝርዝር፣ የጌታ እራት ዝግጅት፣ የታመሙና የተቸገሩ ምዕመናን ጉብኝትና ድጋፍ',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3202',
@@ -180,8 +220,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'women_ministry',
     code: '1.2.3',
     name: 'የሴቶች አገልግሎት',
-    shortDesc:
-      'ዕድሜያቸው ከ29 ዓመት በላይ የሆኑ ሴት አባላት (እና መታቀፍ የሚፈልጉ ከ29 በታች ባለትዳር ሴቶች) ጠቅላላ ጉባኤ፣ 3–7 አባላት ሥራ አስፈጻሚ ኮሚቴ፣ የሙሉ ጊዜ አስተባባሪ፣ የደቀ መዝሙርነትና ክህሎት አገልግሎት',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3203',
@@ -229,7 +268,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'youth_ministry',
     code: '1.2.4',
     name: 'የወጣቶች አገልግሎት',
-    shortDesc: 'የአስተባባሪ ገጽ፣ የመሪዎች ገጽ፣ የመዘምራን ህብረት (ሀ-መ፣ ሴቶች፣ ፋሬስ፣ ባማ)፣ የመዝሙር መሪዎች ህብረት እና የደቀ መዝሙርነት ትምህርት (መቅህማ፣ ቢቲሲፒ)',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3204',
@@ -260,8 +299,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'children_ministry',
     code: '1.2.5',
     name: 'የልጆች አገልግሎት',
-    shortDesc:
-      'ከተወለዱ እስከ 14 ዓመት የልጆች ጠቅላላ ጉባኤ፣ 3–7 አባላት ኮሚቴ፣ የሙሉ ጊዜ አስተባባሪ፣ የጸሎት/መዝሙር/ምስክርነት/ድራማ ቡድኖች፣ ሰንበት ት/ቤት፣ በጀት እና ዓመታዊ መርኃ ግብር',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '5678',
@@ -313,7 +351,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'chapels_dept',
     code: '1.2.6',
     name: 'ቻፕሎች',
-    shortDesc: 'በስርዓቱ ውስጥ የሚገኙ 10ሩም ቻፕሎች (ኤልሮኢ፣ ሻሎም፣ ቤቴል፣ ያህዌ፣ ኤዴን፣ አቤንኤዘር፣ ርኆቦት፣ ኤልሻዳይ፣ ሩሐማ፣ አዶናይ)',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3206',
@@ -330,7 +368,7 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     id: 'love_compassion',
     code: '1.2.7',
     name: 'ፍቅርና ርኅራሄ',
-    shortDesc: 'ለቋሚ እና ጊዜያዊ ተረጂዎች፣ ወላጅ አልባ ህፃናት፣ አረጋውያን እና ህሙማን የእርዳታና የርኅራሄ አገልግሎት',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3271',
@@ -353,27 +391,10 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     financeCategories: ['የፍቅርና ርኅራሄ መዋጮ', 'ለቋሚ ተረጂዎች ድጋፍ', 'ለጊዜያዊ ተረጂዎች ድጋፍ', 'የህክምና እርዳታ', 'የትምህርት ቁሳቁስ ድጋፍ']
   },
   {
-    id: 'development',
-    code: '1.2.8',
-    name: 'የልማት ዘርፍ',
-    shortDesc: 'የቤተ ክርስቲያን ገቢ ማስገኛ፣ ግንባታ፣ የመሰረተ ልማትና ዘላቂ የልማት ፕሮጀክቶች',
-    parentId: 'spiritual_council',
-    level: 3,
-    defaultPin: '3272',
-    kind: 'ministry',
-    hasChurchRegistry: false,
-    supportsFinance: true,
-    memberNoun: 'የልማት ኮሚቴ / ባለሙያ',
-    roleColumnLabel: 'የስራ ክፍል',
-    roleOptions: ['የልማት ሰብሳቢ', 'የፕሮጀክት መሪ', 'ቴክኒክ/ምህንድስና', 'ገቢ አሰባሳቢ', 'አባል'],
-    activityCategories: ['ግንባታና ማሻሻያ', 'የገቢ ማስገኛ ፕሮጀክት', 'የመስክ ምልከታ', 'የልማት ኮሚቴ ስብሰባ'],
-    financeCategories: ['የልማት ፈንድ ገቢ', 'የግንባታ ዕቃ ወጪ', 'የጉልበት/ባለሙያ ክፍያ', 'የፕሮጀክት ገቢ']
-  },
-  {
     id: 'bible_school',
-    code: '1.2.9',
+    code: '1.2.8',
     name: 'የመጽሐፍ ቅዱስ ትምህርት ቤት',
-    shortDesc: 'የመጽሐፍ ቅዱስ ትምህርት ቤት ተማሪዎች፣ መምህራን፣ የትምህርት ዓመታት፣ ክፍያና ውጤት',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3273',
@@ -388,9 +409,9 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
   },
   {
     id: 'rehoboth_school',
-    code: '1.2.10',
+    code: '1.2.9',
     name: 'የርኆቦት መጀመሪያና መካከለኛ ትምህርት ቤት',
-    shortDesc: 'የርኆቦት ትምህርት ቤት ተማሪዎች (KG–8ኛ ክፍል)፣ መምህራን፣ ሠራተኞች እና የትምህርት ቤት አስተዳደር',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3274',
@@ -405,9 +426,9 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
   },
   {
     id: 'men_fellowship',
-    code: '1.2.11',
+    code: '1.2.10',
     name: 'የወንዶች መተሳሰብ',
-    shortDesc: 'የወንዶች የመተሳሰብ፣ የመረዳዳት፣ የሀዘንና የደስታ ተካፋይነት እና የጉብኝት ማሕበር',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3275',
@@ -423,9 +444,9 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
   },
   {
     id: 'women_fellowship',
-    code: '1.2.12',
+    code: '1.2.11',
     name: 'የሴቶች መተሳሰብ ዘርፍ',
-    shortDesc: 'የባል ሚስት የሆኑ (ባለትዳር) ሴቶች የመተሳሰብ፣ የመረዳዳት፣ የችግር ጊዜ ድጋፍ እና የህብረት መዋጮ ዘርፍ',
+    shortDesc: '',
     parentId: 'spiritual_council',
     level: 3,
     defaultPin: '3276',
@@ -438,6 +459,42 @@ export const CHURCH_ORG_UNITS: OrgUnitDefinition[] = [
     activityCategories: ['ወርሃዊ የመተሳሰብ ስብሰባ', 'የወሊድ/ህመም ጉብኝት', 'የሀዘን ማጽናናት', 'የጋራ ድጋፍ'],
     financeCategories: ['ወርሃዊ መዋጮ', 'የድጋፍ ክፍያ (ለወሊድ/ለሀዘን/ለህመም)', 'ልዩ መዋጮ'],
     churchMemberSyncFilter: 'women'
+  },
+  {
+    id: 'youth_children_dev_et1004',
+    code: '1.2.12',
+    name: 'የወጣቶች እና የልጆች ልማት ኢት 1004',
+    shortDesc: '',
+    parentId: 'spiritual_council',
+    level: 3,
+    defaultPin: '3277',
+    kind: 'ministry',
+    hasChurchRegistry: false,
+    supportsFinance: true,
+    memberNoun: 'የኢት 1004 አባል / ተጠቃሚ',
+    roleColumnLabel: 'ድርሻ / ምድብ',
+    roleOptions: [
+      'የፕሮጀክት አስተባባሪ',
+      'የወጣቶች ልማት ሰራተኛ',
+      'የልጆች ልማት ሰራተኛ',
+      'አማካሪ / መምህር',
+      'ተጠቃሚ ልጅ / ወጣት',
+      'በጎ ፈቃደኛ'
+    ],
+    activityCategories: [
+      'የልጆችና ወጣቶች ትምህርት ድጋፍ',
+      'የጤናና ስነ-ምግብ ፕሮግራም',
+      'የክህሎት ስልጠና',
+      'መንፈሳዊ ክትትል',
+      'የቤተሰብ ድጋፍ'
+    ],
+    financeCategories: [
+      'የፕሮጀክት በጀት (ኢት 1004)',
+      'የትምህርት ቁሳቁስ ድጋፍ',
+      'የምግብና ጤና ድጋፍ',
+      'የአስተዳደር ወጪ',
+      'ልዩ ስጦታ / ድጋፍ'
+    ]
   }
 ];
 
@@ -719,11 +776,12 @@ export const HR_MINISTER_SECTOR_OPTIONS: string[] = [
   'የዲያቆናት አገልግሎት',
   'ፍቅርና ርኅራሄ',
   'የልማት ዘርፍ',
-  'ጽ/ቤት',
+  'ጽሕፈት ቤት',
   'አስተዳደርና ፋይናንስ',
   'ሁለንተናዊ ማሕበረሰብ አገልግሎት',
   'የወንዶች ህብረት',
   'የሴቶች ህብረት',
+  'የወጣቶች እና የልጆች ልማት ኢት 1004',
   'የርኆቦት ትምህርት ቤት',
   'የጸሎትና ምልጃ አገልግሎት',
   'የጋብቻና ቤተሰብ አገልግሎት'
@@ -734,6 +792,7 @@ export const HR_MINISTER_ROLE_OPTIONS: string[] = [
   'መምህር',
   'ወንጌላዊ',
   'ወንጌላዊት',
+  'የቻፕል አስተባባሪ',
   'የዘርፍ አስተባባሪ',
   'የመጽሐፍ ቅዱስ አስተማሪ'
 ];
@@ -1524,6 +1583,18 @@ export const ORG_UNIT_THEMES: Record<OrgUnitId, OrgUnitColorTheme> = {
     loginHeaderBg: 'bg-gradient-to-br from-fuchsia-900 via-purple-950 to-slate-900',
     ringClass: 'focus:ring-fuchsia-600',
     subtleText: 'text-fuchsia-800'
+  },
+  youth_children_dev_et1004: {
+    surfaceBg: 'bg-teal-50/70',
+    surfaceBorder: 'border-teal-200',
+    surfaceHover: 'hover:border-teal-400 hover:bg-teal-50',
+    iconBg: 'bg-teal-700',
+    iconText: 'text-white',
+    buttonBg: 'bg-teal-700',
+    buttonHover: 'hover:bg-teal-600',
+    loginHeaderBg: 'bg-gradient-to-br from-teal-900 via-emerald-950 to-slate-900',
+    ringClass: 'focus:ring-teal-600',
+    subtleText: 'text-teal-800'
   }
 };
 

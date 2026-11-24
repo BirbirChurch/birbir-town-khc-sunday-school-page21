@@ -1,6 +1,7 @@
-import React, { Suspense, useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useRef, useState } from 'react';
 import { LazyErrorBoundary, lazyWithRetry } from './LazyBoundary';
-import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target, Sparkles, HeartHandshake, UserCheck } from 'lucide-react';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { Church, Users, Baby, BarChart3, ArrowLeft, Send, Target, Sparkles, HeartHandshake, UserCheck, Download, Award } from 'lucide-react';
 import {
   AnnualPlanItem,
   ChoirMember,
@@ -11,6 +12,7 @@ import {
   OrgUnitId,
   PlanDispatchItem,
   Role,
+  SpiritualMasterPlanSheetData,
   SpiritualMember,
   Student,
   Teacher
@@ -34,6 +36,16 @@ import { ConsolidatedPlansMatrix } from './ConsolidatedPlansMatrix';
 import { ChapelYouthRegistryTab, ChapelWomenRegistryTab } from './ChapelYouthWomenTabs';
 import { ChapelLeadersTab } from './ChapelLeadersTab';
 import { UnitLeadersRosterTab } from './UnitLeadersRosterTab';
+import { SpiritualMasterNarrativesFooter } from './SpiritualMasterPlanSheet';
+import { ChapelPerformanceAgreementPanel } from './ChapelPerformanceAgreementPanel';
+import {
+  annualPlansToMasterSheet,
+  ensureChapelMasterAnnualPlans,
+  exportSpiritualMasterPlanExcel,
+  extractMasterCodeFromPlan,
+  getFilledItemCountForSheet,
+  recomputeSection1TotalsOnPlans
+} from '../utils/spiritualMasterPlan';
 
 const PlanSectorReceiverPanel = lazyWithRetry(() =>
   import('./PlanDispatchPanel').then((m) => ({ default: m.PlanSectorReceiverPanel }))
@@ -96,7 +108,7 @@ interface ChapelsHubPageProps {
   ) => void;
 }
 
-type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'youth' | 'women' | 'chapel_leaders' | 'plans' | 'submissions';
+type ChapelTabId = 'overview_all' | 'stats' | 'members' | 'children' | 'youth' | 'women' | 'chapel_leaders' | 'plans' | 'performance_agreement' | 'submissions';
 
 export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
   currentYear,
@@ -154,6 +166,97 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
     () => departmentDataMap.chapels_dept || createEmptyDepartmentWorkspaceData(),
     [departmentDataMap]
   );
+
+  const seededChapelPlans = useMemo(() => {
+    if (!effectiveChapelScope) return [];
+    return ensureChapelMasterAnnualPlans(
+      chapelPlansMap[effectiveChapelScope] || [],
+      currentYear,
+      chapelLabel(effectiveChapelScope),
+      chapelsWs.chapelMasterPlans?.[effectiveChapelScope]?.[currentYear]
+    );
+  }, [effectiveChapelScope, chapelPlansMap, currentYear, chapelLabel, chapelsWs.chapelMasterPlans]);
+
+  const saveUnifiedChapelPlans = (targetChapel: string, nextPlans: AnnualPlanItem[]) => {
+    if (onUpdateDepartmentData) {
+      onUpdateDepartmentData('chapels_dept', (prev) => {
+        const prevMasterMap = prev.chapelMasterPlans || {};
+        const prevChapelYears = prevMasterMap[targetChapel] || {};
+        const baseSheet = prevChapelYears[currentYear];
+        const nextSheet = annualPlansToMasterSheet(nextPlans, currentYear, baseSheet, false);
+        return {
+          ...prev,
+          chapelPlans: {
+            ...(prev.chapelPlans || {}),
+            [targetChapel]: nextPlans
+          },
+          chapelMasterPlans: {
+            ...prevMasterMap,
+            [targetChapel]: {
+              ...prevChapelYears,
+              [currentYear]: nextSheet
+            }
+          }
+        };
+      });
+    } else {
+      onUpdateChapelPlans?.(targetChapel, nextPlans);
+    }
+  };
+
+  const saveChapelMasterSheetMeta = (
+    targetChapel: string,
+    nextSheet: SpiritualMasterPlanSheetData
+  ) => {
+    onUpdateDepartmentData?.('chapels_dept', (prev) => {
+      const prevMasterMap = prev.chapelMasterPlans || {};
+      const prevChapelYears = prevMasterMap[targetChapel] || {};
+      return {
+        ...prev,
+        chapelMasterPlans: {
+          ...prevMasterMap,
+          [targetChapel]: {
+            ...prevChapelYears,
+            [currentYear]: nextSheet
+          }
+        }
+      };
+    });
+  };
+
+  const handleAutoFillSection1IntoUnified = (targetChapel: string) => {
+    const matchingMembers = churchMembers.filter(
+      (m) => mapToOfficialChapel(m.chapel || '') === targetChapel
+    );
+    const matchingChildren = churchChildren.filter(
+      (c) => mapToOfficialChapel(c.chapel || '') === targetChapel
+    );
+    const youthCount = matchingMembers.filter(
+      (m) =>
+        m.isYouth ||
+        (m.age !== undefined &&
+          m.age !== '' &&
+          Number(m.age) >= 15 &&
+          Number(m.age) <= 35)
+    ).length;
+    const headCount = Math.max(0, matchingMembers.length - youthCount);
+    const childCount = matchingChildren.length;
+
+    const updated = seededChapelPlans.map((p) => {
+      const code = extractMasterCodeFromPlan(p);
+      if (code === '1.1') {
+        return { ...p, yearPlan: headCount, q1Plan: headCount, q2Plan: 0, q3Plan: 0, q4Plan: 0 };
+      }
+      if (code === '1.2') {
+        return { ...p, yearPlan: youthCount, q1Plan: youthCount, q2Plan: 0, q3Plan: 0, q4Plan: 0 };
+      }
+      if (code === '1.3') {
+        return { ...p, yearPlan: childCount, q1Plan: childCount, q2Plan: 0, q3Plan: 0, q4Plan: 0 };
+      }
+      return p;
+    });
+    saveUnifiedChapelPlans(targetChapel, recomputeSection1TotalsOnPlans(updated, currentYear));
+  };
   const allChapelLeaders = useMemo(() => chapelsWs.chapelLeaders || [], [chapelsWs.chapelLeaders]);
   const scopedChapelLeadersCount = useMemo(
     () =>
@@ -195,6 +298,8 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
       return true;
     });
   }, [planDispatches, effectiveChapelScope]);
+
+  const chapelsOverviewRef = useRef<HTMLElement>(null);
 
   return (
     <div className="space-y-5">
@@ -409,6 +514,28 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab('performance_agreement')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'performance_agreement'
+                ? 'bg-amber-700 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <Award className="w-3.5 h-3.5" />
+            <span>
+              {effectiveChapelScope
+                ? t(
+                    `የ${effectiveChapelScope} አገልጋዮች ግብ ስምምነት`,
+                    `${chapelLabel(effectiveChapelScope)} Performance Agreement`
+                  )
+                : t(
+                    `የአገልጋዮች ግብ ስምምነት (${chapelList.length} ቻፕሎች)`,
+                    `Servant Agreements (${chapelList.length} Chapels)`
+                  )}
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('submissions')}
             className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
               activeTab === 'submissions'
@@ -424,17 +551,26 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
 
       {/* Directory Grid of all 10 Chapels */}
       {activeTab === 'overview_all' && !officialLockedChapel && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200">
-            <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
-              {t('የ10ሩም ቻፕሎች የቤተሰብ፣ የአባላት እና የልጆች (0–14) ማውጫ', 'Directory of All 10 Chapels: Households, Members & Children (0–14)')}
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {t(
-                'የአንድን ቻፕል አባላት፣ ልጆች፣ ስታቲስቲክስ ወይም ዕቅድና ክንውን ለብቻው ለማየት ከቻፕሉ ስም ላይ ይጫኑ',
-                'Select Members, Children, Statistics, or Plans & Execution for any chapel'
-              )}
-            </p>
+        <section ref={chapelsOverviewRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                {t('የ10ሩም ቻፕሎች የቤተሰብ፣ የአባላት እና የልጆች (0–14) ማውጫ', 'Directory of All 10 Chapels: Households, Members & Children (0–14)')}
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {t(
+                  'የአንድን ቻፕል አባላት፣ ልጆች፣ ስታቲስቲክስ ወይም ዕቅድና ክንውን ለብቻው ለማየት ከቻፕሉ ስም ላይ ይጫኑ',
+                  'Select Members, Children, Statistics, or Plans & Execution for any chapel'
+                )}
+              </p>
+            </div>
+            <div className="print:hidden shrink-0">
+              <ExportPhotoButton
+                targetRef={chapelsOverviewRef}
+                fileName={`የ10ሩም_ቻፕሎች_ማውጫ_${currentYear}`}
+                variant="secondary"
+              />
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
@@ -705,13 +841,63 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
             unitId="chapels_dept"
             unitName={unitName('chapels_dept')}
             currentYear={currentYear}
-            plans={chapelPlansMap[effectiveChapelScope] || []}
+            plans={seededChapelPlans}
             chapelName={effectiveChapelScope}
-            onSavePlans={(nextPlans) => onUpdateChapelPlans?.(effectiveChapelScope, nextPlans)}
+            onSavePlans={(nextPlans) => saveUnifiedChapelPlans(effectiveChapelScope, nextPlans)}
+            onMasterSheetImported={(importedSheet) => {
+              const existingMeta = chapelsWs.chapelMasterPlans?.[effectiveChapelScope]?.[currentYear];
+              saveChapelMasterSheetMeta(effectiveChapelScope, {
+                ...importedSheet,
+                narratives: importedSheet.narratives,
+                signOff: importedSheet.signOff?.reporterName ? importedSheet.signOff : existingMeta?.signOff || importedSheet.signOff
+              });
+            }}
             onSendToSpiritual={onCreateSubmission}
             planDispatches={planDispatches}
             onAcceptDispatch={onAcceptDispatch}
             onReturnDispatch={onReturnDispatch}
+            extraHeaderActions={
+              <>
+                {churchMembers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleAutoFillSection1IntoUnified(effectiveChapelScope)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-900 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{t('1.1–1.4 ከመረጃ ቋት ሙላ', 'Fill 1.1–1.4 from Registry')}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sheet = annualPlansToMasterSheet(
+                      seededChapelPlans,
+                      currentYear,
+                      chapelsWs.chapelMasterPlans?.[effectiveChapelScope]?.[currentYear],
+                      false
+                    );
+                    exportSpiritualMasterPlanExcel({
+                      year: currentYear,
+                      sheet,
+                      subtitleLabel: chapelLabel(effectiveChapelScope),
+                      fileName: `የመንፈሳዊ_ዘርፍ_ዕቅድ_${chapelLabel(effectiveChapelScope)}_${currentYear}.xlsx`
+                    });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-sky-800 hover:bg-sky-700 text-white cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{t('የ2019 ቋሚ Excel ቅጽ አውርድ', 'Download 2019 Excel Form')}</span>
+                </button>
+              </>
+            }
+            footerSlot={
+              <SpiritualMasterNarrativesFooter
+                currentYear={currentYear}
+                sheetData={chapelsWs.chapelMasterPlans?.[effectiveChapelScope]?.[currentYear]}
+                onSaveSheet={(nextSheet) => saveChapelMasterSheetMeta(effectiveChapelScope, nextSheet)}
+              />
+            }
           />
         ) : (
           <div className="space-y-5">
@@ -737,14 +923,15 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                   </h3>
                   <p className="text-xs text-slate-500">
                     {t(
-                      'እያንዳንዱ ቻፕል የራሱን ዕቅድ በExcel/PDF/Word ጭኖ ለመንፈሳዊ ዘርፍ መላክ ይችላል።',
-                      'Each chapel manages its own Annual, Half-Year, and Q1–Q4 plan workbench and submits to Spiritual Council.'
+                      'እያንዳንዱ ቻፕል የ2019 መንፈሳዊ ዘርፍ ቋሚ ዕቅድ ቅጽን መሙላት እና በExcel መቀበል/መላክ ይችላል።',
+                      'Each chapel fills the official Spiritual Sector Plan form (or imports Excel) and submits to Spiritual Council.'
                     )}
                   </p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
                 {chapelList.map((ch) => {
+                  const masterFilled = getFilledItemCountForSheet(chapelsWs.chapelMasterPlans?.[ch]?.[currentYear]);
                   const count = (chapelPlansMap[ch] || []).length;
                   return (
                     <button
@@ -754,7 +941,9 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
                       className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 text-xs font-bold text-slate-800 cursor-pointer transition"
                     >
                       {chapelLabel(ch)}{' '}
-                      <span className="text-slate-500 font-semibold tabular-nums">({count})</span>
+                      <span className="text-slate-500 font-semibold tabular-nums">
+                        ({masterFilled > 0 ? `${masterFilled} ቅጽ` : count})
+                      </span>
                     </button>
                   );
                 })}
@@ -771,6 +960,18 @@ export const ChapelsHubPage: React.FC<ChapelsHubPageProps> = ({
             />
           </div>
         )
+      )}
+
+      {activeTab === 'performance_agreement' && (
+        <ChapelPerformanceAgreementPanel
+          mode={effectiveChapelScope ? 'chapel_scoped' : 'chapels_overview'}
+          currentYear={currentYear}
+          chapelList={chapelList}
+          lockedChapel={effectiveChapelScope}
+          chapelPlansMap={chapelPlansMap}
+          departmentDataMap={departmentDataMap}
+          onUpdateDepartmentData={onUpdateDepartmentData}
+        />
       )}
 
       {activeTab === 'submissions' && (

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Users,
@@ -17,11 +17,18 @@ import {
   CheckCircle2,
   Layers,
   UserCheck,
-  Calculator
+  Calculator,
+  Camera,
+  Upload,
+  User,
+  Award
 } from 'lucide-react';
 import {
+  AnnualPlanItem,
   AssetType,
+  ChapelPerformanceAgreementData,
   ChurchAssetRecord,
+  ChurchChild,
   ChurchHRRecord,
   ChurchMember,
   HRCategory
@@ -42,6 +49,8 @@ import {
   findMatchingChurchMemberForHR,
   getHRDepartments,
   getHRRoleTitles,
+  resolveServantChurchFamily,
+  ServantChurchFamilyResolution,
   syncHRPhonesFromChurchMembers
 } from '../utils/hrMemberMatcher';
 import {
@@ -50,12 +59,29 @@ import {
   resolveHighestEducationLabel
 } from '../utils/hrProfileAndPayroll';
 import { MinisterProfileModal } from './MinisterProfileModal';
+import { deleteAttachmentFile, saveAttachmentFile } from '../services/attachmentStorage';
+import { processProfilePhotoFile } from '../utils/hrPhotoHelper';
+import {
+  computeChapelAgreementSummary,
+  ensureChapelAgreementData,
+  getLinkedChapelsForHRRecord
+} from '../utils/chapelPerformanceAgreement';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface AdminHRPanelProps {
   currentYear: string;
   records: ChurchHRRecord[];
   churchMembers?: ChurchMember[];
+  churchChildren?: ChurchChild[];
+  onUpdateChurchMember?: (member: ChurchMember) => void;
+  onUpdateChurchChild?: (child: ChurchChild) => void;
   chapelList?: string[];
+  chapelPlansMap?: { [chapelName: string]: AnnualPlanItem[] };
+  chapelPerformanceAgreements?: {
+    [chapelName: string]: { [year: string]: ChapelPerformanceAgreementData };
+  };
+  onOpenChapelAgreements?: () => void;
   onSaveRecords: (updated: ChurchHRRecord[]) => void;
   onOpenPayroll?: () => void;
 }
@@ -64,11 +90,19 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
   currentYear,
   records,
   churchMembers = [],
+  churchChildren = [],
+  onUpdateChurchMember,
+  onUpdateChurchChild,
   chapelList,
+  chapelPlansMap,
+  chapelPerformanceAgreements,
+  onOpenChapelAgreements,
   onSaveRecords,
   onOpenPayroll
 }) => {
   const { t, lang } = useLanguage();
+  const hrKpiRef = useRef<HTMLDivElement | null>(null);
+  const hrTableRef = useRef<HTMLElement | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<'all' | HRCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -97,6 +131,13 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
   const [hEducation, setHEducation] = useState('');
   const [hStatus, setHStatus] = useState('በስራ ላይ');
   const [hNotes, setHNotes] = useState('');
+  const [hPhotoDataUrl, setHPhotoDataUrl] = useState<string | undefined>(undefined);
+  const [hPhotoStorageKey, setHPhotoStorageKey] = useState<string | undefined>(undefined);
+  const [hPhotoPendingFullDataUrl, setHPhotoPendingFullDataUrl] = useState<string | undefined>(undefined);
+  const [hPhotoName, setHPhotoName] = useState<string | undefined>(undefined);
+  const [hPhotoUpdatedAt, setHPhotoUpdatedAt] = useState<string | undefined>(undefined);
+  const [hPhotoError, setHPhotoError] = useState('');
+  const [hPhotoBusy, setHPhotoBusy] = useState(false);
 
   // Resolve live phone match from Church Master Registry if a record doesn't yet have a saved phone
   const resolvedPhoneById = useMemo(() => {
@@ -112,6 +153,14 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     });
     return map;
   }, [records, churchMembers]);
+
+  const familyById = useMemo(() => {
+    const map = new Map<number, ServantChurchFamilyResolution>();
+    records.forEach((rec) => {
+      map.set(rec.id, resolveServantChurchFamily(rec, churchMembers, churchChildren));
+    });
+    return map;
+  }, [records, churchMembers, churchChildren]);
 
   const pendingPhoneSyncCount = useMemo(() => {
     let count = 0;
@@ -267,6 +316,12 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     setHEducation('');
     setHStatus('በስራ ላይ');
     setHNotes('');
+    setHPhotoDataUrl(undefined);
+    setHPhotoStorageKey(undefined);
+    setHPhotoPendingFullDataUrl(undefined);
+    setHPhotoName(undefined);
+    setHPhotoUpdatedAt(undefined);
+    setHPhotoError('');
     setIsModalOpen(true);
   };
 
@@ -293,6 +348,12 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     setHEducation(rec.educationLevel || '');
     setHStatus(rec.status || 'በስራ ላይ');
     setHNotes(rec.notes || '');
+    setHPhotoDataUrl(rec.photoDataUrl);
+    setHPhotoStorageKey(rec.photoStorageKey);
+    setHPhotoPendingFullDataUrl(undefined);
+    setHPhotoName(rec.photoName);
+    setHPhotoUpdatedAt(rec.photoUpdatedAt);
+    setHPhotoError('');
     setIsModalOpen(true);
   };
 
@@ -330,7 +391,38 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleModalPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setHPhotoError('');
+    setHPhotoBusy(true);
+    try {
+      const result = await processProfilePhotoFile(file);
+      if (result.ok === false) {
+        if (result.reason === 'invalid_type') {
+          setHPhotoError(
+            t('እባክዎ ትክክለኛ የፎቶ ፋይል (JPG, PNG, WEBP) ይምረጡ።', 'Please select a valid image (JPG, PNG, WEBP).')
+          );
+        } else if (result.reason === 'too_large') {
+          setHPhotoError(
+            t('የፎቶው መጠን ከ12MB መብለጥ የለበትም።', 'Photo size must be 12MB or smaller.')
+          );
+        } else {
+          setHPhotoError(t('ፎቶውን ማንበብ አልተቻለም።', 'Unable to read photo.'));
+        }
+        return;
+      }
+      setHPhotoDataUrl(result.data.thumbnailDataUrl);
+      setHPhotoPendingFullDataUrl(result.data.fullDataUrl);
+      setHPhotoName(result.data.fileName);
+      setHPhotoUpdatedAt(new Date().toISOString());
+    } finally {
+      setHPhotoBusy(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!hName.trim()) return;
     const combinedRoles = hCustomRole.trim()
@@ -346,9 +438,24 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
     }
 
     const existingRec = editingId ? records.find((r) => r.id === editingId) : undefined;
+    const targetId = editingId ?? generateUniqueId();
+
+    let resolvedPhotoKey = hPhotoStorageKey;
+    if (hPhotoPendingFullDataUrl && hPhotoName) {
+      const prevKey = existingRec?.photoStorageKey;
+      resolvedPhotoKey = `hr_photo_${targetId}_${Date.now()}`;
+      await saveAttachmentFile(resolvedPhotoKey, hPhotoName, hPhotoPendingFullDataUrl);
+      if (prevKey && prevKey !== resolvedPhotoKey) {
+        void deleteAttachmentFile(prevKey);
+      }
+    } else if (!hPhotoDataUrl && existingRec?.photoStorageKey) {
+      void deleteAttachmentFile(existingRec.photoStorageKey);
+      resolvedPhotoKey = undefined;
+    }
+
     const item: ChurchHRRecord = {
       ...(existingRec || {}),
-      id: editingId ?? generateUniqueId(),
+      id: targetId,
       category: hCategory,
       name: hName.trim(),
       gender: hGender,
@@ -367,6 +474,10 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
       maritalStatus: hMaritalStatus.trim() || undefined,
       spouseName: hSpouseName.trim() || undefined,
       educationLevel: hEducation.trim() || undefined,
+      photoDataUrl: hPhotoDataUrl,
+      photoStorageKey: resolvedPhotoKey,
+      photoName: hPhotoDataUrl ? hPhotoName : undefined,
+      photoUpdatedAt: hPhotoDataUrl ? hPhotoUpdatedAt : undefined,
       status: hStatus,
       notes: hNotes.trim() || undefined
     };
@@ -379,6 +490,10 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
   };
 
   const handleDeleteConfirmed = (id: number) => {
+    const target = records.find((r) => r.id === id);
+    if (target?.photoStorageKey) {
+      void deleteAttachmentFile(target.photoStorageKey);
+    }
     onSaveRecords(records.filter((r) => r.id !== id));
     setConfirmDeleteId(null);
   };
@@ -545,7 +660,21 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
           </div>
         )}
 
-        <div className="mt-5 pt-4 border-t border-slate-200 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div ref={hrKpiRef} className="mt-5 pt-4 border-t border-slate-200 space-y-2.5 bg-white rounded-xl">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-extrabold text-slate-700">
+              {t(`የሰው ኃይል ዋና አሃዞች (${currentYear} ዓ/ም)`, `HR Workforce Summary (${currentYear})`)}
+            </h4>
+            <ExportPhotoButton
+              targetRef={hrKpiRef}
+              fileName={`የሰው_ኃይል_ዋና_አሃዞች_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <div className="text-xs font-semibold text-slate-500">{t('ጠቅላላ የሰው ኃይል', 'Total Workforce')}</div>
             <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-1">{stats.total}</div>
@@ -573,10 +702,24 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
               {stats.totalSalary.toLocaleString()} <span className="text-xs font-bold text-slate-500">{t('ብር', 'ETB')}</span>
             </div>
           </div>
+          </div>
         </div>
       </section>
 
-      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <section ref={hrTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="px-4 sm:px-5 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+          <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">
+            {t(`የሰው ኃይል ዝርዝር ሰንጠረዥ (${filtered.length})`, `Human Resources Directory (${filtered.length})`)}
+          </h4>
+          <ExportPhotoButton
+            targetRef={hrTableRef}
+            fileName={`የሰው_ኃይል_ዝርዝር_ሰንጠረዥ_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
+        </div>
         <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl overflow-x-auto">
             <button
@@ -659,6 +802,8 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                   const roles = getHRRoleTitles(r, HR_UNASSIGNED_ROLE_PLACEHOLDER);
                   const depts = getHRDepartments(r);
                   const phoneInfo = resolvedPhoneById.get(r.id);
+                  const fam = familyById.get(r.id);
+                  const linkedFamilyTotal = (fam?.familyMembers.length || 0) + (fam?.familyChildren.length || 0);
                   const roleDropdownChoices =
                     r.category === 'full_time_minister'
                       ? [...HR_MINISTER_ROLE_OPTIONS, ...chapelRoleOptions]
@@ -685,30 +830,88 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                         </span>
                       </td>
                       <td className="py-2.5 px-3 font-extrabold text-slate-900">
-                        <button
-                          type="button"
-                          onClick={() => setProfileModalRecordId(r.id)}
-                          className="text-left hover:text-teal-800 hover:underline cursor-pointer font-extrabold"
-                        >
-                          {r.name}
-                        </button>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-normal text-slate-500 mt-0.5">
-                          {r.hireDate && <DualDateBadge value={r.hireDate} mode="inline" />}
-                          {computeServiceDuration(r.hireDate, r.serviceYears, lang) && (
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
-                              {computeServiceDuration(r.hireDate, r.serviceYears, lang)}
-                            </span>
-                          )}
-                          {(r.educationCredentials?.length || 0) > 0 && (
-                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-bold">
-                              {t('ማስረጃ', 'Creds')}: {r.educationCredentials?.length}
-                            </span>
-                          )}
-                          {(r.children?.length || 0) > 0 && (
-                            <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 font-bold">
-                              {t('ልጆች', 'Kids')}: {r.children?.length}
-                            </span>
-                          )}
+                        <div className="flex items-start gap-2.5">
+                          <PersonAvatarBadge
+                            name={r.name}
+                            gender={r.gender}
+                            photoDataUrl={r.photoDataUrl}
+                            photoStorageKey={r.photoStorageKey}
+                            fallbackPhotoDataUrl={fam?.selfMember?.photoDataUrl}
+                            fallbackPhotoStorageKey={fam?.selfMember?.photoStorageKey}
+                            size="md"
+                          />
+                          <div className="min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => setProfileModalRecordId(r.id)}
+                              className="text-left hover:text-teal-800 hover:underline cursor-pointer font-extrabold"
+                            >
+                              {r.name}
+                            </button>
+                            <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-normal text-slate-500 mt-0.5">
+                              {r.hireDate && <DualDateBadge value={r.hireDate} mode="inline" />}
+                              {computeServiceDuration(r.hireDate, r.serviceYears, lang) && (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+                                  {computeServiceDuration(r.hireDate, r.serviceYears, lang)}
+                                </span>
+                              )}
+                              {(r.educationCredentials?.length || 0) > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-bold">
+                                  {t('ማስረጃ', 'Creds')}: {r.educationCredentials?.length}
+                                </span>
+                              )}
+                              {(r.children?.length || 0) > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 font-bold">
+                                  {t('ልጆች', 'Kids')}: {r.children?.length}
+                                </span>
+                              )}
+                              {linkedFamilyTotal > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setProfileModalRecordId(r.id)}
+                                  className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-900 border border-teal-200 font-bold hover:bg-teal-100 cursor-pointer"
+                                  title={t('ከቤተክርስቲያን መረጃ ቋት የተያያዙ ቤተሰቦች', 'Linked family members from Church DB')}
+                                >
+                                  {t(`ከቋት ቤተሰብ: ${linkedFamilyTotal}`, `DB Family: ${linkedFamilyTotal}`)}
+                                </button>
+                              )}
+                              {(() => {
+                                const linkedChapels = getLinkedChapelsForHRRecord(
+                                  r,
+                                  chapelList || HR_CHAPEL_ROLE_OPTIONS,
+                                  chapelPerformanceAgreements,
+                                  currentYear
+                                );
+                                if (linkedChapels.length === 0) return null;
+                                return linkedChapels.map((ch) => {
+                                  const agData = ensureChapelAgreementData(
+                                    chapelPerformanceAgreements?.[ch]?.[currentYear],
+                                    ch,
+                                    currentYear,
+                                    records
+                                  );
+                                  const agSum = computeChapelAgreementSummary(
+                                    agData,
+                                    chapelPlansMap?.[ch]
+                                  );
+                                  return (
+                                    <button
+                                      key={ch}
+                                      type="button"
+                                      onClick={() => onOpenChapelAgreements?.()}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 font-bold hover:bg-amber-100 cursor-pointer"
+                                      title={t('የ2019 ግብ ስምምነት እና አፈጻጸም ክፈት', 'Open 2019 Performance Agreement')}
+                                    >
+                                      <Award className="w-2.5 h-2.5 text-amber-700" />
+                                      <span>
+                                        {ch} · {t('ግብ ስምምነት', 'Agreement')}: {agSum.annualAvgPct}%
+                                      </span>
+                                    </button>
+                                  );
+                                });
+                              })()}
+                            </div>
+                          </div>
                         </div>
                       </td>
                       <td className="py-2.5 px-2 text-slate-700 font-semibold">{r.gender}</td>
@@ -922,6 +1125,8 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
               const roles = getHRRoleTitles(r, HR_UNASSIGNED_ROLE_PLACEHOLDER);
               const depts = getHRDepartments(r);
               const phoneInfo = resolvedPhoneById.get(r.id);
+              const fam = familyById.get(r.id);
+              const linkedFamilyTotal = (fam?.familyMembers.length || 0) + (fam?.familyChildren.length || 0);
               const roleDropdownChoices =
                 r.category === 'full_time_minister'
                   ? [...HR_MINISTER_ROLE_OPTIONS, ...chapelRoleOptions]
@@ -934,29 +1139,45 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
               return (
                 <div key={r.id} className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-bold text-slate-400 tabular-nums">#{idx + 1}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                            r.category === 'full_time_minister'
-                              ? 'bg-teal-50 text-teal-900 border border-teal-200'
-                              : 'bg-indigo-50 text-indigo-900 border border-indigo-200'
-                          }`}
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <PersonAvatarBadge
+                        name={r.name}
+                        gender={r.gender}
+                        photoDataUrl={r.photoDataUrl}
+                        photoStorageKey={r.photoStorageKey}
+                        fallbackPhotoDataUrl={fam?.selfMember?.photoDataUrl}
+                        fallbackPhotoStorageKey={fam?.selfMember?.photoStorageKey}
+                        size="md"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-slate-400 tabular-nums">#{idx + 1}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                              r.category === 'full_time_minister'
+                                ? 'bg-teal-50 text-teal-900 border border-teal-200'
+                                : 'bg-indigo-50 text-indigo-900 border border-indigo-200'
+                            }`}
+                          >
+                            {r.category === 'full_time_minister'
+                              ? t('የሙሉ ጊዜ አገልጋይ', 'Full-Time Minister')
+                              : t('የአስተዳደር ሠራተኛ', 'Admin Staff')}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-500">{r.gender}</span>
+                          {linkedFamilyTotal > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-900 border border-teal-200 text-[10px] font-bold">
+                              {t(`ከቋት ቤተሰብ: ${linkedFamilyTotal}`, `DB Family: ${linkedFamilyTotal}`)}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setProfileModalRecordId(r.id)}
+                          className="text-base font-extrabold text-slate-900 hover:text-teal-800 mt-1 break-words text-left cursor-pointer"
                         >
-                          {r.category === 'full_time_minister'
-                            ? t('የሙሉ ጊዜ አገልጋይ', 'Full-Time Minister')
-                            : t('የአስተዳደር ሠራተኛ', 'Admin Staff')}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-500">{r.gender}</span>
+                          {r.name}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setProfileModalRecordId(r.id)}
-                        className="text-base font-extrabold text-slate-900 hover:text-teal-800 mt-1 break-words text-left cursor-pointer"
-                      >
-                        {r.name}
-                      </button>
                     </div>
                     <div className="flex items-center gap-1 shrink-0 print:hidden">
                       <button
@@ -1167,6 +1388,62 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
                       : t('የአስተዳደር ሠራተኛ', 'Admin Staff')}
                   </button>
                 ))}
+              </div>
+
+              {/* Quick Photo Upload in Add/Edit Modal */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-3">
+                {hPhotoDataUrl ? (
+                  <img
+                    src={hPhotoDataUrl}
+                    alt={hName || 'Photo'}
+                    className="w-14 h-16 rounded-xl object-cover border border-teal-200 shrink-0"
+                  />
+                ) : (
+                  <div className="w-14 h-16 rounded-xl border border-dashed border-slate-300 bg-white flex flex-col items-center justify-center text-slate-400 shrink-0">
+                    <User className="w-5 h-5" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-teal-700" />
+                    <span>{t('የአገልጋዩ / የሠራተኛው ፎቶ', 'Profile Photo')}</span>
+                  </div>
+                  {hPhotoError && <p className="text-[11px] font-bold text-rose-700">{hPhotoError}</p>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-800 hover:bg-teal-700 text-white font-bold cursor-pointer">
+                      <Upload className="w-3 h-3" />
+                      <span>
+                        {hPhotoBusy
+                          ? t('በማዘጋጀት ላይ...', 'Processing...')
+                          : hPhotoDataUrl
+                          ? t('ፎቶ ቀይር', 'Change Photo')
+                          : t('ፎቶ አስገባ', 'Upload Photo')}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/*"
+                        onChange={handleModalPhotoSelect}
+                        disabled={hPhotoBusy}
+                        className="hidden"
+                      />
+                    </label>
+                    {hPhotoDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHPhotoDataUrl(undefined);
+                          setHPhotoPendingFullDataUrl(undefined);
+                          setHPhotoName(undefined);
+                          setHPhotoUpdatedAt(undefined);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>{t('አስወግድ', 'Remove')}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1529,6 +1806,9 @@ export const AdminHRPanel: React.FC<AdminHRPanelProps> = ({
             record={target}
             resolvedPhone={resolvedPhone}
             churchMembers={churchMembers}
+            churchChildren={churchChildren}
+            onUpdateChurchMember={onUpdateChurchMember}
+            onUpdateChurchChild={onUpdateChurchChild}
             onClose={() => setProfileModalRecordId(null)}
             onSaveRecord={(updated) => {
               onSaveRecords(records.map((r) => (r.id === updated.id ? updated : r)));
@@ -1552,6 +1832,8 @@ export const AdminAssetsPanel: React.FC<AdminAssetsPanelProps> = ({
   onSaveRecords
 }) => {
   const { t } = useLanguage();
+  const assetsKpiRef = useRef<HTMLDivElement | null>(null);
+  const assetsTableRef = useRef<HTMLElement | null>(null);
   const [typeFilter, setTypeFilter] = useState<'all' | AssetType>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -1602,13 +1884,13 @@ export const AdminAssetsPanel: React.FC<AdminAssetsPanelProps> = ({
     setEditingId(null);
     setAType(typeFilter === 'all' ? defaultType : typeFilter);
     setAName('');
-    setACategory(defaultType === 'fixed' ? 'የቤተክርስቲያን ቁሳቁስ / መሳሪያ' : 'የጽ/ቤትና አገልግሎት አላቂ ዕቃ');
+    setACategory(defaultType === 'fixed' ? 'የቤተክርስቲያን ቁሳቁስ / መሳሪያ' : 'የጽሕፈት ቤትና አገልግሎት አላቂ ዕቃ');
     setACode('');
     setAQty('1');
     setAUnit('በቁጥር');
     setAUnitVal('0');
     setACondition('ጥሩ');
-    setALocation('ዋናው አዳራሽ / ጽ/ቤት');
+    setALocation('ዋናው አዳራሽ / ጽሕፈት ቤት');
     setADate(new Date().toISOString().split('T')[0]);
     setANotes('');
     setIsModalOpen(true);
@@ -1741,7 +2023,21 @@ export const AdminAssetsPanel: React.FC<AdminAssetsPanelProps> = ({
           </div>
         </div>
 
-        <div className="mt-5 pt-4 border-t border-slate-200 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div ref={assetsKpiRef} className="mt-5 pt-4 border-t border-slate-200 space-y-2.5 bg-white rounded-xl">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-extrabold text-slate-700">
+              {t(`የንብረት ማጠቃለያ አሃዞች (${currentYear} ዓ/ም)`, `Assets Summary (${currentYear})`)}
+            </h4>
+            <ExportPhotoButton
+              targetRef={assetsKpiRef}
+              fileName={`የንብረት_ማጠቃለያ_አሃዞች_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <div className="text-xs font-semibold text-slate-500">{t('ጠቅላላ የንብረት ዝርዝር', 'Total Asset Lines')}</div>
             <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-1">{stats.totalItems}</div>
@@ -1766,10 +2062,24 @@ export const AdminAssetsPanel: React.FC<AdminAssetsPanelProps> = ({
               {stats.totalVal.toLocaleString()} <span className="text-xs font-bold text-slate-500">{t('ብር', 'ETB')}</span>
             </div>
           </div>
+          </div>
         </div>
       </section>
 
-      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <section ref={assetsTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+          <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">
+            {t(`የቤተክርስቲያን ንብረት ዝርዝር ሰንጠረዥ (${filtered.length})`, `Property & Asset Registry Table (${filtered.length})`)}
+          </h4>
+          <ExportPhotoButton
+            targetRef={assetsTableRef}
+            fileName={`የንብረት_ዝርዝር_ሰንጠረዥ_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
+        </div>
         <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
             <button

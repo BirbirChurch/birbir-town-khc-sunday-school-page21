@@ -169,6 +169,8 @@ export interface ChurchStudentLookupRecord {
   chapel?: string;
   parentName?: string;
   phone?: string;
+  photoDataUrl?: string;
+  photoStorageKey?: string;
 }
 
 export const buildChurchStudentLookup = (
@@ -191,7 +193,9 @@ export const buildChurchStudentLookup = (
         gender: normalizeStudentGender(existing.gender) !== 'unspecified' ? existing.gender : rec.gender,
         chapel: existing.chapel || rec.chapel,
         parentName: existing.parentName || rec.parentName,
-        phone: existing.phone || rec.phone
+        phone: existing.phone || rec.phone,
+        photoDataUrl: existing.photoDataUrl || rec.photoDataUrl,
+        photoStorageKey: existing.photoStorageKey || rec.photoStorageKey
       });
     }
 
@@ -217,7 +221,9 @@ export const buildChurchStudentLookup = (
       gender: c.gender,
       chapel: c.chapel,
       parentName: c.parentName,
-      phone: c.phone
+      phone: c.phone,
+      photoDataUrl: c.photoDataUrl,
+      photoStorageKey: c.photoStorageKey
     });
   });
 
@@ -227,7 +233,9 @@ export const buildChurchStudentLookup = (
       gender: m.gender,
       chapel: m.chapel,
       parentName: m.parentName,
-      phone: m.phone
+      phone: m.phone,
+      photoDataUrl: m.photoDataUrl,
+      photoStorageKey: m.photoStorageKey
     });
   });
 
@@ -253,12 +261,14 @@ export const enrichStudentWithChurchLookup = <
     chapel?: string;
     parentName?: string;
     phone?: string;
+    photoDataUrl?: string;
+    photoStorageKey?: string;
   }
 >(
   student: T,
   lookup: ReturnType<typeof buildChurchStudentLookup>,
   currentYear?: string | number
-): T => {
+): T & { fallbackPhotoDataUrl?: string; fallbackPhotoStorageKey?: string } => {
   const match = lookup.findMatch(student.name);
   if (!match) return student;
 
@@ -273,7 +283,9 @@ export const enrichStudentWithChurchLookup = <
     gender: hasGender ? student.gender : matchGenderShort || student.gender,
     chapel: student.chapel || match.chapel,
     parentName: student.parentName || match.parentName,
-    phone: student.phone || match.phone
+    phone: student.phone || match.phone,
+    fallbackPhotoDataUrl: match.photoDataUrl,
+    fallbackPhotoStorageKey: match.photoStorageKey
   };
 };
 

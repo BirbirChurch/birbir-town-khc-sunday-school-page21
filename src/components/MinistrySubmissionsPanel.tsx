@@ -1,5 +1,6 @@
-import React, { Suspense, useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useRef, useState } from 'react';
 import { LazyErrorBoundary, lazyWithRetry } from './LazyBoundary';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import {
   Send,
   FileText,
@@ -136,6 +137,8 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
   const [viewFilter, setViewFilter] = useState<'all' | 'pending' | 'approved' | 'forwarded'>(
     initialViewFilter
   );
+  const submissionsListRef = useRef<HTMLElement>(null);
+  const submissionDetailRef = useRef<HTMLDivElement>(null);
 
   // Compose / Edit Modal state (for sender mode)
   const [isComposeOpen, setIsComposeOpen] = useState(false);
@@ -685,7 +688,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
       )}
 
       {/* Filter Toolbar & List */}
-      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <section ref={submissionsListRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           {/* Segmented View Tabs for Spiritual / Admin */}
           <div className="flex flex-wrap items-center gap-2">
@@ -803,14 +806,21 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
             )}
           </div>
 
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ርዕስ፣ ዘርፍ ወይም ቁጥር ፈልግ..."
-              className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-60"
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ርዕስ፣ ዘርፍ ወይም ቁጥር ፈልግ..."
+                className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-60"
+              />
+            </div>
+            <ExportPhotoButton
+              targetRef={submissionsListRef}
+              fileName={`የሰነዶች_መዝገብ_${unitName}_${currentYear}`}
+              variant="secondary"
             />
           </div>
         </div>
@@ -1132,11 +1142,21 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                   <label className="block font-bold text-slate-700 mb-1">ጊዜ / ሩብ ዓመት</label>
                   <input
                     type="text"
+                    list="fiscalPeriodOptionsList"
                     value={cPeriod}
                     onChange={(e) => setCPeriod(e.target.value)}
-                    placeholder="1ኛ ሩብ ዓመት / ዓመታዊ..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl"
+                    placeholder="1ኛ ሩብ ዓመት (ሐምሌ–መስከረም)..."
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-base sm:text-xs"
                   />
+                  <datalist id="fiscalPeriodOptionsList">
+                    <option value="1ኛ ሩብ ዓመት (ሐምሌ–መስከረም)" />
+                    <option value="2ኛ ሩብ ዓመት (ጥቅምት–ታኅሣሥ)" />
+                    <option value="1ኛ ግማሽ ዓመት (ሐምሌ–ታኅሣሥ)" />
+                    <option value="3ኛ ሩብ ዓመት (ጥር–መጋቢት)" />
+                    <option value="4ኛ ሩብ ዓመት (ሚያዝያ–ሰኔ)" />
+                    <option value="2ኛ ግማሽ ዓመት (ጥር–ሰኔ)" />
+                    <option value="የዓመት ዕቅድ / ሪፖርት (ሐምሌ–ሰኔ)" />
+                  </datalist>
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
@@ -1321,7 +1341,7 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
       {/* Detail / Inspection / Approval / Forward Modal */}
       {selectedSub && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-5 sm:p-6 border border-slate-200 max-h-[94vh] overflow-y-auto space-y-4">
+          <div ref={submissionDetailRef} className="bg-white rounded-2xl max-w-4xl w-full p-5 sm:p-6 border border-slate-200 max-h-[94vh] overflow-y-auto space-y-4">
             <div className="flex items-start justify-between gap-4 pb-3 border-b border-slate-100">
               <div>
                 <div className="text-xs font-bold text-slate-500 flex flex-wrap items-center gap-2">
@@ -1350,6 +1370,13 @@ export const MinistrySubmissionsPanel: React.FC<MinistrySubmissionsPanelProps> =
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0 print:hidden">
+                <ExportPhotoButton
+                  targetRef={submissionDetailRef}
+                  fileName={`${selectedSub.title || 'ሰነድ'}_${selectedSub.year}`}
+                  labelAm="በፎቶ አውርድ"
+                  variant="subtle"
+                  compact
+                />
                 <button
                   type="button"
                   onClick={() => window.print()}

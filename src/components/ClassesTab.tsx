@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import {
   UserPlus,
   Printer,
@@ -19,8 +20,12 @@ import {
   HelpCircle,
   Check,
   AlertCircle,
-  Users
+  Users,
+  Camera,
+  X
 } from 'lucide-react';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 import { Student, Teacher, Role, ChurchChild, ChurchMember } from '../types';
 import {
   downloadCSV,
@@ -106,6 +111,7 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
   const [selectedAgeFilter, setSelectedAgeFilter] = useState<SundaySchoolAgeBucketKey | 'all'>('all');
   const [showAgeStatsPanel, setShowAgeStatsPanel] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const classExportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleBeforePrint = () => setIsPrinting(true);
@@ -123,6 +129,9 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentAge, setNewStudentAge] = useState('7');
   const [newStudentGender, setNewStudentGender] = useState<string>('ወ');
+  const [newStudentPhoto, setNewStudentPhoto] = useState<PersonPhotoValue>({});
+  const [editingPhotoStudent, setEditingPhotoStudent] = useState<Student | null>(null);
+  const [editStudentPhoto, setEditStudentPhoto] = useState<PersonPhotoValue>({});
 
   // Batch paste modal state (to enter multiple students at once)
   const [showBatchAddModal, setShowBatchAddModal] = useState(false);
@@ -503,10 +512,12 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
       m4: 0,
       m5: 0,
       m6: 0,
-      m7: 0
+      m7: 0,
+      ...newStudentPhoto
     });
     setNewStudentName('');
     setNewStudentAge('7');
+    setNewStudentPhoto({});
     setShowAddModal(false);
   };
 
@@ -771,7 +782,7 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div ref={classExportRef} className="space-y-6">
       {/* Printable Sheet Header */}
       <div className="hidden print:block text-center pb-4 mb-4 border-b border-slate-300">
         <h1 className="text-xl font-bold">የብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን</h1>
@@ -785,7 +796,7 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
       </div>
 
       {/* Controls Bar */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm print:hidden">
+      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <div>
@@ -852,7 +863,7 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
           </div>
 
           {/* Search and Action Buttons Bar - Strictly Horizontal Scrollable Row (ወደ ጎን) */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin max-w-full shrink-0">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin max-w-full shrink-0 print:hidden">
             {/* Search Input */}
             <div className="relative min-w-[160px] shrink-0">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -965,7 +976,13 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
               </>
             )}
 
-            {/* Print / PDF Buttons */}
+            {/* Print / PDF / Photo Buttons */}
+            <ExportPhotoButton
+              targetRef={classExportRef}
+              fileName={`የውጤት_መዝገብ_${selectedClass}_${currentYear}`}
+              variant="secondary"
+              compact
+            />
             <button
               onClick={handlePrint}
               className="bg-rose-700 hover:bg-rose-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0 border border-rose-800"
@@ -1177,32 +1194,45 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
 
                       {/* Sticky Name Column */}
                       <td className="py-2.5 px-3 border-r border-slate-200 text-left font-bold text-slate-900 sticky left-12 z-10 bg-white group-hover:bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] min-w-[240px] print:static print:shadow-none print:border-slate-400">
-                        {nameScriptMode === 'en' ? (
-                          <span
-                            className="text-[13pt] font-bold text-slate-900 leading-normal"
-                            title={s.name}
-                          >
-                            {transliterateAmharicToEnglish(s.name)}
-                          </span>
-                        ) : (
-                          <>
-                            {canEdit ? (
-                              <input
-                                type="text"
-                                value={s.name}
-                                onChange={(e) => handleInfoChange(s, 'name', e.target.value)}
-                                className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-600 focus:bg-white px-1 py-0.5 rounded text-[13pt] outline-none font-bold text-slate-900 leading-normal"
-                              />
-                            ) : (
-                              <span className="text-[13pt] font-bold text-slate-900 leading-normal">{s.name}</span>
-                            )}
-                            {nameScriptMode === 'both' && (
-                              <div className="text-[11px] font-semibold text-indigo-700 px-1 mt-0.5">
+                        <div className="flex items-center gap-2">
+                          <PersonAvatarBadge
+                            name={s.name}
+                            gender={s.gender}
+                            photoDataUrl={s.photoDataUrl}
+                            photoStorageKey={s.photoStorageKey}
+                            fallbackPhotoDataUrl={s.fallbackPhotoDataUrl}
+                            fallbackPhotoStorageKey={s.fallbackPhotoStorageKey}
+                            size="xs"
+                          />
+                          <div className="min-w-0 flex-1">
+                            {nameScriptMode === 'en' ? (
+                              <span
+                                className="text-[13pt] font-bold text-slate-900 leading-normal"
+                                title={s.name}
+                              >
                                 {transliterateAmharicToEnglish(s.name)}
-                              </div>
+                              </span>
+                            ) : (
+                              <>
+                                {canEdit ? (
+                                  <input
+                                    type="text"
+                                    value={s.name}
+                                    onChange={(e) => handleInfoChange(s, 'name', e.target.value)}
+                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-600 focus:bg-white px-1 py-0.5 rounded text-[13pt] outline-none font-bold text-slate-900 leading-normal"
+                                  />
+                                ) : (
+                                  <span className="text-[13pt] font-bold text-slate-900 leading-normal">{s.name}</span>
+                                )}
+                                {nameScriptMode === 'both' && (
+                                  <div className="text-[11px] font-semibold text-indigo-700 px-1 mt-0.5">
+                                    {transliterateAmharicToEnglish(s.name)}
+                                  </div>
+                                )}
+                              </>
                             )}
-                          </>
-                        )}
+                          </div>
+                        </div>
                       </td>
 
                       {/* Age */}
@@ -1309,6 +1339,22 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
                         <td className="py-2.5 px-2 print:hidden">
                           {canEdit ? (
                             <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPhotoStudent(s);
+                                  setEditStudentPhoto({
+                                    photoDataUrl: s.photoDataUrl,
+                                    photoStorageKey: s.photoStorageKey,
+                                    photoName: s.photoName,
+                                    photoUpdatedAt: s.photoUpdatedAt
+                                  });
+                                }}
+                                className="text-teal-700 hover:text-teal-900 p-1 rounded hover:bg-teal-50 transition cursor-pointer"
+                                title="የተማሪ ፎቶ አስገባ / ቀይር"
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                              </button>
                               {s.hasAnyScore && (
                                 <button
                                   type="button"
@@ -1416,10 +1462,21 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
                 </div>
               </div>
 
+              <PersonPhotoField
+                compact
+                storagePrefix="student"
+                name={newStudentName}
+                value={newStudentPhoto}
+                onChange={setNewStudentPhoto}
+              />
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => {
+                    setNewStudentPhoto({});
+                    setShowAddModal(false);
+                  }}
                   className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-medium"
                 >
                   ሰርዝ
@@ -1432,6 +1489,59 @@ export const ClassesTab: React.FC<ClassesTabProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Student Photo Modal */}
+      {editingPhotoStudent && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">የተማሪ ፎቶ አስተዳድር</h3>
+                <p className="text-xs text-slate-500">{editingPhotoStudent.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPhotoStudent(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <PersonPhotoField
+              storagePrefix="student"
+              personId={editingPhotoStudent.id}
+              name={editingPhotoStudent.name}
+              value={editStudentPhoto}
+              onChange={setEditStudentPhoto}
+            />
+            <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingPhotoStudent(null)}
+                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-medium cursor-pointer"
+              >
+                ሰርዝ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateStudent({
+                    ...editingPhotoStudent,
+                    photoDataUrl: editStudentPhoto.photoDataUrl,
+                    photoStorageKey: editStudentPhoto.photoStorageKey,
+                    photoName: editStudentPhoto.photoName,
+                    photoUpdatedAt: editStudentPhoto.photoUpdatedAt
+                  });
+                  setEditingPhotoStudent(null);
+                }}
+                className="px-4 py-2 text-xs bg-teal-700 hover:bg-teal-600 text-white rounded-xl font-bold shadow cursor-pointer"
+              >
+                ፎቶ አስቀምጥ
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -5,73 +5,75 @@ export type AppLanguage = 'am' | 'en';
 export const UNIT_TRANSLATIONS_EN: Record<OrgUnitId, { name: string; shortDesc: string }> = {
   elders_council: {
     name: 'Elders Council (Executive Committee)',
-    shortDesc:
-      'Highest governance & executive committee · 12 members (11 M, 1 F: 9 church father leaders, 1 Women Ministry, 1 Youth Ministry, 1 Spiritual Sector) · Standing meeting: Thursday Evening'
+    shortDesc: ''
   },
   office: {
     name: 'Church Office',
-    shortDesc: 'Church master registry, secretariat records, administration & community service hub'
+    shortDesc: ''
   },
   holistic_community: {
     name: 'Holistic Community Service',
-    shortDesc: 'Community development, health, education support, and social care ministry'
+    shortDesc: ''
   },
   admin_finance: {
     name: 'Administration & Finance',
-    shortDesc: 'Church income (tithes/offerings), expenses, budget, church HR, and property & assets'
+    shortDesc: ''
   },
   spiritual_council: {
     name: 'Spiritual Sector Council',
-    shortDesc: 'Church master registry and coordinating council for all spiritual ministries & chapels'
+    shortDesc: ''
   },
   evangelism: {
     name: 'Evangelism Ministry',
-    shortDesc: 'Gospel outreach, new believers follow-up, discipleship, and baptism preparation'
+    shortDesc: ''
   },
   deacons: {
     name: 'Deacons Ministry',
-    shortDesc: "Deacons roster, Lord's Supper preparation, visitation, and care for the sick and needy"
+    shortDesc: ''
   },
   women_ministry: {
     name: 'Women Ministry',
-    shortDesc:
-      'General assembly for women over 29 (and married women under 29 who wish to join), 3–7 member executive committee, full-time coordinator, discipleship & skills development'
+    shortDesc: ''
   },
   youth_ministry: {
     name: 'Youth Ministry',
-    shortDesc: 'Youth worship, choir, Bible study, literature, and service teams'
+    shortDesc: ''
   },
   children_ministry: {
     name: 'Children Ministry',
-    shortDesc: 'Church children registry (0–14), academic year, Sunday school classes & teacher portal'
+    shortDesc: ''
   },
   chapels_dept: {
     name: 'Chapels',
-    shortDesc: 'All 10 church chapels (Elroi, Shalom, Bethel, Yahweh, Eden, Ebenezer, Rehoboth, Elshaddai, Ruhama, Adonai)'
+    shortDesc: ''
   },
   love_compassion: {
     name: 'Love & Compassion',
-    shortDesc: 'Support and compassionate care for the needy, orphans, elderly, and sick'
+    shortDesc: ''
   },
   development: {
     name: 'Development Sector',
-    shortDesc: 'Church income generation, construction, infrastructure, and sustainable development projects'
+    shortDesc: ''
   },
   bible_school: {
     name: 'Bible School',
-    shortDesc: 'Bible school students, instructors, academic terms, tuition, and grades'
+    shortDesc: ''
   },
   rehoboth_school: {
     name: 'Rehoboth Primary & Middle School',
-    shortDesc: 'Rehoboth school students (KG–Grade 8), teachers, staff, and administration'
+    shortDesc: ''
   },
   men_fellowship: {
     name: 'Men Fellowship',
-    shortDesc: 'Men mutual care, fellowship, support in times of joy and sorrow, and visitation'
+    shortDesc: ''
   },
   women_fellowship: {
     name: 'Women Fellowship Sector',
-    shortDesc: 'Married women (wives) mutual support, emergency assistance, and fellowship contributions'
+    shortDesc: ''
+  },
+  youth_children_dev_et1004: {
+    name: 'Youth & Children Development ET 1004',
+    shortDesc: ''
   }
 };
 

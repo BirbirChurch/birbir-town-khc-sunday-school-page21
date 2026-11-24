@@ -30,6 +30,18 @@ const buildKey = (unitId: OrgUnitId | 'unassigned', chapel?: string): string =>
   unitId === 'chapels_dept' && chapel ? `chapels_dept::${chapel}` : unitId;
 
 const UNIT_MATCH_ALIASES: { unitId: OrgUnitId; keywords: string[] }[] = [
+  {
+    unitId: 'youth_children_dev_et1004',
+    keywords: [
+      'ኢት 1004',
+      'et 1004',
+      'eth 1004',
+      'የወጣቶች እና የልጆች ልማት',
+      'ወጣቶች እና ልጆች ልማት',
+      'youth & children development',
+      'youth and children development'
+    ]
+  },
   { unitId: 'women_fellowship', keywords: ['የሴቶች መተሳሰብ', 'ሴቶች መተሳሰብ', 'women fellowship', 'ሴቶች ህብረት'] },
   { unitId: 'men_fellowship', keywords: ['የወንዶች መተሳሰብ', 'ወንዶች መተሳሰብ', 'men fellowship', 'ወንዶች ህብረት'] },
   { unitId: 'rehoboth_school', keywords: ['ርኆቦት ት/ቤት', 'ርሆቦት ት/ቤት', 'ርኆቦት ትምህርት', 'rehoboth school', 'አፀደ ሕፃናት'] },
@@ -45,7 +57,7 @@ const UNIT_MATCH_ALIASES: { unitId: OrgUnitId; keywords: string[] }[] = [
   { unitId: 'admin_finance', keywords: ['አስተዳደርና ፋይናንስ', 'አስተዳደር', 'ፋይናንስ', 'ሰው ኃይል', 'ንብረት', 'admin', 'finance'] },
   { unitId: 'holistic_community', keywords: ['ሁለንተናዊ', 'ማህበረሰብ አገልግሎት', 'holistic'] },
   { unitId: 'spiritual_council', keywords: ['መንፈሳዊ ዘርፍ', 'spiritual council', 'spiritual sector'] },
-  { unitId: 'office', keywords: ['ዋና ጽ/ቤት', 'ቤተክርስቲያን ጽ/ቤት', 'ጽ/ቤት', 'ጽህፈት ቤት', 'main office', 'office'] },
+  { unitId: 'office', keywords: ['ዋና ጽሕፈት ቤት', 'ዋና ጽ/ቤት', 'ቤተክርስቲያን ጽ/ቤት', 'ጽሕፈት ቤት', 'ጽህፈት ቤት', 'ጽ/ቤት', 'main office', 'office'] },
   { unitId: 'elders_council', keywords: ['ሽማግሌዎች', 'ሽማግሌ', 'elders council', 'elders'] }
 ];
 

@@ -59,6 +59,9 @@ import {
   transliterateAmharicToEnglish
 } from '../utils/amharicTransliterator';
 import { copyTextSafely } from '../utils/clipboard';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface ChurchChildrenTabProps {
   currentYear: string;
@@ -582,6 +585,10 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   }, [churchChildren, officialLoggedInChapel]);
 
   // State
+  const childrenKpiRef = useRef<HTMLDivElement | null>(null);
+  const childrenChapelRef = useRef<HTMLDivElement | null>(null);
+  const childrenAgeCardRef = useRef<HTMLDivElement | null>(null);
+  const childrenTableRef = useRef<HTMLDivElement | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all');
@@ -624,6 +631,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
   const [formResidence, setFormResidence] = useState<string>('');
   const [formVillage, setFormVillage] = useState<string>('');
   const [formNotes, setFormNotes] = useState<string>('');
+  const [formPhoto, setFormPhoto] = useState<PersonPhotoValue>({});
 
   // Sync loggedInChapel when selected chapel changes
   React.useEffect(() => {
@@ -1003,6 +1011,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     setFormResidence('');
     setFormVillage('');
     setFormNotes('');
+    setFormPhoto({});
     setIsAddModalOpen(true);
   };
 
@@ -1022,6 +1031,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     setFormResidence('');
     setFormVillage('');
     setFormNotes('');
+    setFormPhoto({});
     setIsAddModalOpen(true);
   };
 
@@ -1041,6 +1051,12 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
     setFormResidence(child.residence || '');
     setFormVillage(child.fellowshipOrVillage || '');
     setFormNotes(child.notes || '');
+    setFormPhoto({
+      photoDataUrl: child.photoDataUrl,
+      photoStorageKey: child.photoStorageKey,
+      photoName: child.photoName,
+      photoUpdatedAt: child.photoUpdatedAt
+    });
     setIsAddModalOpen(true);
   };
 
@@ -1075,7 +1091,11 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
         residence: formResidence.trim() || matchedChildFamilyHead.residence || undefined,
         relationToHead: 'ልጅ',
         familyCode: rootFamCode || undefined,
-        registeredDate: new Date().toISOString().split('T')[0]
+        registeredDate: new Date().toISOString().split('T')[0],
+        photoDataUrl: formPhoto.photoDataUrl,
+        photoStorageKey: formPhoto.photoStorageKey,
+        photoName: formPhoto.photoName,
+        photoUpdatedAt: formPhoto.photoUpdatedAt
       });
       const assignedCode =
         (created && 'memberCode' in created && created.memberCode) || childNextSubCodePreview;
@@ -1100,7 +1120,11 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       residence: formResidence.trim() || undefined,
       fellowshipOrVillage: formVillage.trim() || undefined,
       notes: formNotes.trim() || undefined,
-      registeredDate: editingChild?.registeredDate || new Date().toISOString().split('T')[0]
+      registeredDate: editingChild?.registeredDate || new Date().toISOString().split('T')[0],
+      photoDataUrl: formPhoto.photoDataUrl,
+      photoStorageKey: formPhoto.photoStorageKey,
+      photoName: formPhoto.photoName,
+      photoUpdatedAt: formPhoto.photoUpdatedAt
     };
 
     if (editingChild) {
@@ -1520,7 +1544,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       </div>
 
       {/* Top Banner / Toolbar */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm print:hidden">
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
@@ -1543,7 +1567,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap print:hidden">
             {onAddChurchMember && (
               <button
                 type="button"
@@ -1701,7 +1725,23 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       </div>
 
       {/* KPI & Summary Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 print:grid-cols-5">
+      <div ref={childrenKpiRef} className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs sm:text-sm font-extrabold text-slate-800">
+            {officialLoggedInChapel
+              ? `የ${officialLoggedInChapel} ልጆች (0–14) ዋና አሃዞች`
+              : `የቤተክርስቲያን ልጆች (0–14) ዋና አሃዞች (${currentYear} ዓ/ም)`}
+          </h3>
+          <ExportPhotoButton
+            targetRef={childrenKpiRef}
+            fileName={`የልጆች_ዋና_አሃዞች${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 print:grid-cols-5">
         {/* Total Children */}
         <div className="bg-white rounded-xl border border-slate-200/80 p-3.5 shadow-xs">
           <p className="text-[11px] font-semibold text-slate-500">ጠቅላላ የቤተክርስቲያን ልጆች</p>
@@ -1778,10 +1818,11 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
             </span>
           </div>
         </div>
+        </div>
       </div>
 
       {/* Chapel Breakdown Strip: Direct Chapel connection & Multi-Chapel Filtering */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+      <div ref={childrenChapelRef} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100 gap-2">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1792,7 +1833,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               በየቻፕሉ ያሉ ልጆች፣ የሚማሩ፣ የማይማሩ እና የወላጅ ስልክ መገናኛ (አንድ ወይም ከዚያ በላይ ቻፕሎችን መርጠው ማጣራት ይችላሉ)
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap print:hidden">
+          <div className="flex items-center gap-2 flex-wrap">
             {!officialLoggedInChapel && (
               <button
                 type="button"
@@ -1800,7 +1841,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                   setSelectedChapels(chapelStats.chapels);
                   setSelectedChapelFilter('all');
                 }}
-                className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs"
+                className="text-xs font-bold text-blue-900 bg-blue-100/80 hover:bg-blue-200 px-3 py-1.5 rounded-xl transition cursor-pointer border border-blue-300/80 flex items-center gap-1.5 shadow-2xs print:hidden"
                 title="በስርዓቱ ውስጥ ያሉትን 10ሩንም ቻፕሎች በአንድ ጊዜ ምረጥ"
               >
                 <CheckCircle2 className="w-3.5 h-3.5 text-blue-800" />
@@ -1808,7 +1849,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               </button>
             )}
 
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 print:hidden">
               <button
                 type="button"
                 onClick={() => setDisplayLayoutMode('table')}
@@ -1844,11 +1885,20 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                   setSelectedChapels([]);
                   setSelectedChapelFilter('all');
                 }}
-                className="text-xs font-bold text-rose-700 hover:text-rose-900 bg-rose-50 px-3 py-1.5 rounded-xl transition cursor-pointer border border-rose-200"
+                className="text-xs font-bold text-rose-700 hover:text-rose-900 bg-rose-50 px-3 py-1.5 rounded-xl transition cursor-pointer border border-rose-200 print:hidden"
               >
                 ✕ የቻፕል ማጣሪያዎችን አጽዳ ({selectedChapels.length > 0 ? `${selectedChapels.length} ቻፕሎች` : selectedChapelFilter})
               </button>
             )}
+
+            <ExportPhotoButton
+              targetRef={childrenChapelRef}
+              fileName={`የቻፕሎች_ልጆች_መማር_ማጠቃለያ${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
           </div>
         </div>
 
@@ -1917,7 +1967,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       </div>
 
       {/* Age Cohorts Matrix Table (0-3, 4-6, 7-9, 10-12, 13-14) */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+      <div ref={childrenAgeCardRef} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100 gap-2">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -1928,15 +1978,25 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
               በዕድሜ ምድብ፣ በጾታ (ወንድ/ሴት) እና በሰንበት ት/ቤት የመማር ሁኔታ የተተነተነ ማጠቃለያ
             </p>
           </div>
-          {ageFilter !== 'all' && (
-            <button
-              type="button"
-              onClick={() => setAgeFilter('all')}
-              className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 px-2.5 py-1 rounded-lg transition self-start print:hidden"
-            >
-              ✕ የዕድሜ ማጣሪያ አጽዳ
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+            {ageFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setAgeFilter('all')}
+                className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 px-2.5 py-1 rounded-lg transition print:hidden"
+              >
+                ✕ የዕድሜ ማጣሪያ አጽዳ
+              </button>
+            )}
+            <ExportPhotoButton
+              targetRef={childrenAgeCardRef}
+              fileName={`የልጆች_የዕድሜ_ምድቦች_ስታቲስቲክስ${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -2274,7 +2334,22 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
       {/* Main Table or Grouped Chapels View */}
       {viewFilter !== 'missing_from_church' ? (
         displayLayoutMode === 'grouped_chapels' ? (
-          <div className="space-y-6">
+          <div ref={childrenTableRef} className="space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-200/80 px-4 py-3 flex items-center justify-between gap-2 shadow-sm">
+              <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-900" />
+                <span>የልጆች ዝርዝር ሰንጠረዥ — በየቻፕሉ የተከፋፈለ ({filteredChildren.length.toLocaleString('am-ET')} ልጆች)</span>
+              </h3>
+              <ExportPhotoButton
+                targetRef={childrenTableRef}
+                fileName={`የልጆች_ዝርዝር_በቻፕል${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
+            <div className="space-y-6">
             {chapelStats.chapels.map((chName) => {
               const chChildren = childrenGroupedByChapel[chName] || [];
               const chStat = chapelStats.statsMap[chName] || { total: 0, enrolled: 0, notEnrolled: 0, male: 0, female: 0 };
@@ -2360,17 +2435,28 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                               <tr key={`grp_ch_${child.id}`} className="hover:bg-blue-50/30 transition-colors">
                                 <td className="py-2 px-3 text-center font-bold text-slate-500 bg-slate-50/50">{idx + 1}</td>
                                 <td className="py-2 px-4 font-bold text-[12pt] text-slate-900">
-                                  <div>{activeNameMode === 'en' ? transliterateAmharicToEnglish(child.name) : child.name}</div>
-                                  {activeNameMode === 'both' && (
-                                    <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
-                                      {transliterateAmharicToEnglish(child.name)}
+                                  <div className="flex items-center gap-2">
+                                    <PersonAvatarBadge
+                                      name={child.name}
+                                      gender={child.gender}
+                                      photoDataUrl={child.photoDataUrl}
+                                      photoStorageKey={child.photoStorageKey}
+                                      size="sm"
+                                    />
+                                    <div>
+                                      <div>{activeNameMode === 'en' ? transliterateAmharicToEnglish(child.name) : child.name}</div>
+                                      {activeNameMode === 'both' && (
+                                        <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                          {transliterateAmharicToEnglish(child.name)}
+                                        </div>
+                                      )}
+                                      {child.memberCode && (
+                                        <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                          {child.memberCode}
+                                        </span>
+                                      )}
                                     </div>
-                                  )}
-                                  {child.memberCode && (
-                                    <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
-                                      {child.memberCode}
-                                    </span>
-                                  )}
+                                  </div>
                                 </td>
                                 <td className="py-2 px-3 text-center">
                                   <span className={`inline-block px-2 py-0.5 rounded font-bold text-[10px] ${isMale ? 'bg-blue-100 text-blue-800' : isFemale ? 'bg-rose-100 text-rose-800' : 'text-slate-400'}`}>
@@ -2447,9 +2533,28 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 </div>
               );
             })}
+            </div>
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden print:border-none print:shadow-none print:rounded-none">
+          <div ref={childrenTableRef} className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden print:border-none print:shadow-none print:rounded-none">
+            <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+              <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-900" />
+                <span>
+                  {officialLoggedInChapel
+                    ? `የ${officialLoggedInChapel} ልጆች ዝርዝር`
+                    : 'የቤተክርስቲያን ልጆች ዝርዝር ሰንጠረዥ'} ({filteredChildren.length.toLocaleString('am-ET')} ልጆች)
+                </span>
+              </h3>
+              <ExportPhotoButton
+                targetRef={childrenTableRef}
+                fileName={`የልጆች_ዝርዝር_ሰንጠረዥ${officialLoggedInChapel ? `_${officialLoggedInChapel}` : ''}_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
             <div className="overflow-x-auto print:overflow-visible">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
@@ -2495,17 +2600,28 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
 
                           {/* Child Name (13pt Bold) */}
                           <td className="py-2.5 px-4 font-bold text-[13pt] text-slate-900 min-w-[200px] leading-normal">
-                            <div>{activeNameMode === 'en' ? transliterateAmharicToEnglish(child.name) : child.name}</div>
-                            {activeNameMode === 'both' && (
-                              <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
-                                {transliterateAmharicToEnglish(child.name)}
+                            <div className="flex items-center gap-2.5">
+                              <PersonAvatarBadge
+                                name={child.name}
+                                gender={child.gender}
+                                photoDataUrl={child.photoDataUrl}
+                                photoStorageKey={child.photoStorageKey}
+                                size="sm"
+                              />
+                              <div>
+                                <div>{activeNameMode === 'en' ? transliterateAmharicToEnglish(child.name) : child.name}</div>
+                                {activeNameMode === 'both' && (
+                                  <div className="text-[11px] font-semibold text-indigo-700 mt-0.5">
+                                    {transliterateAmharicToEnglish(child.name)}
+                                  </div>
+                                )}
+                                {child.memberCode && (
+                                  <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                    {child.memberCode}
+                                  </span>
+                                )}
                               </div>
-                            )}
-                            {child.memberCode && (
-                              <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-indigo-900 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
-                                {child.memberCode}
-                              </span>
-                            )}
+                            </div>
                           </td>
 
                           {/* Chapel */}
@@ -2671,7 +2787,7 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
           </div>
         ) ) : (
         /* Special View: Sunday School Students Missing From Church Children Registry */
-        <div className="bg-white rounded-2xl border border-purple-200 shadow-sm overflow-hidden">
+        <div ref={childrenTableRef} className="bg-white rounded-2xl border border-purple-200 shadow-sm overflow-hidden">
           <div className="p-4 bg-purple-50/70 border-b border-purple-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-extrabold text-purple-950 flex items-center gap-2">
@@ -2682,16 +2798,26 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                 እነዚህ ተማሪዎች በክፍል ውጤት ወይም አተንዳንስ መዝገብ ውስጥ ይገኛሉ፤ ወደ ቤተክርስቲያኒቱ የልጆች ቋት በማስገባት መረጃቸውን ሙሉ ያድርጉ።
               </p>
             </div>
-            {missingFromChurchChildren.length > 0 && (
-              <button
-                type="button"
-                onClick={handleBatchImportMissing}
-                className="bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shrink-0 shadow-sm"
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>ሁሉንም ({missingFromChurchChildren.length}) ወደ ቋቱ አስገባ</span>
-              </button>
-            )}
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              {missingFromChurchChildren.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleBatchImportMissing}
+                  className="bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm print:hidden"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>ሁሉንም ({missingFromChurchChildren.length}) ወደ ቋቱ አስገባ</span>
+                </button>
+              )}
+              <ExportPhotoButton
+                targetRef={childrenTableRef}
+                fileName={`በቋት_የሌሉ_ተማሪዎች_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -2967,6 +3093,16 @@ export const ChurchChildrenTab: React.FC<ChurchChildrenTabProps> = ({
                   )}
                 </div>
               )}
+
+              <PersonPhotoField
+                storagePrefix="child"
+                personId={editingChild?.id || formName || 'new'}
+                name={formName}
+                value={formPhoto}
+                onChange={setFormPhoto}
+                labelAm="የልጁ ፎቶ (Child Photo)"
+                labelEn="Child Photo"
+              />
 
               {/* Child Full Name */}
               <div>

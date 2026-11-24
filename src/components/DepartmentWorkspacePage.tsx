@@ -1,5 +1,6 @@
-import React, { Suspense, useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useRef, useState } from 'react';
 import { LazyErrorBoundary, lazyWithRetry } from './LazyBoundary';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import * as XLSX from 'xlsx';
 import { formatDualDateText, formatDualDateTimeText, getTodayIsoDateTime } from '../utils/ethiopianDate';
 import { DualDateBadge, DualDateInput } from './DualDate';
@@ -31,7 +32,9 @@ import {
   History,
   Building2,
   ShieldCheck,
-  Calculator
+  Calculator,
+  FileSpreadsheet,
+  Award
 } from 'lucide-react';
 import {
   AnnualPlanItem,
@@ -45,11 +48,19 @@ import {
   MinistrySubmission,
   OrgUnitId,
   PlanDispatchItem,
+  PlanExecutionLogEntry,
+  PlanQuarterKey,
   Role,
   SpiritualMember,
   Student,
   Teacher
 } from '../types';
+import {
+  detectEthiopianQuarterFromDate,
+  getHalfYearLabel,
+  getQuarterShortLabel,
+  reconcilePlanWithExecutionLogs
+} from '../utils/planExecutionRollup';
 import {
   CHURCH_ORG_UNITS,
   createDefaultEldersCouncilWorkspaceData,
@@ -84,7 +95,20 @@ import { HistoricalLeadersArchiveTab } from './HistoricalLeadersArchiveTab';
 import { EvangelismParticipationStatsPanel } from './EvangelismParticipationStatsPanel';
 import { MissionaryReportsPanel } from './MissionaryReportsPanel';
 import { WomenCharterPanel } from './WomenCharterPanel';
+import { SpiritualMasterPlanSheet, SpiritualMasterNarrativesFooter } from './SpiritualMasterPlanSheet';
+import { ChapelPerformanceAgreementPanel } from './ChapelPerformanceAgreementPanel';
+import { ChapelQuarterlyComparisonChart } from './ChapelQuarterlyComparisonChart';
+import {
+  annualPlansToMasterSheet,
+  ensureChapelMasterAnnualPlans,
+  exportSpiritualMasterPlanExcel,
+  syncMasterPlanToAnnualPlans
+} from '../utils/spiritualMasterPlan';
 import { syncChurchMemberToEvangelismRecords } from '../utils/memberMinistryProfile';
+import { getPlanDoneForPeriod, getPlanTargetForPeriod } from '../utils/planParser';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
+import { findMatchingChurchMemberForHR } from '../utils/hrMemberMatcher';
 
 const PlanBulkSenderPanel = lazyWithRetry(() =>
   import('./PlanDispatchPanel').then((m) => ({ default: m.PlanBulkSenderPanel }))
@@ -122,6 +146,7 @@ interface DepartmentWorkspacePageProps {
   onBatchAddMembers: (members: ChurchMember[], mode?: 'append' | 'replace', baselineYear?: number) => void;
   onAddMember: (member: Omit<ChurchMember, 'id'>) => ChurchMember | void;
   onUpdateMember: (member: ChurchMember) => void;
+  onUpdateChild?: (child: ChurchChild) => void;
   onDeleteMember: (id: number) => void;
   onClearChurchMembers: () => void;
   onExtractChildrenToChildrenTab: (children: Omit<ChurchChild, 'id'>[], mode?: 'append' | 'replace') => void;
@@ -177,6 +202,7 @@ type SubTabId =
   | 'women_charter'
   | 'plans'
   | 'plan_dispatch'
+  | 'spiritual_master_plan'
   | 'consolidated_plans'
   | 'send_to_spiritual'
   | 'spiritual_review'
@@ -184,7 +210,8 @@ type SubTabId =
   | 'all_sector_leaders'
   | 'historical_leaders'
   | 'admin_inbox'
-  | 'elders_submissions';
+  | 'elders_submissions'
+  | 'chapel_agreements';
 
 export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = ({
   unitId,
@@ -204,6 +231,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   onBatchAddMembers,
   onAddMember,
   onUpdateMember,
+  onUpdateChild,
   onDeleteMember,
   onClearChurchMembers,
   onExtractChildrenToChildrenTab,
@@ -228,13 +256,18 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   choirMembers = [],
   spiritualMembers = []
 }) => {
-  const { t, unitName: getUnitLabel, unitDesc: getUnitDescLabel } = useLanguage();
+  const { t, unitName: getUnitLabel } = useLanguage();
   const unit = getOrgUnitById(unitId);
   const breadcrumb = useMemo(() => getOrgUnitBreadcrumb(unitId), [unitId]);
   const childUnits = useMemo(() => getOrgUnitChildren(unitId), [unitId]);
   const overviewUnits = useMemo(() => {
     if (unitId === 'elders_council') {
       return CHURCH_ORG_UNITS.filter((u) => u.id !== 'elders_council');
+    }
+    if (unitId === 'office') {
+      return CHURCH_ORG_UNITS.filter(
+        (u) => u.id === 'holistic_community' || u.id === 'development' || u.id === 'admin_finance'
+      );
     }
     if (unitId === 'spiritual_council') {
       return CHURCH_ORG_UNITS.filter((u) => isUnderSpiritualCouncil(u.id));
@@ -250,6 +283,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     if (unitId === 'love_compassion') return 'beneficiaries';
     if (unitId === 'evangelism') return 'evangelism_stats';
     if (unitId === 'women_ministry') return 'women_charter';
+    if (unitId === 'spiritual_council' || unitId === 'holistic_community') return 'overview';
     if (unit.hasChurchRegistry && unit.kind === 'council_registry') return 'church_registry';
     if (unit.kind === 'governance' || unit.kind === 'special_hub') return 'overview';
     if (unit.kind === 'finance') return 'finances';
@@ -282,6 +316,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   const [mEducation, setMEducation] = useState('');
   const [mStatus, setMStatus] = useState('ንቁ');
   const [mNotes, setMNotes] = useState('');
+  const [mPhoto, setMPhoto] = useState<PersonPhotoValue>({});
 
   // Activity Modal State
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
@@ -293,6 +328,9 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
   const [aParticipants, setAParticipants] = useState('');
   const [aStatus, setAStatus] = useState<'ታቅዷል' | 'በሂደት ላይ' | 'ተጠናቋል'>('ተጠናቋል');
   const [aSummary, setASummary] = useState('');
+  const [aLinkedPlanId, setALinkedPlanId] = useState<number | ''>('');
+  const [aLinkedQuantity, setALinkedQuantity] = useState('1');
+  const [confirmDeleteActivityId, setConfirmDeleteActivityId] = useState<number | null>(null);
 
   // Finance Modal State
   const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false);
@@ -477,6 +515,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     setMEducation('');
     setMStatus('ንቁ');
     setMNotes('');
+    setMPhoto({});
     setIsMemberModalOpen(true);
   };
 
@@ -490,6 +529,12 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     setMEducation(rec.educationOrLevel || '');
     setMStatus(rec.status || 'ንቁ');
     setMNotes(rec.notes || '');
+    setMPhoto({
+      photoDataUrl: rec.photoDataUrl,
+      photoStorageKey: rec.photoStorageKey,
+      photoName: rec.photoName,
+      photoUpdatedAt: rec.photoUpdatedAt
+    });
     setIsMemberModalOpen(true);
   };
 
@@ -498,7 +543,9 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     if (!mName.trim()) return;
     const isWomenOnlyUnit =
       unit.churchMemberSyncFilter === 'women' || unit.churchMemberSyncFilter === 'women_ministry';
+    const existingMember = editingMemberId ? ws.members.find((m) => m.id === editingMemberId) : undefined;
     const record: DepartmentMemberRecord = {
+      ...(existingMember || {}),
       id: editingMemberId ?? generateUniqueId(),
       name: mName.trim(),
       gender: isWomenOnlyUnit ? 'ሴ' : mGender,
@@ -507,8 +554,12 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       roleOrClass: mRole.trim() || 'አባል',
       educationOrLevel: mEducation.trim() || undefined,
       status: mStatus,
-      joinDate: new Date().toISOString().split('T')[0],
-      notes: mNotes.trim() || undefined
+      joinDate: existingMember?.joinDate || new Date().toISOString().split('T')[0],
+      notes: mNotes.trim() || undefined,
+      photoDataUrl: mPhoto.photoDataUrl,
+      photoStorageKey: mPhoto.photoStorageKey,
+      photoName: mPhoto.photoName,
+      photoUpdatedAt: mPhoto.photoUpdatedAt
     };
 
     onUpdateDepartmentData(unitId, (prev) => ({
@@ -528,6 +579,11 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     }));
   };
 
+  const detectedActivityQuarter = useMemo(
+    () => detectEthiopianQuarterFromDate(aDate),
+    [aDate]
+  );
+
   // Activity CRUD
   const openAddActivity = () => {
     setEditingActivityId(null);
@@ -538,6 +594,8 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     setAParticipants('');
     setAStatus('ተጠናቋል');
     setASummary('');
+    setALinkedPlanId('');
+    setALinkedQuantity('1');
     setIsActivityModalOpen(true);
   };
 
@@ -550,37 +608,90 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
     setAParticipants(act.participantsCount !== undefined ? String(act.participantsCount) : '');
     setAStatus(act.status);
     setASummary(act.summary || '');
+    setALinkedPlanId(act.linkedPlanId ?? '');
+    setALinkedQuantity(act.linkedQuantity !== undefined ? String(act.linkedQuantity) : '1');
     setIsActivityModalOpen(true);
   };
 
   const handleSaveActivity = (e: React.FormEvent) => {
     e.preventDefault();
     if (!aTitle.trim()) return;
+    const actId = editingActivityId ?? generateUniqueId();
+    const linkedPlan = aLinkedPlanId !== '' ? ws.plans.find((p) => p.id === aLinkedPlanId) : undefined;
+    const parsedQty = Math.max(0, Number(aLinkedQuantity) || 0);
+    const detected = detectEthiopianQuarterFromDate(aDate);
+    const resolvedQuarter: PlanQuarterKey = detected?.quarter ?? 'q1';
+
     const record: DepartmentActivityRecord = {
-      id: editingActivityId ?? generateUniqueId(),
+      id: actId,
       date: aDate,
       title: aTitle.trim(),
       category: aCategory.trim() || 'አገልግሎት',
       locationOrGroup: aLocation.trim() || undefined,
       participantsCount: aParticipants.trim() ? parseInt(aParticipants, 10) || 0 : undefined,
       status: aStatus,
-      summary: aSummary.trim() || undefined
+      summary: aSummary.trim() || undefined,
+      linkedPlanId: linkedPlan ? linkedPlan.id : undefined,
+      linkedPlanTask: linkedPlan ? linkedPlan.task : undefined,
+      linkedQuarter: linkedPlan ? resolvedQuarter : undefined,
+      linkedQuantity: linkedPlan ? parsedQty : undefined
     };
-    onUpdateDepartmentData(unitId, (prev) => ({
-      ...prev,
-      activities: editingActivityId
+
+    onUpdateDepartmentData(unitId, (prev) => {
+      const updatedActivities = editingActivityId
         ? prev.activities.map((a) => (a.id === editingActivityId ? record : a))
-        : [record, ...prev.activities]
-    }));
+        : [record, ...prev.activities];
+
+      const shouldSyncExecution = Boolean(linkedPlan && aStatus === 'ተጠናቋል' && parsedQty > 0);
+
+      const updatedPlans = prev.plans.map((p) => {
+        const existingLogs = p.executionLogs || [];
+        const withoutLinked = existingLogs.filter((l) => l.linkedActivityId !== actId);
+        const hadLinkedBefore = withoutLinked.length !== existingLogs.length;
+
+        if (shouldSyncExecution && linkedPlan && p.id === linkedPlan.id) {
+          const existingEntry = existingLogs.find((l) => l.linkedActivityId === actId);
+          const nextEntry: PlanExecutionLogEntry = {
+            id: existingEntry?.id ?? generateUniqueId(),
+            date: aDate,
+            quarter: resolvedQuarter,
+            quantity: parsedQty,
+            workTitle: aTitle.trim(),
+            locationOrNotes: aLocation.trim() || aSummary.trim() || undefined,
+            linkedActivityId: actId,
+            recordedAt: existingEntry?.recordedAt || new Date().toISOString()
+          };
+          return reconcilePlanWithExecutionLogs(p, [...withoutLinked, nextEntry]);
+        }
+
+        if (hadLinkedBefore) {
+          return reconcilePlanWithExecutionLogs(p, withoutLinked);
+        }
+
+        return p;
+      });
+
+      return {
+        ...prev,
+        activities: updatedActivities,
+        plans: updatedPlans
+      };
+    });
     setIsActivityModalOpen(false);
   };
 
   const handleDeleteActivity = (id: number) => {
-    if (!window.confirm('ይህን የአገልግሎት መዝገብ መሰረዝ ይፈልጋሉ?')) return;
     onUpdateDepartmentData(unitId, (prev) => ({
       ...prev,
-      activities: prev.activities.filter((a) => a.id !== id)
+      activities: prev.activities.filter((a) => a.id !== id),
+      plans: prev.plans.map((p) => {
+        const logs = p.executionLogs || [];
+        const filtered = logs.filter((l) => l.linkedActivityId !== id);
+        if (filtered.length === logs.length) return p;
+        return reconcilePlanWithExecutionLogs(p, filtered);
+      })
     }));
+    setConfirmDeleteActivityId(null);
   };
 
   // Finance CRUD
@@ -854,7 +965,15 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               unitId === 'elders_council'
                 ? t(`የሁሉም ዘርፎች ገጾች (${overviewUnits.length})`, `All Units (${overviewUnits.length})`)
                 : unitId === 'spiritual_council'
-                ? t(`በመንፈሳዊ ዘርፍ ስር ያሉ ገጾች (${overviewUnits.length})`, `Spiritual Ministries (${overviewUnits.length})`)
+                ? t(
+                    `በመንፈሳዊ ዘርፍ ስር ያሉ ዘርፎች እና ዕቅድ/ክንውን (${overviewUnits.length})`,
+                    `Spiritual Sectors & Plans (${overviewUnits.length})`
+                  )
+                : unitId === 'holistic_community'
+                ? t(
+                    `በስሩ የሚመራ የልማት ዘርፍ (${overviewUnits.length})`,
+                    `Managed Development Sector (${overviewUnits.length})`
+                  )
                 : t('የመዋቅር ማጠቃለያ', 'Sub-Units Overview'),
             icon: BarChart3
           }
@@ -868,6 +987,11 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       : []),
     ...(unitId === 'spiritual_council'
       ? [
+          {
+            id: 'spiritual_master_plan' as SubTabId,
+            label: t(`የ${currentYear} የመንፈሳዊ ዘርፍ ቋሚ ዕቅድ`, `${currentYear} Spiritual Sector Master Plan`),
+            icon: FileSpreadsheet
+          },
           {
             id: 'all_sector_leaders' as SubTabId,
             label: t(
@@ -1000,6 +1124,20 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           }
         ]
       : []),
+    ...(unitId === 'spiritual_council' ||
+    unitId === 'admin_finance' ||
+    unitId === 'elders_council'
+      ? [
+          {
+            id: 'chapel_agreements' as SubTabId,
+            label: t(
+              'የቻፕል አገልጋዮች ግብ ስምምነት (2019)',
+              'Chapel Servant Agreements (2019)'
+            ),
+            icon: Award
+          }
+        ]
+      : []),
     ...(unitId === 'elders_council' || unitId === 'office' || unitId === 'spiritual_council'
       ? [
           {
@@ -1027,6 +1165,13 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       icon: Target
     }
   ];
+
+  const unitKpiRef = useRef<HTMLDivElement>(null);
+  const eldersCharterRef = useRef<HTMLElement>(null);
+  const overviewTableRef = useRef<HTMLElement>(null);
+  const membersTableRef = useRef<HTMLElement>(null);
+  const activitiesTableRef = useRef<HTMLElement>(null);
+  const financesTableRef = useRef<HTMLElement>(null);
 
   return (
     <div className="space-y-6">
@@ -1078,7 +1223,6 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
               {getUnitLabel(unitId, unit.name)}
             </h2>
-            <p className="text-xs text-slate-600 max-w-3xl">{getUnitDescLabel(unitId, unit.shortDesc)}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0 print:hidden">
@@ -1102,7 +1246,21 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         </div>
 
         {/* Unit KPI Strip */}
-        <div className="mt-5 pt-4 border-t border-slate-200 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div ref={unitKpiRef} className="mt-5 pt-4 border-t border-slate-200 space-y-2.5 bg-white rounded-xl">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">
+              {t(`${getUnitLabel(unitId, unit.name)} — ዋና አሃዞች (${currentYear} ዓ/ም)`, `${getUnitLabel(unitId, unit.name)} Key Figures (${currentYear})`)}
+            </span>
+            <ExportPhotoButton
+              targetRef={unitKpiRef}
+              fileName={`${getUnitLabel(unitId, unit.name)}_ዋና_አሃዞች_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <div className="text-xs font-semibold text-slate-500">{t('የክፍሉ አባላት (ወ/ሴ/ድምር)', 'Department Roster (M/F/Total)')}</div>
             <div className="text-xl font-extrabold text-slate-900 tabular-nums mt-1">
@@ -1156,6 +1314,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
             </div>
             <div className="text-[11px] font-semibold text-slate-500">{t('የታቀዱ ዋና ተግባራት', 'Planned Activities')}</div>
           </div>
+          </div>
         </div>
 
         {/* Sub-page Navigation Tabs */}
@@ -1183,7 +1342,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
       </section>
 
       {unitId === 'elders_council' && (
-        <section className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 sm:p-5 space-y-3">
+        <section ref={eldersCharterRef} className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 sm:p-5 space-y-3">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div>
               <div className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wide">
@@ -1196,12 +1355,12 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                 )}
               </h3>
             </div>
-            <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <div className="flex flex-wrap items-center gap-2">
               {activeSubTab !== 'members' && (
                 <button
                   type="button"
                   onClick={() => setActiveSubTab('members')}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold transition cursor-pointer print:hidden"
                 >
                   <Users className="w-3.5 h-3.5" />
                   <span>
@@ -1224,12 +1383,20 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                       eldersDefaultSeeded: true
                     }));
                   }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-700 hover:bg-amber-600 text-white text-xs font-bold transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-700 hover:bg-amber-600 text-white text-xs font-bold transition cursor-pointer print:hidden"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>{t('ነባሪ 12 አባላትን ጫን', 'Load Default 12 Members')}</span>
                 </button>
               )}
+              <ExportPhotoButton
+                targetRef={eldersCharterRef}
+                fileName={`የሽማግሌዎች_ጉባኤ_መዋቅር_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
             </div>
           </div>
 
@@ -1288,84 +1455,199 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
 
       {/* Sub-view: Organizational Child/Descendant Units Overview */}
       {activeSubTab === 'overview' && overviewUnits.length > 0 && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
-                በ{unit.name} ስር የሚገኙ የአገልግሎት ዘርፎች ({overviewUnits.length})
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                የእያንዳንዱ ክፍል የአባላት፣ የስራ ተግባራት እና የሂሳብ መረጃ በቀጥታ — ክፈት በመጫን ወደ ገጹ ይግቡ
-              </p>
+        <div className="space-y-6">
+          {unitId === 'spiritual_council' && (
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-sky-50/80 border border-sky-200 rounded-2xl px-4 py-3 print:hidden">
+              <div className="text-xs font-bold text-sky-950">
+                {t(
+                  `በመንፈሳዊ ዘርፍ ስር ያሉ ሁሉም ${overviewUnits.length} ዘርፎች ዕቅድ፣ ክንውን እና ቀጥታ መዳረሻ (${currentYear} ዓ/ም)`,
+                  `All ${overviewUnits.length} Spiritual Ministries Plans, Execution & Direct Access (${currentYear})`
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('spiritual_master_plan')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-800 hover:bg-sky-700 text-white text-xs font-bold cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>
+                    {t(`የ${currentYear} ቋሚ ዕቅድ (የሁሉም እና የየቻፕሉ)`, `${currentYear} Master Plan Sheet`)}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('church_registry')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-sky-200 hover:bg-sky-100 text-sky-900 text-xs font-bold cursor-pointer"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>{t('የቤተክርስቲያን መረጃ ቋት', 'Church Master Registry')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('spiritual_review')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-sky-200 hover:bg-sky-100 text-sky-900 text-xs font-bold cursor-pointer"
+                >
+                  <Inbox className="w-3.5 h-3.5" />
+                  <span>{t(`የቀረቡ ሰነዶች (${spiritualPendingCount})`, `Pending Review (${spiritualPendingCount})`)}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('plan_dispatch')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{t('ዕቅድ መላኪያ', 'Plan Dispatcher')}</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                  <th className="py-3 px-4 text-left">የአገልግሎት ዘርፍ / ክፍል</th>
-                  <th className="py-3 px-4 text-right">አባላት</th>
-                  <th className="py-3 px-4 text-right">ተግባራት</th>
-                  <th className="py-3 px-4 text-right">ዕቅዶች</th>
-                  <th className="py-3 px-4 text-right">ቀሪ ሂሳብ (ብር)</th>
-                  <th className="py-3 px-4 text-right">ድርጊት</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {overviewUnits.map((cu) => {
-                  const cData = departmentDataMap[cu.id] || createEmptyDepartmentWorkspaceData();
-                  const bal = cData.finances.reduce(
-                    (acc, f) => acc + (f.type === 'ገቢ' ? Number(f.amount) || 0 : -(Number(f.amount) || 0)),
-                    0
-                  );
-                  const memberDisplayCount =
-                    cu.id === 'children_ministry'
-                      ? churchChildren.length
-                      : cu.id === 'chapels_dept'
-                      ? churchMembers.length
-                      : cData.members.length;
-                  const canOpen = canNavigateToUnit(cu.id);
-                  const relativeIndent = Math.max(0, (cu.level - unit.level - 1) * 16);
-                  return (
-                    <tr key={cu.id} className="hover:bg-slate-50/70">
-                      <td className="py-3 px-4" style={{ paddingLeft: `${16 + relativeIndent}px` }}>
-                        <div className="font-bold text-slate-900">{cu.name}</div>
-                        <div className="text-[11px] text-slate-500 line-clamp-1">{cu.shortDesc}</div>
-                      </td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-900 tabular-nums">
-                        {memberDisplayCount.toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4 text-right text-slate-700 tabular-nums">
-                        {cData.activities.length.toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4 text-right text-slate-700 tabular-nums">
-                        {cData.plans.length.toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold tabular-nums text-slate-800">
-                        {cu.supportsFinance ? bal.toLocaleString() : '—'}
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        {canOpen ? (
-                          <button
-                            type="button"
-                            onClick={() => onSelectUnit(cu.id)}
-                            className="inline-flex items-center gap-1 text-xs font-bold text-blue-800 hover:underline cursor-pointer"
-                          >
-                            <span>ክፈት</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">ራሱን የቻለ መግቢያ</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
+          {unitId === 'spiritual_council' && (
+            <ChapelQuarterlyComparisonChart
+              currentYear={currentYear}
+              chapelList={chapelList}
+              chapelPlansMap={departmentDataMap.chapels_dept?.chapelPlans}
+              chapelPerformanceAgreements={
+                departmentDataMap.chapels_dept?.chapelPerformanceAgreements
+              }
+              hrRecords={departmentDataMap.admin_finance?.hrRecords}
+              onOpenAgreements={() => setActiveSubTab('chapel_agreements')}
+            />
+          )}
+
+          {unitId === 'spiritual_council' && (
+            <ConsolidatedPlansMatrix
+              currentYear={currentYear}
+              submissions={submissions}
+              departmentDataMap={departmentDataMap}
+              childrenPlans={childrenPlans}
+              chapelList={chapelList}
+              onlyApproved={false}
+              onOpenUnit={(targetId) => {
+                if (canNavigateToUnit(targetId)) {
+                  onSelectUnit(targetId);
+                }
+              }}
+            />
+          )}
+
+          <section ref={overviewTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                  በ{unit.name} ስር የሚገኙ የአገልግሎት ዘርፎች ({overviewUnits.length})
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  የእያንዳንዱ ክፍል የአባላት፣ የስራ ተግባራት፣ የዕቅድ/ክንውን እና የሂሳብ መረጃ በቀጥታ — ክፈት በመጫን ወደ ገጹ ይግቡ
+                </p>
+              </div>
+              <ExportPhotoButton
+                targetRef={overviewTableRef}
+                fileName={`${getUnitLabel(unitId, unit.name)}_ስር_ያሉ_ዘርፎች_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                    <th className="py-3 px-4 text-left">የአገልግሎት ዘርፍ / ክፍል</th>
+                    <th className="py-3 px-3 text-right">አባላት</th>
+                    <th className="py-3 px-3 text-right">ተግባራት</th>
+                    <th className="py-3 px-3 text-right">የዕቅድ ዝርዝር</th>
+                    <th className="py-3 px-3 text-right">ዕቅድ</th>
+                    <th className="py-3 px-3 text-right">ክንውን</th>
+                    <th className="py-3 px-3 text-right">%</th>
+                    <th className="py-3 px-3 text-right">ቀሪ ሂሳብ (ብር)</th>
+                    <th className="py-3 px-4 text-right">ድርጊት</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {overviewUnits.map((cu) => {
+                    const cData = departmentDataMap[cu.id] || createEmptyDepartmentWorkspaceData();
+                    const bal = cData.finances.reduce(
+                      (acc, f) => acc + (f.type === 'ገቢ' ? Number(f.amount) || 0 : -(Number(f.amount) || 0)),
+                      0
+                    );
+                    const memberDisplayCount =
+                      cu.id === 'children_ministry'
+                        ? churchChildren.length
+                        : cu.id === 'chapels_dept'
+                        ? churchMembers.length
+                        : cData.members.length;
+                    const rawUnitPlans: AnnualPlanItem[] =
+                      cu.id === 'children_ministry'
+                        ? childrenPlans
+                        : cu.id === 'chapels_dept'
+                        ? Object.values(cData.chapelPlans || {}).flat()
+                        : cData.plans || [];
+                    const yearPlans = rawUnitPlans.filter(
+                      (p) => !currentYear || !p.year || p.year === currentYear
+                    );
+                    const unitTarget = yearPlans.reduce(
+                      (s, p) => s + getPlanTargetForPeriod(p, 'year'),
+                      0
+                    );
+                    const unitDone = yearPlans.reduce(
+                      (s, p) => s + getPlanDoneForPeriod(p, 'year'),
+                      0
+                    );
+                    const unitPct = unitTarget > 0 ? Math.round((unitDone / unitTarget) * 100) : 0;
+                    const canOpen = canNavigateToUnit(cu.id);
+                    const relativeIndent = Math.max(0, (cu.level - unit.level - 1) * 16);
+                    return (
+                      <tr key={cu.id} className="hover:bg-slate-50/70">
+                        <td className="py-3 px-4" style={{ paddingLeft: `${16 + relativeIndent}px` }}>
+                          <div className="font-bold text-slate-900">{cu.name}</div>
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-slate-900 tabular-nums">
+                          {memberDisplayCount.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3 text-right text-slate-700 tabular-nums">
+                          {cData.activities.length.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3 text-right text-slate-700 tabular-nums">
+                          {yearPlans.length.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-blue-900 tabular-nums">
+                          {unitTarget.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3 text-right font-extrabold text-emerald-700 tabular-nums">
+                          {unitDone.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3 text-right font-extrabold text-slate-900 tabular-nums">
+                          {unitPct}%
+                        </td>
+                        <td className="py-3 px-3 text-right font-semibold tabular-nums text-slate-800">
+                          {cu.supportsFinance ? bal.toLocaleString() : '—'}
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          {canOpen ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectUnit(cu.id)}
+                              className="inline-flex items-center gap-1 text-xs font-bold text-blue-800 hover:underline cursor-pointer"
+                            >
+                              <span>ክፈት</span>
+                              <ArrowUpRight className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">ራሱን የቻለ መግቢያ</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       )}
 
       {/* Sub-view: Embedded Church Master Registry (inside 1.1 Office & 1.2 Spiritual Council & 1 Elders) */}
@@ -1433,9 +1715,9 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
 
       {/* Sub-view: Department Members / Roster */}
       {activeSubTab === 'members' && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section ref={membersTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto print:hidden">
               <div className="relative w-full sm:w-56">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -1467,7 +1749,7 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                 <button
                   type="button"
                   onClick={handleSyncFromChurchMaster}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-900 transition cursor-pointer whitespace-nowrap"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-900 transition cursor-pointer whitespace-nowrap print:hidden"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>
@@ -1485,11 +1767,19 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               <button
                 type="button"
                 onClick={openAddMember}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-900 hover:bg-blue-800 text-white transition cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-900 hover:bg-blue-800 text-white transition cursor-pointer whitespace-nowrap print:hidden"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>አዲስ {unit.memberNoun} ጨምር</span>
               </button>
+              <ExportPhotoButton
+                targetRef={membersTableRef}
+                fileName={`${getUnitLabel(unitId, unit.name)}_አባላት_ዝርዝር_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
             </div>
           </div>
 
@@ -1544,10 +1834,26 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                     </td>
                   </tr>
                 ) : (
-                  filteredMembers.map((m, idx) => (
+                  filteredMembers.map((m, idx) => {
+                    const matchedMember =
+                      !m.photoDataUrl ? findMatchingChurchMemberForHR(m.name, churchMembers).member : undefined;
+                    return (
                     <tr key={m.id} className="hover:bg-slate-50/70">
                       <td className="py-2.5 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
-                      <td className="py-2.5 px-4 font-bold text-slate-900">{m.name}</td>
+                      <td className="py-2.5 px-4 font-bold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <PersonAvatarBadge
+                            name={m.name}
+                            gender={m.gender}
+                            photoDataUrl={m.photoDataUrl}
+                            photoStorageKey={m.photoStorageKey}
+                            fallbackPhotoDataUrl={matchedMember?.photoDataUrl}
+                            fallbackPhotoStorageKey={matchedMember?.photoStorageKey}
+                            size="xs"
+                          />
+                          <span>{m.name}</span>
+                        </div>
+                      </td>
                       <td className="py-2.5 px-3 font-semibold text-slate-700">{m.gender}</td>
                       <td className="py-2.5 px-3 text-right text-slate-700 tabular-nums">
                         {m.age ?? '—'}
@@ -1577,7 +1883,8 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1612,9 +1919,9 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
 
       {/* Sub-view: Department Activities / Meetings / Programs */}
       {activeSubTab === 'activities' && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section ref={activitiesTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="relative w-full sm:w-64">
+            <div className="relative w-full sm:w-64 print:hidden">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -1624,14 +1931,32 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                 className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 w-full"
               />
             </div>
-            <button
-              type="button"
-              onClick={openAddActivity}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-900 hover:bg-blue-800 text-white transition cursor-pointer whitespace-nowrap"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>አዲስ የአገልግሎት ተግባር መዝግብ</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('plans')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 transition cursor-pointer whitespace-nowrap print:hidden"
+              >
+                <Target className="w-3.5 h-3.5" />
+                <span>በዕቅድ የተሰሩ ስራዎች መመዝገቢያ</span>
+              </button>
+              <button
+                type="button"
+                onClick={openAddActivity}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-900 hover:bg-blue-800 text-white transition cursor-pointer whitespace-nowrap print:hidden"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>አዲስ የአገልግሎት ተግባር መዝግብ</span>
+              </button>
+              <ExportPhotoButton
+                targetRef={activitiesTableRef}
+                fileName={`${getUnitLabel(unitId, unit.name)}_ተግባራት_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1671,6 +1996,16 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                       <td className="py-2.5 px-4">
                         <div className="font-bold text-slate-900">{act.title}</div>
                         {act.summary && <div className="text-[11px] text-slate-500 mt-0.5">{act.summary}</div>}
+                        {act.linkedPlanTask && (
+                          <div className="mt-1 inline-flex flex-wrap items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-900">
+                            <Target className="w-3 h-3 shrink-0" />
+                            <span>
+                              ዕቅድ: {act.linkedPlanTask}
+                              {act.linkedQuarter ? ` · ${getQuarterShortLabel(act.linkedQuarter)}` : ''}
+                              {act.linkedQuantity !== undefined ? ` · ብዛት: ${act.linkedQuantity}` : ''}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-4 text-slate-700">{act.category}</td>
                       <td className="py-2.5 px-4 text-slate-600">{act.locationOrGroup || '—'}</td>
@@ -1679,22 +2014,41 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                       </td>
                       <td className="py-2.5 px-3 font-bold text-slate-800 whitespace-nowrap">{act.status}</td>
                       <td className="py-2.5 px-4 text-right whitespace-nowrap print:hidden">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditActivity(act)}
-                            className="p-1 text-blue-700 hover:bg-blue-50 rounded cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteActivity(act.id)}
-                            className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {confirmDeleteActivityId === act.id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteActivity(act.id)}
+                              className="px-2 py-1 rounded bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
+                            >
+                              ሰርዝ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteActivityId(null)}
+                              className="px-2 py-1 rounded bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
+                            >
+                              ተው
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEditActivity(act)}
+                              className="p-1 text-blue-700 hover:bg-blue-50 rounded cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteActivityId(act.id)}
+                              className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -1707,9 +2061,9 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
 
       {/* Sub-view: Finance Ledger (Income / Expense / Balance) */}
       {activeSubTab === 'finances' && unit.supportsFinance && (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section ref={financesTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
               <div className="inline-flex bg-slate-100 p-1 rounded-xl gap-1">
                 {(['all', 'ገቢ', 'ወጪ'] as const).map((t) => (
                   <button
@@ -1736,14 +2090,24 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={openAddFinance}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-900 hover:bg-blue-800 text-white transition cursor-pointer whitespace-nowrap"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>ገቢ / ወጪ መዝግብ</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openAddFinance}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-900 hover:bg-blue-800 text-white transition cursor-pointer whitespace-nowrap print:hidden"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>ገቢ / ወጪ መዝግብ</span>
+              </button>
+              <ExportPhotoButton
+                targetRef={financesTableRef}
+                fileName={`${getUnitLabel(unitId, unit.name)}_ፋይናንስ_${currentYear}`}
+                labelAm="በፎቶ (PNG)"
+                labelEn="Photo (PNG)"
+                variant="secondary"
+                compact
+              />
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1845,7 +2209,15 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           currentYear={currentYear}
           records={ws.hrRecords || []}
           churchMembers={churchMembers}
+          churchChildren={churchChildren}
+          onUpdateChurchMember={onUpdateMember}
+          onUpdateChurchChild={onUpdateChild}
           chapelList={chapelList}
+          chapelPlansMap={departmentDataMap.chapels_dept?.chapelPlans}
+          chapelPerformanceAgreements={
+            departmentDataMap.chapels_dept?.chapelPerformanceAgreements
+          }
+          onOpenChapelAgreements={() => setActiveSubTab('chapel_agreements')}
           onSaveRecords={(next) =>
             onUpdateDepartmentData(unitId, (prev) => ({ ...prev, hrRecords: next }))
           }
@@ -1858,6 +2230,9 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           currentYear={currentYear}
           records={ws.hrRecords || []}
           churchMembers={churchMembers}
+          churchChildren={churchChildren}
+          onUpdateChurchMember={onUpdateMember}
+          onUpdateChurchChild={onUpdateChild}
           onSaveRecords={(next) =>
             onUpdateDepartmentData(unitId, (prev) => ({ ...prev, hrRecords: next }))
           }
@@ -1985,34 +2360,242 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
           />
         )}
 
-      {/* Sub-view: Spiritual Council Consolidated Chapels & Ministries Plans/Execution Matrix */}
-      {activeSubTab === 'consolidated_plans' && unitId === 'spiritual_council' && (
-        <ConsolidatedPlansMatrix
+      {/* Sub-view: Spiritual Council Permanent Official Master Plan (All Combined + Per Chapel + Excel) */}
+      {activeSubTab === 'spiritual_master_plan' && unitId === 'spiritual_council' && (
+        <SpiritualMasterPlanSheet
+          mode="spiritual_council"
           currentYear={currentYear}
-          submissions={submissions}
-          departmentDataMap={departmentDataMap}
-          childrenPlans={childrenPlans}
           chapelList={chapelList}
-          onlyApproved={false}
+          centralSheetData={ws.spiritualMasterPlansByYear?.[currentYear]}
+          onSaveCentralSheet={(nextSheet) =>
+            onUpdateDepartmentData('spiritual_council', (prev) => ({
+              ...prev,
+              spiritualMasterPlansByYear: {
+                ...(prev.spiritualMasterPlansByYear || {}),
+                [currentYear]: nextSheet
+              },
+              plans: syncMasterPlanToAnnualPlans(
+                nextSheet,
+                currentYear,
+                getUnitLabel('spiritual_council', unit.name),
+                prev.plans || []
+              )
+            }))
+          }
+          chapelMasterPlans={departmentDataMap.chapels_dept?.chapelMasterPlans || {}}
+          chapelPlansMap={departmentDataMap.chapels_dept?.chapelPlans || {}}
+          centralPlans={ws.plans}
+          onSaveChapelSheet={(targetChapel, nextSheet) =>
+            onUpdateDepartmentData('chapels_dept', (prev) => {
+              const prevMasterMap = prev.chapelMasterPlans || {};
+              const prevChapelYears = prevMasterMap[targetChapel] || {};
+              const prevPlansMap = prev.chapelPlans || {};
+              return {
+                ...prev,
+                chapelMasterPlans: {
+                  ...prevMasterMap,
+                  [targetChapel]: {
+                    ...prevChapelYears,
+                    [currentYear]: nextSheet
+                  }
+                },
+                chapelPlans: {
+                  ...prevPlansMap,
+                  [targetChapel]: syncMasterPlanToAnnualPlans(
+                    nextSheet,
+                    currentYear,
+                    targetChapel,
+                    prevPlansMap[targetChapel] || []
+                  )
+                }
+              };
+            })
+          }
+          onBatchSaveChapelSheets={(sheetsByChapel) =>
+            onUpdateDepartmentData('chapels_dept', (prev) => {
+              const nextMasterMap = { ...(prev.chapelMasterPlans || {}) };
+              const nextPlansMap = { ...(prev.chapelPlans || {}) };
+              Object.entries(sheetsByChapel).forEach(([targetChapel, nextSheet]) => {
+                nextMasterMap[targetChapel] = {
+                  ...(nextMasterMap[targetChapel] || {}),
+                  [currentYear]: nextSheet
+                };
+                nextPlansMap[targetChapel] = syncMasterPlanToAnnualPlans(
+                  nextSheet,
+                  currentYear,
+                  targetChapel,
+                  nextPlansMap[targetChapel] || []
+                );
+              });
+              return {
+                ...prev,
+                chapelMasterPlans: nextMasterMap,
+                chapelPlans: nextPlansMap
+              };
+            })
+          }
+          churchMembers={churchMembers}
+          churchChildren={churchChildren}
         />
       )}
 
-      {/* Sub-view: Department Annual Plan & Quarterly Execution */}
-      {activeSubTab === 'plans' && (
-        <UnifiedPlanManager
-          unitId={unitId}
-          unitName={getUnitLabel(unitId, unit.name)}
-          currentYear={currentYear}
-          plans={ws.plans}
-          onSavePlans={(nextPlans) =>
-            onUpdateDepartmentData(unitId, (prev) => ({ ...prev, plans: nextPlans }))
-          }
-          onSendToSpiritual={isUnderSpiritualCouncil(unitId) ? onCreateSubmission : undefined}
-          planDispatches={planDispatches}
-          onAcceptDispatch={onAcceptDispatch}
-          onReturnDispatch={onReturnDispatch}
-        />
+      {/* Sub-view: Spiritual Council Consolidated Chapels & Ministries Plans/Execution Matrix */}
+      {activeSubTab === 'consolidated_plans' && unitId === 'spiritual_council' && (
+        <div className="space-y-6">
+          <ChapelQuarterlyComparisonChart
+            currentYear={currentYear}
+            chapelList={chapelList}
+            chapelPlansMap={departmentDataMap.chapels_dept?.chapelPlans}
+            chapelPerformanceAgreements={
+              departmentDataMap.chapels_dept?.chapelPerformanceAgreements
+            }
+            hrRecords={departmentDataMap.admin_finance?.hrRecords}
+            onOpenAgreements={() => setActiveSubTab('chapel_agreements')}
+          />
+          <ConsolidatedPlansMatrix
+            currentYear={currentYear}
+            submissions={submissions}
+            departmentDataMap={departmentDataMap}
+            childrenPlans={childrenPlans}
+            chapelList={chapelList}
+            onlyApproved={false}
+            onOpenUnit={(targetId) => {
+              if (canNavigateToUnit(targetId)) {
+                onSelectUnit(targetId);
+              }
+            }}
+          />
+        </div>
       )}
+
+      {/* Sub-view: Department Annual Plan & Quarterly Execution */}
+      {activeSubTab === 'plans' && (() => {
+        const isSpiritualCouncil = unitId === 'spiritual_council';
+        const effectivePlans = isSpiritualCouncil
+          ? ensureChapelMasterAnnualPlans(
+              ws.plans,
+              currentYear,
+              getUnitLabel(unitId, unit.name),
+              ws.spiritualMasterPlansByYear?.[currentYear]
+            )
+          : ws.plans;
+        return (
+          <div className="space-y-5">
+            {isSpiritualCouncil && (
+              <div className="bg-sky-50 border border-sky-200 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-2 print:hidden">
+                <span className="text-xs font-extrabold text-sky-950">
+                  {t(
+                    `የ${currentYear} ዓ.ም ቋሚ የመንፈሳዊ ዘርፍ ዕቅድ ቅጽ (የሁሉም ቻፕሎች ድምር እና የየቻፕሉ)`,
+                    `${currentYear} Permanent Spiritual Sector Master Plan (All Chapels & Individual Views)`
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('spiritual_master_plan')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-800 hover:bg-sky-700 text-white text-xs font-bold cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>{t('የሁሉም ቻፕሎች ድምር ክፈት →', 'Open All Chapels Consolidated View →')}</span>
+                </button>
+              </div>
+            )}
+            <UnifiedPlanManager
+              unitId={unitId}
+              unitName={getUnitLabel(unitId, unit.name)}
+              currentYear={currentYear}
+              plans={effectivePlans}
+              onSavePlans={(nextPlans) =>
+                onUpdateDepartmentData(unitId, (prev) => {
+                  if (!isSpiritualCouncil) {
+                    return { ...prev, plans: nextPlans };
+                  }
+                  const syncedSheet = annualPlansToMasterSheet(
+                    nextPlans,
+                    currentYear,
+                    prev.spiritualMasterPlansByYear?.[currentYear],
+                    false
+                  );
+                  return {
+                    ...prev,
+                    plans: nextPlans,
+                    spiritualMasterPlansByYear: {
+                      ...(prev.spiritualMasterPlansByYear || {}),
+                      [currentYear]: syncedSheet
+                    }
+                  };
+                })
+              }
+              onMasterSheetImported={
+                isSpiritualCouncil
+                  ? (importedSheet) =>
+                      onUpdateDepartmentData('spiritual_council', (prev) => {
+                        const existingMeta = prev.spiritualMasterPlansByYear?.[currentYear];
+                        return {
+                          ...prev,
+                          spiritualMasterPlansByYear: {
+                            ...(prev.spiritualMasterPlansByYear || {}),
+                            [currentYear]: {
+                              ...importedSheet,
+                              narratives: importedSheet.narratives,
+                              signOff: importedSheet.signOff?.reporterName
+                                ? importedSheet.signOff
+                                : existingMeta?.signOff || importedSheet.signOff
+                            }
+                          }
+                        };
+                      })
+                  : undefined
+              }
+              extraHeaderActions={
+                isSpiritualCouncil ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sheet = annualPlansToMasterSheet(
+                        effectivePlans,
+                        currentYear,
+                        ws.spiritualMasterPlansByYear?.[currentYear],
+                        false
+                      );
+                      exportSpiritualMasterPlanExcel({
+                        year: currentYear,
+                        sheet,
+                        subtitleLabel: getUnitLabel(unitId, unit.name),
+                        fileName: `የመንፈሳዊ_ዘርፍ_ማዕከላዊ_ዕቅድ_${currentYear}.xlsx`
+                      });
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-sky-800 hover:bg-sky-700 text-white cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{t('የ2019 ቋሚ Excel ቅጽ አውርድ', 'Download 2019 Excel Form')}</span>
+                  </button>
+                ) : undefined
+              }
+              footerSlot={
+                isSpiritualCouncil ? (
+                  <SpiritualMasterNarrativesFooter
+                    currentYear={currentYear}
+                    sheetData={ws.spiritualMasterPlansByYear?.[currentYear]}
+                    onSaveSheet={(nextSheet) =>
+                      onUpdateDepartmentData('spiritual_council', (prev) => ({
+                        ...prev,
+                        spiritualMasterPlansByYear: {
+                          ...(prev.spiritualMasterPlansByYear || {}),
+                          [currentYear]: nextSheet
+                        }
+                      }))
+                    }
+                  />
+                ) : undefined
+              }
+              onSendToSpiritual={isUnderSpiritualCouncil(unitId) ? onCreateSubmission : undefined}
+              planDispatches={planDispatches}
+              onAcceptDispatch={onAcceptDispatch}
+              onReturnDispatch={onReturnDispatch}
+            />
+          </div>
+        );
+      })()}
 
       {/* Sub-view: Central 2019 Plan Bulk Sender & Sector Distributor */}
       {activeSubTab === 'plan_dispatch' &&
@@ -2144,6 +2727,25 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
         />
       )}
 
+      {/* Sub-view: Chapel Servants 2019 Performance Goal Agreement (Spiritual, Admin & Elders) */}
+      {activeSubTab === 'chapel_agreements' &&
+        (unitId === 'spiritual_council' ||
+          unitId === 'admin_finance' ||
+          unitId === 'elders_council') && (
+          <ChapelPerformanceAgreementPanel
+            mode={unitId}
+            currentYear={currentYear}
+            chapelList={chapelList}
+            departmentDataMap={departmentDataMap}
+            onUpdateDepartmentData={onUpdateDepartmentData}
+            onNavigateToUnit={(targetId) => {
+              if (canNavigateToUnit(targetId)) {
+                onSelectUnit(targetId);
+              }
+            }}
+          />
+        )}
+
       {/* Member Modal */}
       {isMemberModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
@@ -2177,6 +2779,16 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                   )}
                 </div>
               )}
+              <PersonPhotoField
+                storagePrefix={`dept_${unitId}`}
+                personId={editingMemberId || mName || 'new'}
+                name={mName}
+                value={mPhoto}
+                onChange={setMPhoto}
+                compact
+                labelAm={`የ${unit.memberNoun} ፎቶ`}
+                labelEn="Member Photo"
+              />
               <div>
                 <label className="block font-bold text-slate-700 mb-1">ሙሉ ስም *</label>
                 <input
@@ -2403,9 +3015,80 @@ export const DepartmentWorkspacePage: React.FC<DepartmentWorkspacePageProps> = (
                   rows={2}
                   value={aSummary}
                   onChange={(e) => setASummary(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-base sm:text-xs"
                 />
               </div>
+
+              {ws.plans.length > 0 && (
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="font-extrabold text-emerald-950 flex items-center gap-1.5">
+                      <Target className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>ከዓመታዊ ዕቅድ ጋር አያይዝ (አማራጭ)</span>
+                    </label>
+                    {detectedActivityQuarter && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-700 text-white text-[10px] font-bold">
+                        {getQuarterShortLabel(detectedActivityQuarter.quarter)} · {detectedActivityQuarter.ethMonthAm} (የ{detectedActivityQuarter.fiscalPlanYear} ዕቅድ)
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    value={aLinkedPlanId}
+                    onChange={(e) =>
+                      setALinkedPlanId(e.target.value ? Number(e.target.value) : '')
+                    }
+                    className="w-full px-3 py-2 border border-emerald-200 bg-white rounded-xl font-semibold text-base sm:text-xs"
+                  >
+                    <option value="">— ከዕቅድ ጋር አልተያያዘም —</option>
+                    {ws.plans.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.task} (ዕቅድ: {p.yearPlan} {p.unit})
+                      </option>
+                    ))}
+                  </select>
+                  {aLinkedPlanId !== '' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end pt-1">
+                      <div>
+                        <label className="block font-bold text-emerald-900 mb-1">የተሰራው ብዛት</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={aLinkedQuantity}
+                          onChange={(e) => setALinkedQuantity(e.target.value)}
+                          className="w-full px-3 py-2 border border-emerald-200 bg-white rounded-xl font-bold text-base sm:text-xs"
+                        />
+                      </div>
+                      <div className="text-[11px] text-emerald-900 bg-white/80 border border-emerald-200 rounded-xl px-2.5 py-2 leading-snug">
+                        {aStatus === 'ተጠናቋል' ? (
+                          <span>
+                            በራሱ ወደ{' '}
+                            <strong>
+                              {getQuarterShortLabel(
+                                detectedActivityQuarter?.quarter ?? 'q1',
+                                'am',
+                                detectedActivityQuarter?.fiscalPlanYear
+                              )}
+                            </strong>{' '}
+                            →{' '}
+                            <strong>
+                              {getHalfYearLabel(
+                                detectedActivityQuarter?.halfYear ?? 'h1',
+                                'am',
+                                detectedActivityQuarter?.fiscalPlanYear
+                              )}
+                            </strong>{' '}
+                            → <strong>ዓመታዊ ክንውን</strong> ይገባል።
+                          </span>
+                        ) : (
+                          <span>ሁኔታው &quot;ተጠናቋል&quot; ሲሆን በራሱ በክንውን ሪፖርቱ ላይ ይመዘገባል።</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"

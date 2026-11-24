@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Users,
@@ -18,12 +18,15 @@ import {
   UserCheck
 } from 'lucide-react';
 import { ChapelLeaderCategoryId, ChapelLeaderRecord, ChurchMember } from '../types';
-import { CHAPEL_LEADER_CATEGORIES } from '../constants/churchStructure';
+import { CHAPEL_LEADER_CATEGORIES, DEFAULT_LEADERSHIP_ROLE_OPTIONS } from '../constants/churchStructure';
 import { DEFAULT_CHAPELS } from '../constants/initialData';
 import { generateUniqueId } from '../utils/idGenerator';
 import { useLanguage } from '../context/LanguageContext';
 import { formatDualDateText, formatDualDateTimeText, getAdjustedNow } from '../utils/ethiopianDate';
 import { DualDateBadge, DualDateInput } from './DualDate';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface ChapelLeadersTabProps {
   currentYear: string;
@@ -34,7 +37,14 @@ interface ChapelLeadersTabProps {
   onSaveChapelLeaders: (next: ChapelLeaderRecord[]) => void;
 }
 
-const CHAPEL_LEADER_ROLE_TITLES = ['ዋና መሪ / ሰብሳቢ', 'ምክትል መሪ', 'ጸሐፊ', 'ገንዘብ ያዥ', 'የአመራር አባል'];
+const CHAPEL_LEADER_ROLE_TITLES = Array.from(
+  new Set([
+    ...DEFAULT_LEADERSHIP_ROLE_OPTIONS,
+    'ዋና መሪ / ሰብሳቢ',
+    'ምክትል መሪ',
+    'የአመራር አባል'
+  ])
+);
 
 export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
   currentYear,
@@ -45,6 +55,7 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
   onSaveChapelLeaders
 }) => {
   const { t, chapelLabel } = useLanguage();
+  const chapelLeadersExportRef = useRef<HTMLDivElement | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<ChapelLeaderCategoryId | 'all'>('all');
   const [selectedChapelFilter, setSelectedChapelFilter] = useState<string>(scopedChapel || 'all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,6 +73,18 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
   const [fDate, setFDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [fStatus, setFStatus] = useState('ንቁ');
   const [fNotes, setFNotes] = useState('');
+  const [fPhoto, setFPhoto] = useState<PersonPhotoValue>({});
+
+  const memberPhotoLookup = useMemo(() => {
+    const map = new Map<string, { photoDataUrl?: string; photoStorageKey?: string }>();
+    churchMembers.forEach((m) => {
+      const k = (m.name || '').trim().toLowerCase();
+      if (k && (m.photoDataUrl || m.photoStorageKey)) {
+        map.set(k, { photoDataUrl: m.photoDataUrl, photoStorageKey: m.photoStorageKey });
+      }
+    });
+    return map;
+  }, [churchMembers]);
 
   const activeChapelFilter = scopedChapel || selectedChapelFilter;
 
@@ -155,6 +178,7 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
     setFDate(new Date().toISOString().split('T')[0]);
     setFStatus('ንቁ');
     setFNotes('');
+    setFPhoto({});
     setIsModalOpen(true);
   };
 
@@ -169,6 +193,12 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
     setFDate(rec.assignedDate || '');
     setFStatus(rec.status || 'ንቁ');
     setFNotes(rec.notes || '');
+    setFPhoto({
+      photoDataUrl: rec.photoDataUrl,
+      photoStorageKey: rec.photoStorageKey,
+      photoName: rec.photoName,
+      photoUpdatedAt: rec.photoUpdatedAt
+    });
     setIsModalOpen(true);
   };
 
@@ -185,7 +215,11 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
       phone: fPhone.trim() || undefined,
       assignedDate: fDate.trim() || undefined,
       status: fStatus,
-      notes: fNotes.trim() || undefined
+      notes: fNotes.trim() || undefined,
+      photoDataUrl: fPhoto.photoDataUrl,
+      photoStorageKey: fPhoto.photoStorageKey,
+      photoName: fPhoto.photoName,
+      photoUpdatedAt: fPhoto.photoUpdatedAt
     };
 
     if (editingId) {
@@ -234,7 +268,7 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
   }, [churchMembers, fName, fChapel, scopedChapel]);
 
   return (
-    <div className="space-y-5">
+    <div ref={chapelLeadersExportRef} className="space-y-5">
       <div className="hidden print:block text-center pb-3 mb-3 border-b border-slate-300">
         <h1 className="text-lg font-extrabold">የብርብር ከተማ ቃለ ሕይወት ቤተ ክርስቲያን</h1>
         <h2 className="text-sm font-bold">
@@ -370,6 +404,10 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
                 <Download className="w-3.5 h-3.5" />
                 <span>{t('ኤክሴል አውርድ', 'Export Excel')}</span>
               </button>
+              <ExportPhotoButton
+                targetRef={chapelLeadersExportRef}
+                fileName={`${scopedChapel || 'የ10ሩም_ቻፕሎች'}_የመሪዎች_ዝርዝር_${currentYear}`}
+              />
               <button
                 type="button"
                 onClick={() => window.print()}
@@ -453,6 +491,7 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
               ) : (
                 filteredLeaders.map((l, idx) => {
                   const meta = getCategoryMeta(l.category);
+                  const fallback = memberPhotoLookup.get((l.name || '').trim().toLowerCase());
                   return (
                     <tr key={l.id} className="hover:bg-slate-50/70">
                       <td className="py-3 px-4 text-slate-500 tabular-nums">{idx + 1}</td>
@@ -466,13 +505,26 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <div className="font-extrabold text-slate-900">{l.name}</div>
-                        {l.assignedDate && (
-                          <div className="text-[10px] text-slate-500 mt-0.5">
-                            <DualDateBadge value={l.assignedDate} mode="inline" />
+                        <div className="flex items-center gap-2.5">
+                          <PersonAvatarBadge
+                            name={l.name}
+                            gender={l.gender}
+                            photoDataUrl={l.photoDataUrl}
+                            photoStorageKey={l.photoStorageKey}
+                            fallbackPhotoDataUrl={fallback?.photoDataUrl}
+                            fallbackPhotoStorageKey={fallback?.photoStorageKey}
+                            size="sm"
+                          />
+                          <div className="min-w-0">
+                            <div className="font-extrabold text-slate-900">{l.name}</div>
+                            {l.assignedDate && (
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                <DualDateBadge value={l.assignedDate} mode="inline" />
+                              </div>
+                            )}
+                            {l.notes && <div className="text-[11px] text-slate-500 mt-0.5">{l.notes}</div>}
                           </div>
-                        )}
-                        {l.notes && <div className="text-[11px] text-slate-500 mt-0.5">{l.notes}</div>}
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-center font-bold text-slate-700">{l.gender}</td>
                       <td className="py-3 px-4 text-slate-700 font-semibold">{l.roleTitle || '—'}</td>
@@ -627,11 +679,28 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
                           setFName(m.name);
                           setFGender(m.gender === 'ሴ' ? 'ሴ' : 'ወ');
                           if (m.phone) setFPhone(m.phone);
+                          if (m.photoDataUrl || m.photoStorageKey) {
+                            setFPhoto({
+                              photoDataUrl: m.photoDataUrl,
+                              photoStorageKey: m.photoStorageKey,
+                              photoName: m.photoName,
+                              photoUpdatedAt: m.photoUpdatedAt
+                            });
+                          }
                         }}
-                        className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-blue-50 flex items-center justify-between cursor-pointer border-b last:border-b-0 border-slate-200"
+                        className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-blue-50 flex items-center justify-between gap-2 cursor-pointer border-b last:border-b-0 border-slate-200"
                       >
-                        <span className="font-bold text-slate-900">{m.name}</span>
-                        <span className="text-slate-500">{m.chapel} · {m.phone || ''}</span>
+                        <span className="flex items-center gap-2 min-w-0">
+                          <PersonAvatarBadge
+                            name={m.name}
+                            gender={m.gender}
+                            photoDataUrl={m.photoDataUrl}
+                            photoStorageKey={m.photoStorageKey}
+                            size="xs"
+                          />
+                          <span className="font-bold text-slate-900 truncate">{m.name}</span>
+                        </span>
+                        <span className="text-slate-500 shrink-0">{m.chapel} · {m.phone || ''}</span>
                       </button>
                     ))}
                   </div>
@@ -672,13 +741,32 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
                   list="chapelLeaderRoleOptions"
                   value={fRoleTitle}
                   onChange={(e) => setFRoleTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-base sm:text-xs"
                 />
                 <datalist id="chapelLeaderRoleOptions">
                   {CHAPEL_LEADER_ROLE_TITLES.map((r) => (
                     <option key={r} value={r} />
                   ))}
                 </datalist>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {CHAPEL_LEADER_ROLE_TITLES.map((r) => {
+                    const active = fRoleTitle.trim() === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setFRoleTitle(r)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          active
+                            ? 'bg-blue-900 text-white border-blue-900'
+                            : 'bg-slate-50 hover:bg-blue-50 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -707,6 +795,15 @@ export const ChapelLeadersTab: React.FC<ChapelLeadersTabProps> = ({
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl"
                 />
               </div>
+
+              <PersonPhotoField
+                compact
+                storagePrefix="chapel_leader"
+                personId={editingId ?? undefined}
+                name={fName}
+                value={fPhoto}
+                onChange={setFPhoto}
+              />
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button

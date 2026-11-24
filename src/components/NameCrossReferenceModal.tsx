@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
+import { ExportPhotoButton } from './ExportPhotoButton';
 import {
   X,
   Search,
@@ -67,6 +68,7 @@ export const NameCrossReferenceModal: React.FC<NameCrossReferenceModalProps> = (
   const [chapelFilter, setChapelFilter] = useState<string>('all');
   const [selectedClassToEnroll, setSelectedClassToEnroll] = useState<string>(classList[0] || '1ኛ ክፍል');
   const [enrollingItem, setEnrollingItem] = useState<ChurchComparableItem | null>(null);
+  const crossRefModalRef = useRef<HTMLDivElement>(null);
 
   // 1. Build index from Sunday School students
   const sundaySchoolIndex: SundaySchoolIndexStructure = useMemo(() => {
@@ -197,7 +199,7 @@ export const NameCrossReferenceModal: React.FC<NameCrossReferenceModalProps> = (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in duration-200">
+      <div ref={crossRefModalRef} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in duration-200">
         
         {/* Header */}
         <div className="p-4 sm:p-5 bg-linear-to-r from-blue-950 via-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0 border-b border-blue-900/50">
@@ -333,7 +335,7 @@ export const NameCrossReferenceModal: React.FC<NameCrossReferenceModalProps> = (
           </div>
 
           {/* Chapel Select, Search & Export */}
-          <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+          <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap print:hidden">
             {/* Chapel select */}
             <div className="relative">
               <select
@@ -359,6 +361,13 @@ export const NameCrossReferenceModal: React.FC<NameCrossReferenceModalProps> = (
                 className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl pl-8 pr-3 py-2 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            <ExportPhotoButton
+              targetRef={crossRefModalRef}
+              fileName="የቤተክርስቲያንና_ሰንበት_ትምህርት_ቤት_ማስተያያ"
+              variant="secondary"
+              compact
+            />
 
             {/* Export Excel */}
             <button

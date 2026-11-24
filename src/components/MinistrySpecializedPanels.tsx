@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   HeartHandshake,
@@ -33,6 +33,9 @@ import { readCSVFile } from '../utils/csv';
 import { useLanguage } from '../context/LanguageContext';
 import { formatDualDateText } from '../utils/ethiopianDate';
 import { DualDateBadge, DualDateInput } from './DualDate';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 /* ============================================================================
  * 1. LOVE & COMPASSION: PERMANENT & TEMPORARY BENEFICIARIES (ቋሚ እና ጊዜያዊ ተረጂ)
@@ -62,6 +65,8 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
   onSaveRecords
 }) => {
   const { t } = useLanguage();
+  const beneficiariesKpiRef = useRef<HTMLDivElement | null>(null);
+  const beneficiariesTableRef = useRef<HTMLDivElement | null>(null);
   const [typeFilter, setTypeFilter] = useState<'all' | BeneficiarySupportType>('all');
   const [chapelFilter, setChapelFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -84,6 +89,7 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
   const [bFamilySize, setBFamilySize] = useState('');
   const [bStatus, setBStatus] = useState('በድጋፍ ላይ');
   const [bNotes, setBNotes] = useState('');
+  const [bPhoto, setBPhoto] = useState<PersonPhotoValue>({});
 
   const showNotice = (msg: string) => {
     setNotice(msg);
@@ -137,6 +143,7 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
     setBFamilySize('');
     setBStatus('በድጋፍ ላይ');
     setBNotes('');
+    setBPhoto({});
     setIsModalOpen(true);
   };
 
@@ -156,6 +163,12 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
     setBFamilySize(rec.familySize !== undefined ? String(rec.familySize) : '');
     setBStatus(rec.status || 'በድጋፍ ላይ');
     setBNotes(rec.notes || '');
+    setBPhoto({
+      photoDataUrl: rec.photoDataUrl,
+      photoStorageKey: rec.photoStorageKey,
+      photoName: rec.photoName,
+      photoUpdatedAt: rec.photoUpdatedAt
+    });
     setIsModalOpen(true);
   };
 
@@ -177,7 +190,11 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
       endDate: bSupportType === 'temporary' ? bEndDate || undefined : undefined,
       familySize: bFamilySize.trim() ? parseInt(bFamilySize, 10) || undefined : undefined,
       status: bStatus,
-      notes: bNotes.trim() || undefined
+      notes: bNotes.trim() || undefined,
+      photoDataUrl: bPhoto.photoDataUrl,
+      photoStorageKey: bPhoto.photoStorageKey,
+      photoName: bPhoto.photoName,
+      photoUpdatedAt: bPhoto.photoUpdatedAt
     };
 
     const next = editingId
@@ -317,7 +334,26 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
       </div>
 
       {/* KPI Cards (Clickable filters) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
+      <div ref={beneficiariesKpiRef} className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-900">
+              {t('የፍቅርና ርኅራሄ ተረጂዎች ማጠቃለያ ስታቲስቲክስ', 'Compassion Beneficiaries Summary')}
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              {t(`${currentYear} ዓ/ም — ቋሚና ጊዜያዊ ተረጂዎች እና ወርሃዊ ድጋፍ`, `${currentYear} E.C. — Permanent & Temporary Support`)}
+            </p>
+          </div>
+          <ExportPhotoButton
+            targetRef={beneficiariesKpiRef}
+            fileName={`የተረጂዎች_ማጠቃለያ_ስታቲስቲክስ_${currentYear}`}
+            variant="secondary"
+            compact
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           type="button"
           onClick={() => setTypeFilter('all')}
@@ -386,6 +422,7 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
           <div className="text-[11px] text-slate-500 mt-0.5">
             {t('ለቋሚና ጊዜያዊ ተረጂዎች', 'Across permanent & temporary')}
           </div>
+        </div>
         </div>
       </div>
 
@@ -476,7 +513,25 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
       </div>
 
       {/* Beneficiaries Table */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <div ref={beneficiariesTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-900">
+              {t('የቋሚና ጊዜያዊ ተረጂዎች ዝርዝር መዝገብ', 'Permanent & Temporary Beneficiaries List')}
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              {t(`ጠቅላላ ተረጂዎች፦ ${filtered.length}`, `Showing ${filtered.length} beneficiaries`)}
+            </p>
+          </div>
+          <ExportPhotoButton
+            targetRef={beneficiariesTableRef}
+            fileName={`የፍቅርና_ርኅራሄ_ተረጂዎች_ዝርዝር_${currentYear}`}
+            variant="secondary"
+            compact
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
@@ -520,21 +575,32 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
                       </span>
                     </td>
                     <td className="py-2.5 px-3 font-bold text-slate-900">
-                      <div>{r.name}</div>
-                      {r.address && (
-                        <div className="text-[11px] text-slate-500 font-normal">{r.address}</div>
-                      )}
-                      {r.startDate && (
-                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">
-                          <DualDateBadge value={r.startDate} mode="inline" />
+                      <div className="flex items-start gap-2.5">
+                        <PersonAvatarBadge
+                          name={r.name}
+                          gender={r.gender}
+                          photoDataUrl={r.photoDataUrl}
+                          photoStorageKey={r.photoStorageKey}
+                          size="sm"
+                        />
+                        <div>
+                          <div>{r.name}</div>
+                          {r.address && (
+                            <div className="text-[11px] text-slate-500 font-normal">{r.address}</div>
+                          )}
+                          {r.startDate && (
+                            <div className="text-[10px] text-slate-500 font-normal mt-0.5">
+                              <DualDateBadge value={r.startDate} mode="inline" />
+                            </div>
+                          )}
+                          {r.supportType === 'temporary' && r.endDate && (
+                            <div className="text-[10px] text-amber-700 font-bold mt-0.5 flex flex-wrap items-center gap-1">
+                              <span>{t('ግምገማ/ማብቂያ:', 'Review/End:')}</span>
+                              <DualDateBadge value={r.endDate} mode="inline" />
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {r.supportType === 'temporary' && r.endDate && (
-                        <div className="text-[10px] text-amber-700 font-bold mt-0.5 flex flex-wrap items-center gap-1">
-                          <span>{t('ግምገማ/ማብቂያ:', 'Review/End:')}</span>
-                          <DualDateBadge value={r.endDate} mode="inline" />
-                        </div>
-                      )}
+                      </div>
                     </td>
                     <td className="py-2.5 px-3 text-center text-slate-700 font-semibold">
                       {r.gender} {r.age ? `· ${r.age}` : ''}
@@ -622,6 +688,15 @@ export const CompassionBeneficiariesPanel: React.FC<CompassionBeneficiariesPanel
                   {t('ጊዜያዊ ተረጂ', 'Temporary Beneficiary')}
                 </button>
               </div>
+
+              <PersonPhotoField
+                compact
+                storagePrefix="beneficiary"
+                personId={editingId ?? undefined}
+                name={bName}
+                value={bPhoto}
+                onChange={setBPhoto}
+              />
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">{t('ሙሉ ስም *', 'Full Name *')}</label>
@@ -918,6 +993,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
   const [mSupport, setMSupport] = useState('');
   const [mStatus, setMStatus] = useState('በአገልግሎት ላይ');
   const [mNotes, setMNotes] = useState('');
+  const [mPhoto, setMPhoto] = useState<PersonPhotoValue>({});
 
   const showNotice = (msg: string) => {
     setNotice(msg);
@@ -987,6 +1063,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
     setMSupport('');
     setMStatus('በአገልግሎት ላይ');
     setMNotes('');
+    setMPhoto({});
     setIsModalOpen(true);
   };
 
@@ -1003,6 +1080,12 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
     setMSupport(rec.monthlySupportAmount !== undefined ? String(rec.monthlySupportAmount) : '');
     setMStatus(rec.status || 'በአገልግሎት ላይ');
     setMNotes(rec.notes || '');
+    setMPhoto({
+      photoDataUrl: rec.photoDataUrl,
+      photoStorageKey: rec.photoStorageKey,
+      photoName: rec.photoName,
+      photoUpdatedAt: rec.photoUpdatedAt
+    });
     setIsModalOpen(true);
   };
 
@@ -1048,7 +1131,11 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
       deployedDate: mDate || undefined,
       monthlySupportAmount: mSupport.trim() ? parseFloat(mSupport) || 0 : undefined,
       status: mStatus,
-      notes: mNotes.trim() || undefined
+      notes: mNotes.trim() || undefined,
+      photoDataUrl: mPhoto.photoDataUrl,
+      photoStorageKey: mPhoto.photoStorageKey,
+      photoName: mPhoto.photoName,
+      photoUpdatedAt: mPhoto.photoUpdatedAt
     };
 
     const next = editingId
@@ -1169,6 +1256,9 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
     e.target.value = '';
   };
 
+  const missionariesKpiRef = useRef<HTMLDivElement | null>(null);
+  const missionariesTableRef = useRef<HTMLDivElement | null>(null);
+
   return (
     <div className="space-y-5">
       {/* Print Header */}
@@ -1184,7 +1274,26 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
       </div>
 
       {/* 4 Missionary Tiers KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 print:hidden">
+      <div ref={missionariesKpiRef} className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-900">
+              {t('የሚሽነሪዎች ስርጭትና ድጋፍ ማጠቃለያ', 'Missionaries Deployment & Support Summary')}
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              {t(`${currentYear} ዓ/ም — በዓለም አቀፍ፣ አገር አቀፍ፣ ክልላዊና አከባቢያዊ ምድብ`, `${currentYear} E.C. — International, National, Regional & Local Scopes`)}
+            </p>
+          </div>
+          <ExportPhotoButton
+            targetRef={missionariesKpiRef}
+            fileName={`የሚሽነሪዎች_ማጠቃለያ_${currentYear}`}
+            variant="secondary"
+            compact
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+          />
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
         <button
           type="button"
           onClick={() => setScopeFilter('all')}
@@ -1226,6 +1335,7 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
             </button>
           );
         })}
+        </div>
       </div>
 
       {notice && (
@@ -1365,16 +1475,25 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                 className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] font-extrabold text-slate-400 tabular-nums">
-                        #{idx + 1}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded-lg font-extrabold text-[11px] ${meta.badgeClass}`}>
-                        {t(meta.am, meta.en)}
-                      </span>
+                  <div className="min-w-0 flex items-center gap-2.5">
+                    <PersonAvatarBadge
+                      name={r.name}
+                      gender={r.gender}
+                      photoDataUrl={r.photoDataUrl}
+                      photoStorageKey={r.photoStorageKey}
+                      size="sm"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-extrabold text-slate-400 tabular-nums">
+                          #{idx + 1}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-lg font-extrabold text-[11px] ${meta.badgeClass}`}>
+                          {t(meta.am, meta.en)}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-extrabold text-slate-900 mt-1 truncate">{r.name}</h4>
                     </div>
-                    <h4 className="text-sm font-extrabold text-slate-900 mt-1">{r.name}</h4>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
@@ -1509,7 +1628,25 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
       </div>
 
       {/* Desktop & Print Missionaries Table */}
-      <div className="hidden md:block print:block bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <div ref={missionariesTableRef} className="hidden md:block print:block bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-900">
+              {t('የወንጌል አገልግሎት ሚሽነሪዎች መዝገብ', 'Evangelism Missionaries Registry')}
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              {t(`ጠቅላላ የሚታዩ ሚሽነሪዎች፦ ${filtered.length}`, `Showing ${filtered.length} missionaries`)}
+            </p>
+          </div>
+          <ExportPhotoButton
+            targetRef={missionariesTableRef}
+            fileName={`የሚሽነሪዎች_መዝገብ_ዝርዝር_${currentYear}`}
+            variant="secondary"
+            compact
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
@@ -1558,12 +1695,23 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                         </span>
                       </td>
                       <td className="py-2.5 px-3 font-extrabold text-slate-900 whitespace-nowrap">
-                        <div>{r.name}</div>
-                        {r.deployedDate && (
-                          <div className="text-[10px] font-normal text-slate-500 mt-0.5">
-                            <DualDateBadge value={r.deployedDate} mode="inline" />
+                        <div className="flex items-center gap-2.5">
+                          <PersonAvatarBadge
+                            name={r.name}
+                            gender={r.gender}
+                            photoDataUrl={r.photoDataUrl}
+                            photoStorageKey={r.photoStorageKey}
+                            size="sm"
+                          />
+                          <div>
+                            <div>{r.name}</div>
+                            {r.deployedDate && (
+                              <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                                <DualDateBadge value={r.deployedDate} mode="inline" />
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </td>
                       <td className="py-2 px-3">
                         <div className="flex items-center gap-1.5">
@@ -1736,6 +1884,15 @@ export const EvangelismMissionariesPanel: React.FC<EvangelismMissionariesPanelPr
                   ))}
                 </div>
               </div>
+
+              <PersonPhotoField
+                compact
+                storagePrefix="missionary"
+                personId={editingId ?? undefined}
+                name={mName}
+                value={mPhoto}
+                onChange={setMPhoto}
+              />
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">{t('ሙሉ ስም *', 'Full Name *')}</label>

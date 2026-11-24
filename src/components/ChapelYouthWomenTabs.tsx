@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Sparkles,
   HeartHandshake,
@@ -41,6 +41,9 @@ import {
   parseMemberNumericAge,
   resolveMemberHouseholdKey
 } from '../utils/chapelDemographics';
+import { ExportPhotoButton } from './ExportPhotoButton';
+import { PersonPhotoField, PersonPhotoValue } from './PersonPhotoField';
+import { PersonAvatarBadge } from './PersonAvatarBadge';
 
 interface SharedChapelRegistryProps {
   currentYear: string;
@@ -75,6 +78,8 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
   nameScriptMode = 'am'
 }) => {
   const { t, chapelLabel } = useLanguage();
+  const youthKpiRef = useRef<HTMLDivElement | null>(null);
+  const youthTableRef = useRef<HTMLElement | null>(null);
   const yearNum = parseInt(currentYear, 10) || 2018;
   const officialLockedChapel = loggedInChapel ? mapToOfficialChapel(loggedInChapel) : null;
 
@@ -105,6 +110,7 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
   const [formBaptized, setFormBaptized] = useState(true);
   const [formSupper, setFormSupper] = useState(false);
   const [formTithe, setFormTithe] = useState(false);
+  const [formPhoto, setFormPhoto] = useState<PersonPhotoValue>({});
 
   const activeChapelScope = officialLockedChapel || (chapelFilter !== 'all' ? chapelFilter : null);
 
@@ -201,6 +207,7 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
     setFormBaptized(true);
     setFormSupper(false);
     setFormTithe(false);
+    setFormPhoto({});
     setIsModalOpen(true);
   };
 
@@ -221,6 +228,12 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
     setFormBaptized(Boolean(m.isBaptized));
     setFormSupper(Boolean(m.takesLordsSupper));
     setFormTithe(Boolean(m.paysTithe));
+    setFormPhoto({
+      photoDataUrl: m.photoDataUrl,
+      photoStorageKey: m.photoStorageKey,
+      photoName: m.photoName,
+      photoUpdatedAt: m.photoUpdatedAt
+    });
     setIsModalOpen(true);
   };
 
@@ -253,6 +266,10 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
       takesLordsSupper: formSupper,
       paysTithe: formTithe,
       isYouth: true,
+      photoDataUrl: formPhoto.photoDataUrl,
+      photoStorageKey: formPhoto.photoStorageKey,
+      photoName: formPhoto.photoName,
+      photoUpdatedAt: formPhoto.photoUpdatedAt,
       registeredDate: editingMember?.registeredDate || new Date().toISOString().split('T')[0]
     };
 
@@ -367,8 +384,24 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-          <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+        <div ref={youthKpiRef} className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-extrabold text-slate-800">
+              {activeChapelScope
+                ? t(`የ${activeChapelScope} የወጣቶች (15–29) ስታቲስቲክስ`, `${chapelLabel(activeChapelScope)} Youth (15–29) Summary`)
+                : t(`የ10ሩም ቻፕሎች የወጣቶች (15–29) ስታቲስቲክስ`, `All Chapels Youth (15–29) Summary`)}
+            </h4>
+            <ExportPhotoButton
+              targetRef={youthKpiRef}
+              fileName={`የወጣቶች_ስታቲስቲክስ_${activeChapelScope || 'ሁሉም_ቻፕሎች'}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <div className="border border-slate-200 rounded-xl p-3 bg-white">
             <div className="text-[11px] font-bold text-slate-500">{t('ጠቅላላ ወጣቶች', 'Total Youth')}</div>
             <div className="text-xl font-black text-slate-900 tabular-nums mt-0.5">{youthStats.total}</div>
           </div>
@@ -391,6 +424,7 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
           <div className="border border-slate-200 rounded-xl p-3 bg-white">
             <div className="text-[11px] font-bold text-slate-500">{t('ዕድሜ 25–29', 'Age 25–29')}</div>
             <div className="text-xl font-black text-slate-800 tabular-nums mt-0.5">{youthStats.b25_29}</div>
+          </div>
           </div>
         </div>
 
@@ -458,7 +492,22 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
       </section>
 
       {/* Table */}
-      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <section ref={youthTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+          <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">
+            {activeChapelScope
+              ? t(`የ${activeChapelScope} ወጣቶች ዝርዝር (${filteredRows.length})`, `${chapelLabel(activeChapelScope)} Youth List (${filteredRows.length})`)
+              : t(`የወጣቶች ዝርዝር ሰንጠረዥ (${filteredRows.length})`, `Youth Directory Table (${filteredRows.length})`)}
+          </h4>
+          <ExportPhotoButton
+            targetRef={youthTableRef}
+            fileName={`የወጣቶች_ዝርዝር_ሰንጠረዥ_${activeChapelScope || 'ሁሉም_ቻፕሎች'}_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
@@ -495,14 +544,25 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
                       {member.memberCode || '—'}
                     </td>
                     <td className="py-2.5 px-3">
-                      <div className="font-bold text-slate-900">
-                        {formatDisplayName(member.name, nameScriptMode)}
-                      </div>
-                      {member.parentName && (
-                        <div className="text-[11px] text-slate-500">
-                          {t('ቤተሰብ/ወላጅ:', 'Family:')} {member.parentName}
+                      <div className="flex items-center gap-2.5">
+                        <PersonAvatarBadge
+                          name={member.name}
+                          gender={member.gender}
+                          photoDataUrl={member.photoDataUrl}
+                          photoStorageKey={member.photoStorageKey}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900">
+                            {formatDisplayName(member.name, nameScriptMode)}
+                          </div>
+                          {member.parentName && (
+                            <div className="text-[11px] text-slate-500">
+                              {t('ቤተሰብ/ወላጅ:', 'Family:')} {member.parentName}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <span
@@ -661,6 +721,15 @@ export const ChapelYouthRegistryTab: React.FC<SharedChapelRegistryProps> = ({
                   <span>{formError}</span>
                 </div>
               )}
+
+              <PersonPhotoField
+                compact
+                storagePrefix="church_member"
+                personId={editingMember?.id || formName || 'youth_new'}
+                name={formName || t('ወጣት', 'Youth')}
+                value={formPhoto}
+                onChange={setFormPhoto}
+              />
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">{t('ሙሉ ስም *', 'Full Name *')}</label>
@@ -891,6 +960,7 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
   const [formBaptized, setFormBaptized] = useState(true);
   const [formSupper, setFormSupper] = useState(true);
   const [formTithe, setFormTithe] = useState(true);
+  const [formPhoto, setFormPhoto] = useState<PersonPhotoValue>({});
 
   const activeChapelScope = officialLockedChapel || (chapelFilter !== 'all' ? chapelFilter : null);
 
@@ -1013,6 +1083,7 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
     setFormBaptized(true);
     setFormSupper(true);
     setFormTithe(true);
+    setFormPhoto({});
     setIsModalOpen(true);
   };
 
@@ -1032,6 +1103,12 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
     setFormBaptized(Boolean(m.isBaptized));
     setFormSupper(Boolean(m.takesLordsSupper));
     setFormTithe(Boolean(m.paysTithe));
+    setFormPhoto({
+      photoDataUrl: m.photoDataUrl,
+      photoStorageKey: m.photoStorageKey,
+      photoName: m.photoName,
+      photoUpdatedAt: m.photoUpdatedAt
+    });
     setIsModalOpen(true);
   };
 
@@ -1081,6 +1158,10 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
       isBaptized: formBaptized,
       takesLordsSupper: formSupper,
       paysTithe: formTithe,
+      photoDataUrl: formPhoto.photoDataUrl,
+      photoStorageKey: formPhoto.photoStorageKey,
+      photoName: formPhoto.photoName,
+      photoUpdatedAt: formPhoto.photoUpdatedAt,
       registeredDate: editingMember?.registeredDate || new Date().toISOString().split('T')[0]
     };
 
@@ -1162,6 +1243,9 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
     XLSX.writeFile(wb, `የሴቶች_መረጃ_ቋት_${scopeLabel}_${currentYear}.xlsx`);
   };
 
+  const womenKpiRef = useRef<HTMLDivElement | null>(null);
+  const womenTableRef = useRef<HTMLElement | null>(null);
+
   return (
     <div className="space-y-5">
       {/* Header & KPI Category Cards */}
@@ -1225,7 +1309,23 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
         )}
 
         {/* Interactive Category KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div ref={womenKpiRef} className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-extrabold text-slate-800">
+              {activeChapelScope
+                ? t(`የ${activeChapelScope} የሴቶች ማጠቃለያ አሃዞች`, `${chapelLabel(activeChapelScope)} Women Summary`)
+                : t(`የ10ሩም ቻፕሎች የሴቶች ማጠቃለያ አሃዞች`, `All Chapels Women Summary`)}
+            </h4>
+            <ExportPhotoButton
+              targetRef={womenKpiRef}
+              fileName={`የሴቶች_ማጠቃለያ_አሃዞች_${activeChapelScope || 'ሁሉም_ቻፕሎች'}_${currentYear}`}
+              labelAm="በፎቶ (PNG)"
+              labelEn="Photo (PNG)"
+              variant="secondary"
+              compact
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <button
             type="button"
             onClick={() => {
@@ -1288,6 +1388,7 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
             </div>
             <div className="text-2xl font-black tabular-nums mt-1">{womenStats.femaleHead}</div>
           </button>
+          </div>
         </div>
 
         {/* Search & Chapel Filter */}
@@ -1330,7 +1431,22 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
       </section>
 
       {/* Women Table */}
-      <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <section ref={womenTableRef} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+          <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">
+            {activeChapelScope
+              ? t(`የ${activeChapelScope} ሴቶች ዝርዝር (${filteredRows.length})`, `${chapelLabel(activeChapelScope)} Women List (${filteredRows.length})`)
+              : t(`የሴቶች ዝርዝር ሰንጠረዥ (${filteredRows.length})`, `Women Directory Table (${filteredRows.length})`)}
+          </h4>
+          <ExportPhotoButton
+            targetRef={womenTableRef}
+            fileName={`የሴቶች_ዝርዝር_ሰንጠረዥ_${activeChapelScope || 'ሁሉም_ቻፕሎች'}_${currentYear}`}
+            labelAm="በፎቶ (PNG)"
+            labelEn="Photo (PNG)"
+            variant="secondary"
+            compact
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
@@ -1367,7 +1483,16 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
                       {member.memberCode || '—'}
                     </td>
                     <td className="py-2.5 px-3 font-bold text-slate-900">
-                      {formatDisplayName(member.name, nameScriptMode)}
+                      <div className="flex items-center gap-2.5">
+                        <PersonAvatarBadge
+                          name={member.name}
+                          gender="ሴ"
+                          photoDataUrl={member.photoDataUrl}
+                          photoStorageKey={member.photoStorageKey}
+                          size="sm"
+                        />
+                        <span>{formatDisplayName(member.name, nameScriptMode)}</span>
+                      </div>
                     </td>
                     <td className="py-2.5 px-3 text-center font-bold text-slate-800 tabular-nums">
                       {numAge ?? '—'}
@@ -1593,6 +1718,15 @@ export const ChapelWomenRegistryTab: React.FC<SharedChapelRegistryProps> = ({
                   </button>
                 </div>
               </div>
+
+              <PersonPhotoField
+                compact
+                storagePrefix="church_member"
+                personId={editingMember?.id || formName || 'woman_new'}
+                name={formName || t('እህት', 'Woman')}
+                value={formPhoto}
+                onChange={setFormPhoto}
+              />
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">{t('ሙሉ ስም *', 'Full Name *')}</label>
